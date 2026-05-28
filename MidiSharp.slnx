@@ -2,20 +2,35 @@
   <Folder Name="/Core/">
     <Project Path="src/MidiSharp.Core/MidiSharp.Core.csproj" />
   </Folder>
-  <Folder Name="/SF2Net/">
-    <Project Path="SF2Net\SF2Net.SmokeTest\SF2Net.SmokeTest.csproj" />
-    <Project Path="SF2Net\SF2Net.Tests\SF2Net.Tests.csproj" />
-    <Project Path="SF2Net\SF2Net\SF2Net.csproj" />
-  </Folder>
   <Folder Name="/SoftSynth/">
     <Project Path="src/MidiSharp.Sf2/MidiSharp.Sf2.csproj" />
     <Project Path="src/MidiSharp.Synth/MidiSharp.Synth.csproj" />
     <Project Path="src/MidiSharp.Synth.OwnAudio/MidiSharp.Synth.OwnAudio.csproj" />
   </Folder>
+  <Folder Name="/Loader/">
+    <Project Path="Loader/Loader/Loader.csproj" />
+  </Folder>
+  <Folder Name="/Loader/DLS/">
+    <Project Path="Loader/DLS/DLS.Net/DLS.Net.csproj" />
+  </Folder>
+  <Folder Name="/Loader/SF2/">
+    <Project Path="Loader/SF2/SF2.Net.SmokeTest/SF2.Net.SmokeTest.csproj" />
+    <Project Path="Loader/SF2/SF2.Net.Tests/SF2.Net.Tests.csproj" />
+    <Project Path="Loader/SF2/SF2.Net/SF2.Net.csproj" />
+  </Folder>
+  <Folder Name="/Loader/SF3/">
+    <Project Path="Loader/SF3/SF3.Net/SF3.Net.csproj" />
+  </Folder>
+  <Folder Name="/Loader/SFZ/">
+    <Project Path="Loader/SFZ/SFZ.Net/SFZ.Net.csproj" />
+  </Folder>
   <Folder Name="/Samples/">
     <Project Path="samples/MidiSharp.Demo/MidiSharp.Demo.csproj" />
   </Folder>
   <Folder Name="/SolutionFiles/">
+    <File Path="docs\sound-bank-ir.md" />
+    <File Path="docs\sound-bank-loader.md" />
+    <File Path="docs\synth-genericization.md" />
     <File Path="LICENSE" />
     <File Path="README.md" />
   </Folder>

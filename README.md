@@ -20,20 +20,30 @@ Tested daily against `GeneralUser-GS.sf2` and `TyrolandSFX.sf2`. End-to-end A/B 
 ## Project layout
 
 ```
-MidiSharp.slnx                    Root solution file
+MidiSharp.slnx                       Root solution file
 ├── src/
-│   ├── MidiSharp.Core/           MIDI file parsing, sequencing, tempo map, lyric parser (netstandard2.1)
-│   ├── MidiSharp.Synth/          Software synthesizer + RealtimePlayer (netstandard2.1)
-│   ├── MidiSharp.Synth.OwnAudio/ Cross-platform audio backend via OwnAudioSharp (net10.0)
-│   └── MidiSharp.Sf2/            Legacy SF2 reader, retained for the writer support SF2Net lacks
-├── SF2Net/
-│   └── SF2Net/                   Pure-managed SF2 reader (netstandard2.1)
-├── samples/MidiSharp.Demo/       Live + render-to-WAV demo
-├── tests/                        xUnit tests (currently 36 passing)
-└── MIDI/                         Reference PDFs (MIDI 1.0 / 2.0 / SMF / RPs / Universal SysEx)
+│   ├── MidiSharp.Core/              MIDI file parsing, sequencing, tempo map, lyric parser (netstandard2.1)
+│   ├── MidiSharp.Synth/             Software synthesizer + RealtimePlayer (netstandard2.1)
+│   ├── MidiSharp.Synth.OwnAudio/    Cross-platform audio backend via OwnAudioSharp (net10.0)
+│   └── MidiSharp.Sf2/               Legacy SF2 library retained for the writer support SF2.Net lacks
+├── Loader/                          Soundbank loading subsystem
+│   ├── Loader/Loader/               Unified loader — depends on all four <format>.Net readers and (planned) MidiSharp.Core for IR; hosts the format-to-IR translators
+│   ├── SF2/
+│   │   ├── SF2.Net/                 SF2 reader — RIFF parsing, presets/instruments/zones, sample chunk access
+│   │   ├── SF2.Net.Tests/
+│   │   └── SF2.Net.SmokeTest/
+│   ├── SF3/SF3.Net/                 SF3 reader (Vorbis-compressed SF2) — scaffolding, not yet implemented
+│   ├── SFZ/SFZ.Net/                 SFZ reader — text + WAV references; scaffolding
+│   └── DLS/DLS.Net/                 DLS Level 1/2 reader — scaffolding
+├── samples/MidiSharp.Demo/          Live + render-to-WAV demo
+├── tests/                           xUnit tests (currently 36 passing)
+├── docs/                            Design docs for the planned IR refactor (see Roadmap below)
+└── MIDI/                            Reference PDFs (MIDI 1.0 / 2.0 / SMF / RPs / Universal SysEx)
 ```
 
-Build everything from the `MidiSharp/` directory:
+The `<format>.Net` projects are intentionally MidiSharp-free — pure-managed readers, publishable as independent NuGet packages. The bridge between them and the synth lives in `MidiSharp.Core` (which will own the SoundBank IR) and the unified `Loader/Loader/` project (which translates each format's parsed types into IR); see [`docs/sound-bank-loader.md`](docs/sound-bank-loader.md).
+
+Build everything from the repo root:
 
 ```bash
 dotnet build MidiSharp.slnx
@@ -85,58 +95,44 @@ Implemented: RP-001 (SMF 1.0), RP-013 (GM Level 1), RP-014 (Bank Select Response
 - **XMF container format** (RP-032 through RP-037), Mobile DLS (RP-031), Scalable Polyphony (RP-027), Mobile Phone Control (RP-028).
 - **GM1/GM2 sound-set name registries** (RP-024/029/039) — descriptive only; the SF2 supplies actual sounds.
 
-## Roadmap: SFZ support via parallel SFZNet project
+## Roadmap: multi-format support via a common SoundBank IR
 
-The plan is to add SFZ format support as a sibling reader project (`SFZNet`) alongside the existing `SF2Net`, letting the synth consume either format without changing the audio code.
+The plan is to add SF3, SFZ, and DLS support alongside SF2 by generalizing the synth's input. Every loader produces the same in-memory representation (`SoundBank`); the synth consumes that representation and never branches on source format. Designed for desktop and mobile — structural data resident in RAM, sample data backed by mmap with format-specific decoders.
 
-### Phase 1 — SFZ → SF2 translation layer (planned first cut)
+Three design docs spell out the contract:
 
-`SFZNet` parses SFZ text files and exposes the *same* types `SF2Net` does (`SoundFont`, `Preset`, `Instrument`, `Zone`, `Generator`, `SampleHeader`). The synth doesn't know which backend loaded it. This covers ~80-90% of real-world SFZ files with zero synth changes.
+- [`docs/sound-bank-loader.md`](docs/sound-bank-loader.md) — loader architecture, dispatch, lifetime/threading rules, per-format sample-source strategies.
+- [`docs/sound-bank-ir.md`](docs/sound-bank-ir.md) — field-by-field reference for the in-memory IR. Domain-natural units (seconds, Hz, dB), pre-flattened zones, route-as-data modulation.
+- [`docs/synth-genericization.md`](docs/synth-genericization.md) — step-by-step refactor sequence for the existing SF2-shaped synth, with concrete code sketches and a regression-test strategy that keeps audio output stable at each step.
 
-**SFZ opcode → SF2 generator mapping (initial set):**
+### Where each piece lives
 
-| SFZ opcode | SF2 generator | Notes |
+| Component | Location | Status |
 |---|---|---|
-| `sample=` | (sample reference) | Resolve relative paths via `<control> default_path=`; decode all referenced WAVs into one combined float buffer at load time |
-| `lokey` / `hikey` | `KeyRange` | |
-| `lovel` / `hivel` | `VelRange` | |
-| `pitch_keycenter` | `OverridingRootKey` | |
-| `tune` / `transpose` | `FineTune` / `CoarseTune` | |
-| `volume` | `InitialAttenuation` | dB → cB, negate |
-| `pan` | `Pan` | -100..+100 → -500..+500 |
-| `ampeg_attack/decay/sustain/release` | `AttackVolEnv` / `DecayVolEnv` / `SustainVolEnv` / `ReleaseVolEnv` | Seconds → timecents, sustain % → cB |
-| `fileg_*` | `*ModEnv` | Modulation envelope |
-| `cutoff` | `InitialFilterFc` | Hz → absolute cents |
-| `resonance` | `InitialFilterQ` | dB → cB |
-| `lfoN_freq` / `_delay` | `FreqVibLFO` / `DelayVibLFO` | Hz → absolute cents; sec → timecents |
-| `loop_mode=loop_continuous` | `SampleModes=1` | |
-| `loop_mode=loop_sustain` | `SampleModes=3` | |
-| `loop_start` / `loop_end` | Sample header `StartLoop` / `EndLoop` | After WAV decode |
-| `group=` (exclusive group) | `ExclusiveClass` | |
-| `<global>` / `<group>` / `<region>` | preset → instrument → zone hierarchy | SFZ uses straight override; map carefully to SF2's absolute-set vs additive-offset distinction |
+| Pure SF2 reader | `Loader/SF2/SF2.Net/` | Working |
+| Pure SF3 reader | `Loader/SF3/SF3.Net/` | Scaffolding |
+| Pure SFZ reader | `Loader/SFZ/SFZ.Net/` | Scaffolding |
+| Pure DLS reader | `Loader/DLS/DLS.Net/` | Scaffolding |
+| Unified Loader project | `Loader/Loader/` | Scaffolding (references all four readers; no translators yet) |
+| SoundBank IR types | `src/MidiSharp.Core/SoundBank/` (planned) | Not started |
+| Format-to-IR translators | `Loader/Loader/` (planned, alongside unified dispatch) | Not started |
 
-### Phase 2 — opcodes that need new infrastructure
+### Sequencing
 
-Things SFZ supports that SF2 doesn't model directly. Defer to Phase 2:
+1. Define the IR in `MidiSharp.Core`. No synth changes; just types.
+2. Add the SF2-to-IR translator and dispatch entry point inside `Loader/Loader/`. Verify round-trip rendering matches current output within ±0.5 dB.
+3. Generalize the synth's `Voice` to consume IR directly, with the old SF2-direct path kept alive in parallel; switch over gradually. Full sequence in [`docs/synth-genericization.md`](docs/synth-genericization.md).
+4. Add the SF3 translator inside `Loader/Loader/` (Vorbis decode in the sample source, otherwise identical to SF2 — same translator with a different sample-source implementation).
+5. Add the SFZ translator (text parser + WAV resolution + opcode → IR translation).
+6. Add the DLS translator (RIFF parser closer to SF2 than SFZ).
+7. Memory-mapped sample sources for SF2/SF3/SFZ/DLS — orthogonal to the IR work; ship per format when the IR is ready.
 
-- **Round-robin / sequence**: `seq_position`, `seq_length` — needs a per-region sequence counter on the synth side.
-- **Keyswitch**: `sw_lokey` / `sw_hikey` / `sw_default` / `sw_last` — region activated/deactivated by a held key.
-- **CC-conditional regions**: `locc<n>` / `hicc<n>` — only play if CC value in range. Maps loosely to SF2 modulator source but with extra gating logic.
-- **Crossfades**: `xfin_lovel` / `xfin_hivel` / `xfout_lovel` / `xfout_hivel` — velocity/key/CC crossfade between layered regions.
-- **Polyphony groups with `off_by`**: per-`group=` polyphony cap with stealing rules.
-
-These would either extend the SF2 generator enum with SFZ-specific opcodes that `Voice` understands when present, or motivate a move to Phase 3.
-
-### Phase 3 — common abstract model (only if needed)
-
-If Phase 2 patches start feeling kludgy, introduce a backend-neutral `MidiSharp.SoundFontModel` and have both `SF2Net` and `SFZNet` produce it. Voice/Synthesizer talk only to the common model. This is a real refactor (touches every `voice.Configure`, generator iteration, sample-data access) but cleanly separates "loader" from "renderer". Not started until/unless concrete pain demands it.
+Total estimated effort 4-6 weeks of focused work, none of it big-bang. The synth keeps rendering correctly at every commit.
 
 ### Other potential future work
 
-- **DLS Level 1/2 soundfonts** as a third sibling reader. Closer to SF2 in design than SFZ is.
-- **SF3 support** (SF2 with Vorbis-compressed samples) — small extension on top of SF2Net.
-- **UMP-to-MIDI-1.0 translation layer** if MIDI 2.0 hardware comes through the door.
-- **Master EQ / mastering** in a *separate* helper project, not in the synth itself.
+- **UMP-to-MIDI-1.0 translation layer** if MIDI 2.0 hardware comes through the door (most "MIDI 2.0" devices ship in 1.0-compatibility mode anyway).
+- **Master EQ / mastering** as a *separate* helper project. The synth deliberately renders the spec without master processing.
 
 ## License
 

@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\SF2Net\SF2Net\SF2Net.csproj" />
+    <ProjectReference Include="..\..\Loader\SF2\SF2.Net\SF2.Net.csproj" />
     <ProjectReference Include="..\MidiSharp.Core\MidiSharp.Core.csproj" />
   </ItemGroup>
 

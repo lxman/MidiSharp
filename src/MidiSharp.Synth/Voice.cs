@@ -1,5 +1,5 @@
 using System;
-using SF2Net;
+using SF2.Net;
 
 namespace MidiSharp.Synth;
 

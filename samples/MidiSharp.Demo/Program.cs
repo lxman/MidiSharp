@@ -6,7 +6,7 @@ using MidiSharp.IO;
 using MidiSharp.Model.Events;
 using MidiSharp.Synth;
 using MidiSharp.Synth.OwnAudio;
-using SF2Net;
+using SF2.Net;
 
 if (args.Length < 2)
 {

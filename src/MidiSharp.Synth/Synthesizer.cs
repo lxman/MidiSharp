@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using SF2Net;
+using SF2.Net;
 
 namespace MidiSharp.Synth;
 
