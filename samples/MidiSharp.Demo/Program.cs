@@ -4,9 +4,9 @@ using System.IO;
 using System.Threading;
 using MidiSharp.IO;
 using MidiSharp.Model.Events;
+using MidiSharp.SoundBank;
 using MidiSharp.Synth;
 using MidiSharp.Synth.OwnAudio;
-using SF2.Net;
 
 if (args.Length < 2)
 {
@@ -29,13 +29,13 @@ Console.WriteLine($"  Format: {midiFile.Header.Format}, Tracks: {midiFile.Header
                   $"Division: {midiFile.Header.Division.TicksPerQuarterNote} ticks/quarter");
 
 Console.WriteLine($"Loading SoundFont: {sf2Path}");
-var soundFont = SoundFont.Load(sf2Path);
-Console.WriteLine($"  {soundFont.Info.BankName}: {soundFont.Presets.Count} presets, " +
-                  $"{soundFont.Instruments.Count} instruments, {soundFont.SampleHeaders.Count} samples");
+var soundBank = SoundBankLoader.Load(sf2Path);
+Console.WriteLine($"  {soundBank.Name}: {soundBank.Patches.Count} patches, " +
+                  $"{soundBank.Samples.Count} samples");
 
 const int sampleRate = 44100;
 var synth = new Synthesizer(sampleRate);
-synth.LoadSoundFont(soundFont);
+synth.LoadSoundFont(soundBank);
 
 // One player, two modes — the same RealtimePlayer drives both live audio and
 // offline rendering. The render path pulls blocks synchronously in a loop;

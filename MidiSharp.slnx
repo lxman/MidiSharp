@@ -36,5 +36,6 @@
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="tests/MidiSharp.Core.Tests/MidiSharp.Core.Tests.csproj" />
+    <Project Path="tests/MidiSharp.Synth.Tests/MidiSharp.Synth.Tests.csproj" />
   </Folder>
 </Solution>

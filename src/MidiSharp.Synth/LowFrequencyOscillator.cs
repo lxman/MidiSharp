@@ -45,16 +45,38 @@ public sealed class LowFrequencyOscillator
     }
 
     /// <summary>
-    /// Sets LFO parameters from SF2 generator values.
+    /// Sets LFO parameters from SF2 generator values. Delegates to the
+    /// domain-typed overload after converting timecents → seconds and
+    /// absolute cents → Hz.
     /// </summary>
     /// <param name="delayTimecents">Delay before LFO starts (-12000 to 5000 timecents)</param>
     /// <param name="freqCents">Frequency in absolute cents (0 = 8.176 Hz)</param>
     public void SetParameters(short delayTimecents, short freqCents)
     {
-        _delaySamples = TimecentsToSamples(delayTimecents);
-        _frequency = AbsoluteCentsToFrequency(freqCents);
-        _phaseIncrement = 2.0 * Math.PI * _frequency / _sampleRate;
+        SetParameters(
+            delaySeconds: TimecentsToSeconds(delayTimecents),
+            frequencyHz: AbsoluteCentsToFrequency(freqCents));
+    }
+
+    /// <summary>
+    /// Sets LFO parameters in domain-natural units. Preferred over the
+    /// SF2-unit overload going forward; the loader should convert at the
+    /// boundary rather than carrying timecents/abs-cents into the synth.
+    /// </summary>
+    /// <param name="delaySeconds">Delay before oscillation starts. 0 = no delay.</param>
+    /// <param name="frequencyHz">Oscillation frequency in Hz.</param>
+    public void SetParameters(double delaySeconds, double frequencyHz)
+    {
+        _delaySamples = delaySeconds <= 0 ? 0 : (int)(delaySeconds * _sampleRate);
+        _frequency = frequencyHz;
+        _phaseIncrement = 2.0 * Math.PI * frequencyHz / _sampleRate;
         _delayCounter = _delaySamples;
+    }
+
+    private static double TimecentsToSeconds(short timecents)
+    {
+        if (timecents <= -12000) return 0;
+        return Math.Pow(2.0, timecents / 1200.0);
     }
 
     /// <summary>

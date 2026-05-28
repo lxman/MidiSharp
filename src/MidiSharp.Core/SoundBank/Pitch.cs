@@ -13,6 +13,13 @@ public sealed class PitchSettings
 
     /// <summary>Coarse tune in semitones (-120..+120).</summary>
     public double CoarseTuneSemitones { get; init; }
+
+    /// <summary>
+    /// Modulation-envelope contribution to pitch, in cents at envelope peak
+    /// (SF2 <c>ModEnvToPitch</c> generator). Multiplied by the envelope's
+    /// current value (0..1) at runtime. 0 = no contribution.
+    /// </summary>
+    public double ModulationEnvelopeDepthCents { get; init; }
 }
 
 /// <summary>

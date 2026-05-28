@@ -1,5 +1,7 @@
 using System;
-using SF2.Net;
+using System.Collections.Generic;
+using MidiSharp.SoundBank;
+using IRLoopMode = MidiSharp.SoundBank.LoopMode;
 
 namespace MidiSharp.Synth;
 
@@ -10,744 +12,514 @@ public enum VoiceState
 {
     Free,
     Playing,
-    Released
+    Released,
 }
 
 /// <summary>
-/// Loop mode for sample playback.
+/// One playing voice. Configured from an IR <see cref="PatchZone"/> at NoteOn,
+/// reads sample frames through an <see cref="ISampleSource"/>, evaluates the
+/// zone's <see cref="ModulationRoute"/> list once per audio block, and renders
+/// stereo + send signals into the synth's mix buffers.
 /// </summary>
-public enum LoopMode
-{
-    NoLoop,
-    LoopContinuously,
-    LoopUntilRelease
-}
-
-/// <summary>
-/// Represents a single synthesizer voice that plays one sample.
-/// Handles sample playback, pitch shifting, envelopes, LFOs, and filtering.
-/// </summary>
+/// <remarks>
+/// Format-neutral: the voice has no SF2-specific code. Anything format-specific
+/// lives in the loader that produced the <see cref="PatchZone"/>; the synth
+/// itself works the same whether the source bank was SF2, SFZ, or DLS.
+/// </remarks>
 public sealed class Voice
 {
+    // ── Construction ──────────────────────────────────────────────────
+
     private readonly int _sampleRate;
+    private readonly Envelope _volumeEnvelope;
+    private readonly Envelope _modulationEnvelope;
+    private readonly LowFrequencyOscillator _vibratoLfo;
+    private readonly LowFrequencyOscillator _modulationLfo;
+    private readonly LowPassFilter _filter;
 
-    // Sample data — normalized float in [-1, 1], shared buffer indexed by absolute frame number.
-    private float[]? _sampleData;
-    private uint _sampleStart;
-    private uint _sampleEnd;
-    private uint _loopStart;
-    private uint _loopEnd;
-    private uint _baseSampleRate;
-    private LoopMode _loopMode;
+    // ── Sample addressing ─────────────────────────────────────────────
 
-    // Playback position (24.8 fixed point for sub-sample precision)
+    private ISampleSource? _sampleSource;
+    private int _sampleId;
+    private long _sampleStart;       // first frame to play (sample-relative)
+    private long _sampleEnd;         // one past last frame
+    private long _loopStart;
+    private long _loopEnd;
+    private int _baseSampleRate;
+    private IRLoopMode _loopMode;
+
+    // Playback position is in source frames, sample-relative, fractional.
     private double _position;
-    private double _increment;
 
-    // Pitch
+    // Scratch buffer for ISampleSource reads. The interpolator needs index-3
+    // through index+3 (7-tap sinc); we batch-read ScratchSize frames around the
+    // current position and refill when we approach an edge. One ReadFrames
+    // virtual call per ~250 sample advances instead of per sample.
+    private const int ScratchSize = 256;
+    private const int InterpolatorHalfWidth = 3;
+    private readonly float[] _scratch = new float[ScratchSize];
+    private long _scratchBaseFrame;
+    private int _scratchFramesAvailable;
+
+    // ── Pitch ─────────────────────────────────────────────────────────
+
     private int _rootKey;
     private int _keyNumber;
     private int _velocity;
-    private double _pitchCorrection; // cents
-    private double _coarseTune; // semitones
-    private double _fineTune; // cents
-    private double _scaleTuning; // cents per key (default 100)
+    private double _pitchCorrectionCents;
+    private double _coarseTuneSemitones;
+    private double _fineTuneCents;
+    private double _scaleTuningCentsPerKey;
+    private double _modEnvPitchDepthCents;       // mod envelope → pitch
 
-    // Envelopes
-    private readonly Envelope _volumeEnvelope;
-    private readonly Envelope _modulationEnvelope;
+    // ── Level & pan ────────────────────────────────────────────────────
 
-    // LFOs
-    private readonly LowFrequencyOscillator _modulationLfo;
-    private readonly LowFrequencyOscillator _vibratoLfo;
+    private double _attenuationDb;               // base, from zone
+    private double _panNormalized;               // base, -1..+1, from zone
 
-    // Filter
-    private readonly LowPassFilter _filter;
+    // ── LFO base depths (zone-authored, augmented by routes per block) ─
 
-    // Modulation amounts
-    private double _modEnvToPitch; // cents
-    private double _modEnvToFilterFc; // cents
-    private double _modLfoToPitch; // cents
-    private double _modLfoToFilterFc; // cents
-    private double _modLfoToVolume; // centibels
-    private double _vibLfoToPitch; // cents
+    private double _vibLfoPitchDepthCents;
+    private double _modLfoPitchDepthCents;
+    private double _modLfoVolumeDepthDb;
+    private double _modLfoFilterDepthCents;
+    private bool _hasModulationLfo;
+    private bool _hasModulationEnvelope;
 
-    // LFO timing parameters (kept on the voice so post-Configure adjustments — GM2
-    // CC 76/78 — can re-derive the live LFO state).
-    private short _vibLfoFreqCents;       // 0 = 8.176 Hz (SF2 default)
-    private short _vibLfoDelayTimecents;  // -12000 = no delay (SF2 default)
-    private short _modLfoFreqCents;
-    private short _modLfoDelayTimecents;
+    // LFO timing kept on voice so GM2 CC76/78 mid-flight adjustments
+    // can re-derive the LFO state.
+    private double _vibLfoFrequencyHz;
+    private double _vibLfoDelaySeconds;
 
-    // Attenuation and pan
-    private double _attenuation; // centibels
-    private double _pan; // -500 to 500 (-1 to 1)
-    private double _velocityAttenuation;
+    // ── Filter ─────────────────────────────────────────────────────────
 
-    // Effect sends — SF2 spec stores these in 0.1% units (0..1000 → 0..1.0).
+    private bool _hasFilter;
+    private double _filterBaseCutoffHz;
+    private double _filterBaseResonanceDb;
+    private double _modEnvFilterDepthCents;
+    // The route-evaluator's ModulationLfoFilterDepth and ModulationEnvelopeToFilter
+    // destinations are routed back into the per-sample filter cutoff via the
+    // zone's static base depths plus this block's RouteContributions.
+
+    // ── Effect sends ──────────────────────────────────────────────────
+
     private double _reverbSend;
     private double _chorusSend;
 
-    // Filter parameters
-    private short _filterCutoff;
-    private short _filterResonance;
+    // ── Modulation routes (from zone) ─────────────────────────────────
 
-    // State
+    private IReadOnlyList<ModulationRoute> _routes = Array.Empty<ModulationRoute>();
+
+    // ── Voice / MIDI state ────────────────────────────────────────────
+
     private VoiceState _state;
     private int _channel;
-    private int _exclusiveClass;
+    private int _exclusiveGroup;
     private int _generationId;
+    private byte _polyPressure;
 
-    // Sostenuto pedal (CC66) state. SostenutoHeld means this voice was sounding when
-    // the pedal went down and should ignore NoteOff until the pedal lifts.
-    // SostenutoReleasePending means NoteOff arrived while held — release when pedal lifts.
+    // Sostenuto pedal capture
     private bool _sostenutoHeld;
     private bool _sostenutoReleasePending;
 
-    // Polyphonic aftertouch (SF2 default modulator #5): per-note vibrato LFO pitch depth
-    // contribution in cents, max 50 at pressure=127. Updated by Synthesizer.PolyPressure.
-    private double _polyPressureVibDepthCents;
-
-    // Portamento glide: signed pitch offset (cents) that decays toward 0 each sample.
-    // _portamentoStepPerSample is unsigned — actual delta is sign(_portamentoCents) * step.
+    // Portamento glide: signed pitch offset that decays toward 0.
     private double _portamentoCents;
     private double _portamentoStepPerSample;
 
-    /// <summary>
-    /// Polyphonic aftertouch contribution to vibrato LFO pitch depth, in cents.
-    /// Set by Synthesizer when 0xA0 events arrive matching this voice.
-    /// </summary>
-    public double PolyPressureVibDepthCents
-    {
-        get => _polyPressureVibDepthCents;
-        set => _polyPressureVibDepthCents = value;
-    }
+    // ── Properties ────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Whether the voice is captured by the sostenuto pedal.
-    /// </summary>
+    public VoiceState State => _state;
+    public int Channel => _channel;
+    public int KeyNumber => _keyNumber;
+    public int ExclusiveGroup => _exclusiveGroup;
+    public int GenerationId => _generationId;
+    public bool IsFinished => _state == VoiceState.Free || _volumeEnvelope.IsFinished;
+
     public bool SostenutoHeld { get => _sostenutoHeld; set => _sostenutoHeld = value; }
-
-    /// <summary>
-    /// True when a NoteOff arrived while sostenuto-held; release on pedal lift.
-    /// </summary>
     public bool SostenutoReleasePending { get => _sostenutoReleasePending; set => _sostenutoReleasePending = value; }
 
     /// <summary>
-    /// Current state of the voice.
+    /// Raw 0..127 polyphonic pressure for this voice's key. Set by Synthesizer
+    /// when 0xA0 events arrive matching this voice's (channel, key); the route
+    /// evaluator normalizes to 0..1 when a route uses PolyPressure as a source.
     /// </summary>
-    public VoiceState State => _state;
+    public byte PolyPressure { get => _polyPressure; set => _polyPressure = value; }
 
-    /// <summary>
-    /// MIDI channel this voice is playing on.
-    /// </summary>
-    public int Channel => _channel;
-
-    /// <summary>
-    /// MIDI key number being played.
-    /// </summary>
-    public int KeyNumber => _keyNumber;
-
-    /// <summary>
-    /// Exclusive class (for muting other voices).
-    /// </summary>
-    public int ExclusiveClass => _exclusiveClass;
-
-    /// <summary>
-    /// Generation ID for voice stealing priority.
-    /// </summary>
-    public int GenerationId => _generationId;
-
-    /// <summary>
-    /// Whether the voice has finished and can be recycled.
-    /// </summary>
-    public bool IsFinished => _state == VoiceState.Free || _volumeEnvelope.IsFinished;
-
-    /// <summary>
-    /// Creates a new voice.
-    /// </summary>
     public Voice(int sampleRate)
     {
         _sampleRate = sampleRate;
         _volumeEnvelope = new Envelope(sampleRate);
         _modulationEnvelope = new Envelope(sampleRate);
-        _modulationLfo = new LowFrequencyOscillator(sampleRate);
         _vibratoLfo = new LowFrequencyOscillator(sampleRate);
+        _modulationLfo = new LowFrequencyOscillator(sampleRate);
         _filter = new LowPassFilter(sampleRate);
         _state = VoiceState.Free;
-        _scaleTuning = 100; // Default: 100 cents per semitone
+        _scaleTuningCentsPerKey = 100.0;
     }
 
-    /// <summary>
-    /// Resets the voice to free state.
-    /// </summary>
     public void Reset()
     {
         _state = VoiceState.Free;
-        _sampleData = null;
+        _sampleSource = null;
         _position = 0;
+        _scratchFramesAvailable = 0;
+        _scratchBaseFrame = 0;
         _sostenutoHeld = false;
         _sostenutoReleasePending = false;
+        _polyPressure = 0;
+        _portamentoCents = 0;
+        _portamentoStepPerSample = 0;
+        _routes = Array.Empty<ModulationRoute>();
         _volumeEnvelope.Reset();
         _modulationEnvelope.Reset();
-        _modulationLfo.Reset();
         _vibratoLfo.Reset();
+        _modulationLfo.Reset();
         _filter.Reset();
     }
 
+    // ── Configure ─────────────────────────────────────────────────────
+
     /// <summary>
-    /// Configures the voice with sample and generator data.
+    /// Configures the voice for a NoteOn from an IR zone. The zone's static
+    /// fields populate base values; the routes drive per-block modulation
+    /// against channel state during <see cref="Process"/>.
     /// </summary>
     public void Configure(
-        float[] sampleData,
-        SampleHeader header,
-        Zone instrumentZone,
-        Zone? presetZone,
-        Zone? instrumentGlobalZone,
-        Zone? presetGlobalZone,
+        PatchZone zone,
+        ISampleSource sampleSource,
         int keyNumber,
         int velocity,
         int channel,
         int generationId)
     {
-        // Reset all state first to ensure no leftover data from previous voice
-        _volumeEnvelope.Reset();
-        _modulationEnvelope.Reset();
-        _modulationLfo.Reset();
-        _vibratoLfo.Reset();
-        _filter.Reset();
-        _position = 0;
+        Reset();
 
-        _sampleData = sampleData;
+        var sampleRef = zone.Sample;
+        var metadata = sampleSource.Metadata(sampleRef.SampleId);
+
+        _sampleSource = sampleSource;
+        _sampleId = sampleRef.SampleId;
         _keyNumber = keyNumber;
         _velocity = velocity;
         _channel = channel;
         _generationId = generationId;
         _state = VoiceState.Playing;
-        _sostenutoHeld = false;
-        _sostenutoReleasePending = false;
-        _polyPressureVibDepthCents = 0;
-        _portamentoCents = 0;
-        _portamentoStepPerSample = 0;
+        _exclusiveGroup = zone.ExclusiveGroup ?? 0;
 
-        // Sample parameters
-        _sampleStart = header.Start;
-        _sampleEnd = header.End;
-        _loopStart = header.StartLoop;
-        _loopEnd = header.EndLoop;
-        // Ensure valid sample rate (default to synth rate if invalid)
-        _baseSampleRate = header.SampleRate > 0 ? header.SampleRate : (uint)_sampleRate;
-        // OriginalPitch of 255 means "unpitched" - use middle C (60) as default
-        _rootKey = header.OriginalPitch == 255 ? 60 : header.OriginalPitch;
-        _pitchCorrection = header.PitchCorrection;
+        // Sample addressing — IR fields are sample-relative frames. The metadata's
+        // base length/loop points are overridable by the zone's optional offset
+        // generators (SF2 StartAddrsOffset etc.).
+        long fullLength = metadata.LengthFrames;
+        _sampleStart = sampleRef.StartOffset ?? 0;
+        _sampleEnd = sampleRef.EndOffset ?? fullLength;
+        _loopStart = sampleRef.LoopStartOffset ?? metadata.LoopStartFrames;
+        _loopEnd = sampleRef.LoopEndOffset ?? metadata.LoopEndFrames;
+        _baseSampleRate = metadata.SampleRate > 0 ? metadata.SampleRate : _sampleRate;
+        _rootKey = sampleRef.OverridingRootKey
+                   ?? (metadata.RootKey == 255 ? 60 : metadata.RootKey);
+        _pitchCorrectionCents = metadata.PitchCorrectionCents;
+        _loopMode = sampleRef.LoopMode;
 
-        // Default values
-        _coarseTune = 0;
-        _fineTune = 0;
-        _scaleTuning = 100;
-        _attenuation = 0;
-        _pan = 0;
-        _loopMode = LoopMode.NoLoop;
-        _exclusiveClass = 0;
+        // Pitch settings (zone + sample-level tuning sum at Configure time).
+        _coarseTuneSemitones = zone.Pitch.CoarseTuneSemitones + sampleRef.CoarseTuneSemitones;
+        _fineTuneCents = zone.Pitch.FineTuneCents + sampleRef.FineTuneCents;
+        _scaleTuningCentsPerKey = sampleRef.ScaleTuningCentsPerKey;
+        _modEnvPitchDepthCents = zone.Pitch.ModulationEnvelopeDepthCents;
 
-        // Modulation defaults
-        _modEnvToPitch = 0;
-        _modEnvToFilterFc = 0;
-        _modLfoToPitch = 0;
-        _modLfoToFilterFc = 0;
-        _modLfoToVolume = 0;
-        _vibLfoToPitch = 0;
+        // Level & pan baseline (routes contribute on top per block).
+        _attenuationDb = zone.Level.AttenuationDb;
+        _panNormalized = zone.Level.Pan;
 
-        // Filter defaults
-        _filterCutoff = 13500; // ~20kHz
-        _filterResonance = 0;
+        // Effect sends baseline.
+        _reverbSend = zone.ReverbSend;
+        _chorusSend = zone.ChorusSend;
 
-        // Effect sends default to 0 (dry) until a generator overrides
-        _reverbSend = 0;
-        _chorusSend = 0;
+        // Volume envelope (always present).
+        var ve = zone.VolumeEnvelope;
+        _volumeEnvelope.SetParameters(
+            delaySeconds: ve.DelaySeconds,
+            attackSeconds: ve.AttackSeconds,
+            holdSeconds: ve.HoldSeconds,
+            decaySeconds: ve.DecaySeconds,
+            sustainLevel: ve.SustainLevel,
+            releaseSeconds: ve.ReleaseSeconds,
+            keynumToHoldCentsPerKey: ve.KeynumToHoldCentsPerKey,
+            keynumToDecayCentsPerKey: ve.KeynumToDecayCentsPerKey);
 
-        // Set default envelope parameters
-        _volumeEnvelope.SetDefaultVolume();
-        _modulationEnvelope.SetDefaultModulation();
+        // Modulation envelope (optional).
+        if (zone.ModulationEnvelope is { } me)
+        {
+            _modulationEnvelope.SetParameters(
+                delaySeconds: me.DelaySeconds,
+                attackSeconds: me.AttackSeconds,
+                holdSeconds: me.HoldSeconds,
+                decaySeconds: me.DecaySeconds,
+                sustainLevel: me.SustainLevel,
+                releaseSeconds: me.ReleaseSeconds,
+                keynumToHoldCentsPerKey: me.KeynumToHoldCentsPerKey,
+                keynumToDecayCentsPerKey: me.KeynumToDecayCentsPerKey);
+            _hasModulationEnvelope = true;
+        }
+        else
+        {
+            _hasModulationEnvelope = false;
+            _modEnvPitchDepthCents = 0;     // no envelope to scale; saves a multiply per sample
+        }
 
-        // LFO defaults per SF2 spec §8.5: DelayVibLFO/DelayModLFO = -12000 timecents
-        // (effectively no delay), FreqVibLFO/FreqModLFO = 0 absolute cents (= 8.176 Hz).
-        _vibLfoFreqCents = 0;
-        _vibLfoDelayTimecents = -12000;
-        _modLfoFreqCents = 0;
-        _modLfoDelayTimecents = -12000;
+        // Vibrato LFO (optional). Defaults if zone omits but routes might still
+        // drive depth at runtime — emit a 0 Hz LFO and let routes fill depth.
+        if (zone.VibratoLFO is { } vlfo)
+        {
+            _vibLfoDelaySeconds = vlfo.DelaySeconds;
+            _vibLfoFrequencyHz = vlfo.FrequencyHz;
+            _vibLfoPitchDepthCents = vlfo.PitchDepthCents;
+            _vibratoLfo.SetParameters(_vibLfoDelaySeconds, _vibLfoFrequencyHz);
+        }
+        else
+        {
+            // Routes (mod wheel, channel pressure, etc.) target VibratoLfoPitchDepth
+            // even when the zone doesn't author a vibrato LFO. Configure at the SF2
+            // default 8.176 Hz and 0 base depth so route contributions still produce
+            // audible vibrato when triggered.
+            _vibLfoDelaySeconds = 0;
+            _vibLfoFrequencyHz = 8.176;
+            _vibLfoPitchDepthCents = 0;
+            _vibratoLfo.SetParameters(_vibLfoDelaySeconds, _vibLfoFrequencyHz);
+        }
 
-        // Apply generators from global and zone layers
-        // Instrument generators set absolute values
-        ApplyGenerators(instrumentGlobalZone, isPreset: false);
-        ApplyGenerators(instrumentZone, isPreset: false);
-        // Preset generators are ADDITIVE offsets (per SF2 spec)
-        ApplyGenerators(presetGlobalZone, isPreset: true);
-        ApplyGenerators(presetZone, isPreset: true);
+        // Modulation LFO (optional).
+        if (zone.ModulationLFO is { } mlfo)
+        {
+            _modulationLfo.SetParameters(mlfo.DelaySeconds, mlfo.FrequencyHz);
+            _modLfoPitchDepthCents = mlfo.PitchDepthCents;
+            _modLfoVolumeDepthDb = mlfo.VolumeDepthDb;
+            _modLfoFilterDepthCents = mlfo.FilterDepthCents;
+            _hasModulationLfo = true;
+        }
+        else
+        {
+            _hasModulationLfo = false;
+            _modLfoPitchDepthCents = 0;
+            _modLfoVolumeDepthDb = 0;
+            _modLfoFilterDepthCents = 0;
+        }
 
-        // Now configure both LFOs from the collected timing values. Done after generator
-        // pass so absolute (instrument) and additive (preset) layering both land correctly.
-        _modulationLfo.SetParameters(_modLfoDelayTimecents, _modLfoFreqCents);
-        _vibratoLfo.SetParameters(_vibLfoDelayTimecents, _vibLfoFreqCents);
+        // Filter (optional).
+        if (zone.Filter is { } f)
+        {
+            _filterBaseCutoffHz = f.CutoffHz;
+            _filterBaseResonanceDb = f.ResonanceDb;
+            _modEnvFilterDepthCents = f.EnvelopeDepthCents;
+            _filter.SetParameters(_filterBaseCutoffHz, _filterBaseResonanceDb);
+            _hasFilter = _filter.Enabled;
+            // f.LfoDepthCents is folded into _modLfoFilterDepthCents above when
+            // the zone has a mod LFO. If only the filter carries the depth, lift
+            // it here so the per-sample loop can apply it uniformly.
+            if (_modLfoFilterDepthCents == 0 && f.LfoDepthCents != 0)
+                _modLfoFilterDepthCents = f.LfoDepthCents;
+        }
+        else
+        {
+            _hasFilter = false;
+            _modEnvFilterDepthCents = 0;
+        }
 
-        // Velocity → initial attenuation per the SF2 default modulator (spec §8.4.1):
-        //   src = velocity, transform = concave-unipolar-negative; dst = InitialAttenuation; amount = 960 cB
-        // Evaluating the concave source curve from spec §8.1.4 (fig E) for v in [1,127]:
-        //   attenuation_cB = 960 * (-40/96) * log10(v/127) = 400 * log10(127/v)
-        // This gives ~4 dB attenuation at vel=100, ~20 dB at vel=40, ~84 dB at vel=1 —
-        // the dynamic range velocity-sensitive instruments like piano need.
-        var vel = velocity < 1 ? 1 : velocity;
-        _velocityAttenuation = 400.0 * Math.Log10(127.0 / vel);
+        // Stash routes (could be the zone-authored list or empty).
+        _routes = zone.Routes ?? Array.Empty<ModulationRoute>();
 
-        // SF2 default modulator #2 (spec §8.4.2): velocity → InitialFilterFc, amount = -2400 cents,
-        // concave-unipolar-negative source. Using the same concave-curve derivation as above:
-        //   filter_mod_cents = -2400 * (-0.4) * log10(vel/127) = -960 * log10(127/vel)
-        // Result: at vel=127 the filter is unmodulated; at low velocities the cutoff drops
-        // up to ~2400 cents (two octaves), darkening soft notes the way real velocity-
-        // sensitive instruments do. Applied BEFORE filter.SetParameters below.
-        var velFilterMod = -960.0 * Math.Log10(127.0 / vel);
-        _filterCutoff = (short)Math.Clamp(_filterCutoff + velFilterMod, -12000, 13500);
-
-        // Initialize pitch increment
-        UpdatePitchIncrement(0);
-
-        // Initialize filter
-        _filter.SetParameters(_filterCutoff, _filterResonance);
-
-        // Trigger envelopes and LFOs
+        // Trigger envelopes and LFOs.
         _volumeEnvelope.Trigger(keyNumber);
-        _modulationEnvelope.Trigger(keyNumber);
-        _modulationLfo.Trigger();
+        if (_hasModulationEnvelope) _modulationEnvelope.Trigger(keyNumber);
         _vibratoLfo.Trigger();
+        if (_hasModulationLfo) _modulationLfo.Trigger();
 
-        // Set initial position
         _position = _sampleStart;
     }
 
-    private void ApplyGenerators(Zone? zone, bool isPreset)
-    {
-        if (zone == null) return;
-
-        foreach (var gen in zone.Generators)
-        {
-            ApplyGenerator(gen, isPreset);
-        }
-    }
-
-    private void ApplyGenerator(Generator gen, bool isPreset)
-    {
-        var val = gen.Amount.Signed;
-
-        switch (gen.Operator)
-        {
-            // Sample offsets
-            case SFGenerator.StartAddrsOffset:
-                _sampleStart += (uint)val;
-                break;
-            case SFGenerator.EndAddrsOffset:
-                _sampleEnd += (uint)val;
-                break;
-            case SFGenerator.StartloopAddrsOffset:
-                _loopStart += (uint)val;
-                break;
-            case SFGenerator.EndloopAddrsOffset:
-                _loopEnd += (uint)val;
-                break;
-            case SFGenerator.StartAddrsCoarseOffset:
-                _sampleStart += (uint)(val * 32768);
-                break;
-            case SFGenerator.EndAddrsCoarseOffset:
-                _sampleEnd += (uint)(val * 32768);
-                break;
-            case SFGenerator.StartloopAddrsCoarseOffset:
-                _loopStart += (uint)(val * 32768);
-                break;
-            case SFGenerator.EndloopAddrsCoarseOffset:
-                _loopEnd += (uint)(val * 32768);
-                break;
-
-            // Pitch
-            case SFGenerator.CoarseTune:
-                // Instrument zones set absolute, preset zones add offsets
-                if (isPreset)
-                    _coarseTune += val;
-                else
-                    _coarseTune = val;
-                break;
-            case SFGenerator.FineTune:
-                // Instrument zones set absolute, preset zones add offsets
-                if (isPreset)
-                    _fineTune += val;
-                else
-                    _fineTune = val;
-                break;
-            case SFGenerator.ScaleTuning:
-                // Preset zones add to scale tuning, instrument zones set it
-                if (isPreset)
-                    _scaleTuning += val;
-                else
-                    _scaleTuning = val;
-                break;
-            case SFGenerator.OverridingRootKey:
-                // Root key only comes from instrument zones, not presets
-                if (!isPreset && val is >= 0 and <= 127)
-                    _rootKey = val;
-                break;
-
-            // Volume
-            case SFGenerator.InitialAttenuation:
-            {
-                // EMU8k/10k hardware (and every real-world SF2 renderer including
-                // fluidsynth) applies a 0.4 scale factor to InitialAttenuation generator
-                // values at both preset and instrument level. Without it, soundfonts
-                // authored against EMU hardware (i.e. essentially all of them) render
-                // roughly 10 dB quieter than intended.
-                const double emuAttenuationFactor = 0.4;
-                var scaled = val * emuAttenuationFactor;
-                if (isPreset)
-                    _attenuation += scaled;
-                else
-                    _attenuation = scaled;
-                break;
-            }
-            case SFGenerator.Pan:
-                // Instrument zones set absolute, preset zones add offsets
-                if (isPreset)
-                    _pan += val;
-                else
-                    _pan = val;
-                break;
-
-            // Effect sends. SF2 spec §8.1.3 generators 15 & 16: amount is in 0.1% units
-            // (1000 = 100%). Preset zones add offsets; instrument zones set absolute.
-            case SFGenerator.ReverbEffectsSend:
-            {
-                var frac = val / 1000.0;
-                if (isPreset) _reverbSend += frac;
-                else _reverbSend = frac;
-                break;
-            }
-            case SFGenerator.ChorusEffectsSend:
-            {
-                var frac = val / 1000.0;
-                if (isPreset) _chorusSend += frac;
-                else _chorusSend = frac;
-                break;
-            }
-
-            // Loop mode
-            case SFGenerator.SampleModes:
-                _loopMode = (val & 1) != 0
-                    ? (val & 2) != 0 ? LoopMode.LoopUntilRelease : LoopMode.LoopContinuously
-                    : LoopMode.NoLoop;
-                break;
-
-            // Exclusive class
-            case SFGenerator.ExclusiveClass:
-                _exclusiveClass = val;
-                break;
-
-            // Filter
-            case SFGenerator.InitialFilterFc:
-                // Instrument zones set absolute, preset zones add offsets
-                if (isPreset)
-                    _filterCutoff += val;
-                else
-                    _filterCutoff = val;
-                break;
-            case SFGenerator.InitialFilterQ:
-                // Instrument zones set absolute, preset zones add offsets
-                if (isPreset)
-                    _filterResonance += val;
-                else
-                    _filterResonance = val;
-                break;
-
-            // Volume envelope — Synthesizer applies these in a dedicated pass via SetVolumeEnvelope
-            case SFGenerator.DelayVolEnv:
-            case SFGenerator.AttackVolEnv:
-            case SFGenerator.HoldVolEnv:
-            case SFGenerator.DecayVolEnv:
-            case SFGenerator.SustainVolEnv:
-            case SFGenerator.ReleaseVolEnv:
-            case SFGenerator.KeynumToVolEnvHold:
-            case SFGenerator.KeynumToVolEnvDecay:
-                break;
-
-            // Modulation envelope — applied via SetModulationEnvelope
-            case SFGenerator.DelayModEnv:
-            case SFGenerator.AttackModEnv:
-            case SFGenerator.HoldModEnv:
-            case SFGenerator.DecayModEnv:
-            case SFGenerator.SustainModEnv:
-            case SFGenerator.ReleaseModEnv:
-            case SFGenerator.KeynumToModEnvHold:
-            case SFGenerator.KeynumToModEnvDecay:
-                break;
-
-            // Modulation LFO timing (instrument zones set absolute, preset zones add).
-            case SFGenerator.DelayModLFO:
-                if (isPreset) _modLfoDelayTimecents = (short)(_modLfoDelayTimecents + val);
-                else _modLfoDelayTimecents = val;
-                break;
-            case SFGenerator.FreqModLFO:
-                if (isPreset) _modLfoFreqCents = (short)(_modLfoFreqCents + val);
-                else _modLfoFreqCents = val;
-                break;
-
-            // Vibrato LFO timing.
-            case SFGenerator.DelayVibLFO:
-                if (isPreset) _vibLfoDelayTimecents = (short)(_vibLfoDelayTimecents + val);
-                else _vibLfoDelayTimecents = val;
-                break;
-            case SFGenerator.FreqVibLFO:
-                if (isPreset) _vibLfoFreqCents = (short)(_vibLfoFreqCents + val);
-                else _vibLfoFreqCents = val;
-                break;
-
-            // Modulation routing
-            case SFGenerator.ModEnvToPitch:
-                if (isPreset)
-                    _modEnvToPitch += val;
-                else
-                    _modEnvToPitch = val;
-                break;
-            case SFGenerator.ModEnvToFilterFc:
-                if (isPreset)
-                    _modEnvToFilterFc += val;
-                else
-                    _modEnvToFilterFc = val;
-                break;
-            case SFGenerator.ModLfoToPitch:
-                if (isPreset)
-                    _modLfoToPitch += val;
-                else
-                    _modLfoToPitch = val;
-                break;
-            case SFGenerator.ModLfoToFilterFc:
-                if (isPreset)
-                    _modLfoToFilterFc += val;
-                else
-                    _modLfoToFilterFc = val;
-                break;
-            case SFGenerator.ModLfoToVolume:
-                if (isPreset)
-                    _modLfoToVolume += val;
-                else
-                    _modLfoToVolume = val;
-                break;
-            case SFGenerator.VibLfoToPitch:
-                if (isPreset)
-                    _vibLfoToPitch += val;
-                else
-                    _vibLfoToPitch = val;
-                break;
-        }
-    }
+    // ── Post-Configure mutators (called immediately after NoteOn) ────
 
     /// <summary>
-    /// Applies a per-drum-key override (GS NRPN 0x18..0x1E) after Voice.Configure.
-    /// Each field of the override is optional — null means "leave whatever the SF2
-    /// zone configured alone". Called by Synthesizer at NoteOn on a drum channel.
+    /// Applies a per-drum-key override (GS NRPN 0x18..0x1E). Fields are optional;
+    /// null = leave the zone-authored value alone.
     /// </summary>
     public void ApplyDrumOverride(DrumKeyOverride ov)
     {
-        if (ov.CoarseTune.HasValue) _coarseTune += ov.CoarseTune.Value;
-        if (ov.FineTune.HasValue) _fineTune += ov.FineTune.Value;
+        if (ov.CoarseTune.HasValue) _coarseTuneSemitones += ov.CoarseTune.Value;
+        if (ov.FineTune.HasValue) _fineTuneCents += ov.FineTune.Value;
         if (ov.Level.HasValue && ov.Level.Value < 127)
         {
-            // GS drum level: 127 = unity, decreasing values attenuate. Convert to cB.
-            // attenuation_cB = 200 * log10(127/v). At v=64 ≈ +60 cB (~6 dB cut).
+            // GS drum level: 127 = unity; lower values attenuate logarithmically.
+            // 20 * log10(127/v) dB matches the existing behavior.
             var v = Math.Max(1, (int)ov.Level.Value);
-            _attenuation += 200.0 * Math.Log10(127.0 / v);
+            _attenuationDb += 20.0 * Math.Log10(127.0 / v);
         }
         if (ov.Pan.HasValue && ov.Pan.Value != 0)
         {
-            // GS pan 1..127 maps to -500..+500 SF2 units (random=0 left alone here).
-            _pan = (ov.Pan.Value - 64) * (500.0 / 63.0);
+            // GS pan 1..127 maps to -1..+1 normalized (1=hard left, 64=center, 127=hard right).
+            _panNormalized = (ov.Pan.Value - 64) / 63.0;
         }
-        if (ov.ReverbSend.HasValue)
-            _reverbSend = ov.ReverbSend.Value / 127.0;
-        if (ov.ChorusSend.HasValue)
-            _chorusSend = ov.ChorusSend.Value / 127.0;
-
-        // Re-derive pitch increment so coarse/fine tune deltas take effect.
-        UpdatePitchIncrement(0);
+        if (ov.ReverbSend.HasValue) _reverbSend = ov.ReverbSend.Value / 127.0;
+        if (ov.ChorusSend.HasValue) _chorusSend = ov.ChorusSend.Value / 127.0;
     }
 
     /// <summary>
-    /// Applies GM2 sound-controller adjustments to the vibrato LFO. Called by
-    /// Synthesizer right after Configure when CC 76 (rate) or CC 78 (delay) is non-default.
-    /// Both deltas are signed offsets in SF2 units (cents for freq, timecents for delay).
+    /// Applies GM2 sound-controller adjustments to the vibrato LFO. Both deltas
+    /// are domain-typed: <paramref name="freqOctavesDelta"/> in octaves
+    /// (positive = faster) and <paramref name="delaySecondsDelta"/> as a time
+    /// offset (positive = longer delay).
     /// </summary>
-    public void AdjustVibratoLfo(short freqCentsDelta, short delayTimecentsDelta)
+    public void AdjustVibratoLfo(double freqOctavesDelta, double delaySecondsDelta)
     {
-        _vibLfoFreqCents = (short)(_vibLfoFreqCents + freqCentsDelta);
-        _vibLfoDelayTimecents = (short)(_vibLfoDelayTimecents + delayTimecentsDelta);
-        _vibratoLfo.SetParameters(_vibLfoDelayTimecents, _vibLfoFreqCents);
+        _vibLfoFrequencyHz *= Math.Pow(2.0, freqOctavesDelta);
+        _vibLfoDelaySeconds = Math.Max(0, _vibLfoDelaySeconds + delaySecondsDelta);
+        _vibratoLfo.SetParameters(_vibLfoDelaySeconds, _vibLfoFrequencyHz);
     }
 
     /// <summary>
-    /// Starts a portamento glide. The voice begins at <paramref name="startCents"/>
-    /// offset from its target pitch and decays linearly to 0 over
-    /// <paramref name="timeSeconds"/>. Called by Synthesizer right after Configure when
-    /// CC 65 is on (or CC 84 was sent) at NoteOn.
+    /// Starts a portamento glide. Voice's pitch begins offset by
+    /// <paramref name="startCents"/> and decays linearly to 0 over
+    /// <paramref name="timeSeconds"/>.
     /// </summary>
     public void StartPortamento(double startCents, double timeSeconds)
     {
         _portamentoCents = startCents;
         var totalSamples = timeSeconds * _sampleRate;
-        _portamentoStepPerSample = totalSamples > 0 ? Math.Abs(startCents) / totalSamples : Math.Abs(startCents);
+        _portamentoStepPerSample = totalSamples > 0
+            ? Math.Abs(startCents) / totalSamples
+            : Math.Abs(startCents);
     }
 
     /// <summary>
-    /// Adds an extra resonance offset (centibels) on top of whatever the SF2 generators
-    /// configured. Called by Synthesizer right after Configure when CC 71 is non-default
-    /// at NoteOn — live CC 71 changes after that point do NOT retro-modify this voice.
+    /// Bakes an additional resonance offset onto the filter (CC 71 at NoteOn).
+    /// Live CC 71 changes after this point don't retrofit.
     /// </summary>
-    public void ApplyExtraResonance(double cb)
+    public void ApplyExtraResonance(double db)
     {
-        _filterResonance = (short)Math.Clamp(_filterResonance + cb, 0, 960);
-        _filter.SetParameters(_filterCutoff, _filterResonance);
+        _filterBaseResonanceDb += db;
+        _filter.SetParameters(_filterBaseCutoffHz, _filterBaseResonanceDb);
+        _hasFilter = _filter.Enabled;
     }
 
     /// <summary>
-    /// Applies full volume envelope parameters.
+    /// Scales envelope time stages by 2^(offsetOctaves). Applied by Synthesizer
+    /// for GM2 CC 72 (release), CC 73 (attack), CC 75 (decay). Affects both the
+    /// volume and modulation envelopes uniformly per RP-021 convention.
     /// </summary>
-    public void SetVolumeEnvelope(
-        short delay, short attack, short hold, short decay,
-        short sustain, short release, short keynumToHold = 0, short keynumToDecay = 0)
+    public void ApplyEnvelopeTimeScaling(double attackOctaves, double decayOctaves, double releaseOctaves)
     {
-        _volumeEnvelope.SetParameters(delay, attack, hold, decay, sustain, release, keynumToHold, keynumToDecay);
+        // The envelopes' SetParameters methods take absolute seconds; rather than
+        // re-derive from the zone (which Voice doesn't retain), expose a scale
+        // method on Envelope so existing state gets multiplied in place.
+        _volumeEnvelope.ScaleStageTimes(attackOctaves, decayOctaves, releaseOctaves);
+        if (_hasModulationEnvelope)
+            _modulationEnvelope.ScaleStageTimes(attackOctaves, decayOctaves, releaseOctaves);
     }
 
-    /// <summary>
-    /// Applies full modulation envelope parameters.
-    /// </summary>
-    public void SetModulationEnvelope(
-        short delay, short attack, short hold, short decay,
-        short sustain, short release, short keynumToHold = 0, short keynumToDecay = 0)
-    {
-        _modulationEnvelope.SetParameters(delay, attack, hold, decay, sustain, release, keynumToHold, keynumToDecay);
-    }
+    // ── Release / kill ────────────────────────────────────────────────
 
-    /// <summary>
-    /// Releases the voice (note off).
-    /// </summary>
     public void Release()
     {
-        if (_state != VoiceState.Playing)
-            return;
-
+        if (_state != VoiceState.Playing) return;
         _state = VoiceState.Released;
         _volumeEnvelope.Release();
-        _modulationEnvelope.Release();
-
-        // If loop until release, continue to end
-        if (_loopMode == LoopMode.LoopUntilRelease)
-            _loopMode = LoopMode.NoLoop;
+        if (_hasModulationEnvelope) _modulationEnvelope.Release();
+        if (_loopMode == IRLoopMode.UntilRelease) _loopMode = IRLoopMode.None;
     }
 
-    /// <summary>
-    /// Forces the voice to stop immediately.
-    /// </summary>
-    public void Kill()
-    {
-        _state = VoiceState.Free;
-    }
+    public void Kill() => _state = VoiceState.Free;
+
+    // ── Render ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Updates pitch with pitch bend modulation.
+    /// Per-block render. Evaluates the zone's routes once against the channel
+    /// state to compute additive contributions to each modulation destination,
+    /// then runs the per-sample loop applying envelopes, LFOs, filter, gain,
+    /// and pan to the output buffers.
     /// </summary>
-    public void UpdatePitchIncrement(double pitchBendCents)
-    {
-        // Calculate pitch in cents from root
-        var pitchCents = (_keyNumber - _rootKey) * _scaleTuning;
-        pitchCents += _coarseTune * 100;
-        pitchCents += _fineTune;
-        pitchCents += _pitchCorrection;
-        pitchCents += pitchBendCents;
-
-        // Sample increment in source frames per output frame:
-        // ratio = 2^(cents/1200) * (sourceRate / outputRate)
-        var ratio = Math.Pow(2.0, pitchCents / 1200.0) * _baseSampleRate / _sampleRate;
-        _increment = ratio;
-    }
-
-    /// <summary>
-    /// Generates audio samples into the output buffer.
-    /// </summary>
-    /// <param name="leftBuffer">Left channel output buffer</param>
-    /// <param name="rightBuffer">Right channel output buffer</param>
-    /// <param name="pitchBendCents">Current pitch bend in cents</param>
-    /// <param name="channelVolume">Channel volume (0-1)</param>
-    /// <param name="channelExpression">Channel expression (0-1)</param>
+    /// <param name="extraAttenuationDb">Synth-level contribution that isn't a
+    /// route (soft pedal CC 67, CC 92 tremolo). Added to the per-block
+    /// attenuation budget.</param>
+    /// <param name="nonBendPitchCents">Synth-level pitch offset that isn't pitch
+    /// bend (channel fine/coarse tune, master tune, master key shift).</param>
+    /// <param name="balanceLeft">CC 8 left-channel gain multiplier (0..1).</param>
+    /// <param name="balanceRight">CC 8 right-channel gain multiplier (0..1).</param>
+    /// <param name="extraVibLfoDepthCents">CC 77 bipolar contribution to
+    /// vibrato depth (not a route — bipolar-around-64 doesn't fit the standard
+    /// route source model).</param>
+    /// <param name="globalReverbFloor">Minimum reverb send applied to every
+    /// voice regardless of zone-authored level (mirrors fluidsynth's
+    /// <c>synth.reverb.level</c>).</param>
     public void Process(
         Span<float> leftBuffer,
         Span<float> rightBuffer,
         Span<float> reverbSendBuffer,
         Span<float> chorusSendBuffer,
-        double pitchBendCents,
-        double channelVolume,
-        double channelExpression,
-        float globalReverbFloor = 0f,
-        float globalChorusFloor = 0f,
-        double channelVibLfoDepthCents = 0.0,
-        double channelPan = 0.0,
-        double extraAttenuationCb = 0.0,
-        double channelFilterCutoffOffsetCents = 0.0,
+        ChannelState channelState,
+        double extraAttenuationDb = 0,
+        double nonBendPitchCents = 0,
         float balanceLeft = 1f,
-        float balanceRight = 1f)
+        float balanceRight = 1f,
+        double extraVibLfoDepthCents = 0,
+        float globalReverbFloor = 0f,
+        float globalChorusFloor = 0f)
     {
-        if (_state == VoiceState.Free || _sampleData == null)
-            return;
+        if (_state == VoiceState.Free || _sampleSource == null) return;
 
-        // Calculate pan gains. The SF2-generator pan (_pan, -500..500) and the MIDI
-        // channel pan (channelPan, -500..500 already in the same units after CC10
-        // scaling) sum and then clamp — matches GM2 behavior where CC10 nudges a
-        // voice's authored pan rather than overriding it.
-        // Pan: -500 = full left, 0 = center, 500 = full right
-        var effectivePan = Math.Clamp(_pan + channelPan, -500.0, 500.0);
-        var panNormalized = Math.Clamp(effectivePan / 500.0, -1.0, 1.0);
-        // CC 8 Balance is folded in as a post-pan multiplier on each side.
-        var leftGain = Math.Sqrt(0.5 * (1.0 - panNormalized)) * balanceLeft;
-        var rightGain = Math.Sqrt(0.5 * (1.0 + panNormalized)) * balanceRight;
+        RouteEvaluator.Evaluate(_routes, _velocity, _keyNumber, _polyPressure,
+                                channelState, out var contrib);
 
-        // Hoist send scales — clamp negatives (spec: "0 or less" = no send).
-        // The global floor matches fluidsynth's synth.reverb.level behaviour: every voice
-        // gets at least the floor amount, even if its SF2 patch specifies no send.
-        var reverbSend = Math.Max(globalReverbFloor, (float)Math.Max(0.0, _reverbSend));
-        var chorusSend = Math.Max(globalChorusFloor, (float)Math.Max(0.0, _chorusSend));
+        // Effective per-block values: zone base + route contribution.
+        double effectiveAttenuationDb = _attenuationDb + contrib.AttenuationDb + extraAttenuationDb;
+        double effectivePan = Math.Clamp(_panNormalized + contrib.PanNormalized, -1.0, 1.0);
+        double effectiveVibLfoDepthCents =
+            _vibLfoPitchDepthCents + contrib.VibratoLfoPitchDepthCents + extraVibLfoDepthCents;
+        double effectiveModLfoPitchDepthCents = _modLfoPitchDepthCents + contrib.ModulationLfoPitchDepthCents;
+        double effectiveModLfoVolumeDepthDb = _modLfoVolumeDepthDb + contrib.ModulationLfoVolumeDepthDb;
+        double effectiveModLfoFilterDepthCents = _modLfoFilterDepthCents + contrib.ModulationLfoFilterDepthCents;
+        double effectiveModEnvFilterDepthCents = _modEnvFilterDepthCents + contrib.ModulationEnvelopeToFilterCents;
+        double effectiveModEnvPitchDepthCents = _modEnvPitchDepthCents + contrib.ModulationEnvelopeToPitchCents;
 
-        // SF2 default modulators 3, 4 & 5 add to VibLfoToPitch at process time so live
-        // CC1 / channel-pressure / poly-pressure sweeps affect sustained notes, not just
-        // newly-triggered ones. The patch-specified _vibLfoToPitch is summed in unchanged.
-        var effectiveVibLfoToPitch =
-            _vibLfoToPitch + channelVibLfoDepthCents + _polyPressureVibDepthCents;
+        double effectiveReverbSend = Math.Max(0.0, _reverbSend + contrib.ReverbSendAmount);
+        double effectiveChorusSend = Math.Max(0.0, _chorusSend + contrib.ChorusSendAmount);
+        float reverbSendScale = Math.Max(globalReverbFloor, (float)effectiveReverbSend);
+        float chorusSendScale = Math.Max(globalChorusFloor, (float)effectiveChorusSend);
 
-        // Process each sample
-        for (var i = 0; i < leftBuffer.Length; i++)
+        // Equal-power pan + CC 8 balance.
+        var leftGain = Math.Sqrt(0.5 * (1.0 - effectivePan)) * balanceLeft;
+        var rightGain = Math.Sqrt(0.5 * (1.0 + effectivePan)) * balanceRight;
+
+        // Base pitch in cents (not including bend or modulation — those add per sample).
+        double baseStaticPitchCents =
+            (_keyNumber - _rootKey) * _scaleTuningCentsPerKey
+            + _coarseTuneSemitones * 100.0
+            + _fineTuneCents
+            + _pitchCorrectionCents
+            + nonBendPitchCents
+            + contrib.PitchCents;
+
+        // Filter resonance can be modulated per block; cutoff changes per sample.
+        double filterResonanceDb = _filterBaseResonanceDb + contrib.FilterResonanceDb;
+        if (_hasFilter && contrib.FilterResonanceDb != 0)
+            _filter.SetParameters(_filterBaseCutoffHz, filterResonanceDb);
+
+        for (int i = 0; i < leftBuffer.Length; i++)
         {
-            // Process envelopes and LFOs
-            var volEnv = _volumeEnvelope.Process();
-            var modEnv = _modulationEnvelope.Process();
-            var modLfo = _modulationLfo.Process();
-            var vibLfo = _vibratoLfo.Process();
+            double volEnv = _volumeEnvelope.Process();
+            double modEnv = _hasModulationEnvelope ? _modulationEnvelope.Process() : 0.0;
+            double vibLfo = _vibratoLfo.Process();
+            double modLfo = _hasModulationLfo ? _modulationLfo.Process() : 0.0;
 
-            // Check if voice has finished
             if (_volumeEnvelope.IsFinished)
             {
                 _state = VoiceState.Free;
                 return;
             }
 
-            // Calculate pitch modulation
-            var pitchMod = pitchBendCents;
-            pitchMod += modEnv * _modEnvToPitch;
-            pitchMod += modLfo * _modLfoToPitch;
-            pitchMod += vibLfo * effectiveVibLfoToPitch;
+            // Pitch modulation (additive cents).
+            double pitchMod = vibLfo * effectiveVibLfoDepthCents
+                            + modLfo * effectiveModLfoPitchDepthCents
+                            + modEnv * effectiveModEnvPitchDepthCents;
 
-            // Portamento glide: decay toward 0 each sample. Stop when the sign flips.
             if (_portamentoCents != 0.0)
             {
                 pitchMod += _portamentoCents;
@@ -763,48 +535,35 @@ public sealed class Voice
                 }
             }
 
-            // Per-sample pitch increment with modulation
-            var pitchCents = (_keyNumber - _rootKey) * _scaleTuning;
-            pitchCents += _coarseTune * 100 + _fineTune + _pitchCorrection + pitchMod;
-            var increment = Math.Pow(2.0, pitchCents / 1200.0) * _baseSampleRate / _sampleRate;
+            double pitchCents = baseStaticPitchCents + pitchMod;
+            double increment = Math.Pow(2.0, pitchCents / 1200.0) * _baseSampleRate / _sampleRate;
 
-            // Get interpolated sample (already normalized to [-1, 1])
-            var sample = GetInterpolatedSample();
+            double sample = GetInterpolatedSample();
 
-            // Apply filter with modulation
-            if (_filter.Enabled)
+            if (_hasFilter)
             {
-                // CC 74 (brightness) folds in here as a per-channel live cutoff offset,
-                // on top of modEnv and modLfo routings. Cents are additive in log space.
-                var filterMod = modEnv * _modEnvToFilterFc + modLfo * _modLfoToFilterFc
-                                                           + channelFilterCutoffOffsetCents;
-                _filter.ModulateCutoff(filterMod);
+                double filterCents = modEnv * effectiveModEnvFilterDepthCents
+                                   + modLfo * effectiveModLfoFilterDepthCents
+                                   + contrib.FilterCutoffCents;
+                _filter.ModulateCutoff(filterCents);
                 sample = _filter.Process(sample);
             }
 
-            // Calculate volume with envelope and modulation
-            var volumeMod = modLfo * _modLfoToVolume; // centibels
-            var totalAttenuation = _attenuation + _velocityAttenuation + volumeMod + extraAttenuationCb;
-            var gain = Math.Pow(10.0, -totalAttenuation / 200.0);
-            gain *= volEnv;
-            gain *= channelVolume * channelExpression;
+            // Gain: zone attenuation + route contribution + envelope + LFO volume mod.
+            double volumeMod = modLfo * effectiveModLfoVolumeDepthDb;
+            double totalAttenuationDb = effectiveAttenuationDb + volumeMod;
+            double gain = Math.Pow(10.0, -totalAttenuationDb / 20.0) * volEnv;
 
-            // Apply gain and pan (sample is already normalized — no /32768 needed)
-            var outputSample = (float)(sample * gain);
+            float outputSample = (float)(sample * gain);
             leftBuffer[i] += outputSample * (float)leftGain;
             rightBuffer[i] += outputSample * (float)rightGain;
 
-            // Effect sends: post-attenuation/envelope mono signal, scaled by per-voice
-            // send amount. The global reverb/chorus instances mix their wet result back
-            // into the main L/R buffer after all voices have been processed.
-            if (reverbSend > 0f) reverbSendBuffer[i] += outputSample * reverbSend;
-            if (chorusSend > 0f) chorusSendBuffer[i] += outputSample * chorusSend;
+            if (reverbSendScale > 0f) reverbSendBuffer[i] += outputSample * reverbSendScale;
+            if (chorusSendScale > 0f) chorusSendBuffer[i] += outputSample * chorusSendScale;
 
-            // Advance position
             _position += increment;
 
-            // Handle looping
-            if (_loopMode != LoopMode.NoLoop && _position >= _loopEnd)
+            if (_loopMode != IRLoopMode.None && _position >= _loopEnd)
             {
                 _position = _loopStart + (_position - _loopEnd);
             }
@@ -816,72 +575,96 @@ public sealed class Voice
         }
     }
 
+    // ── Sample reading: scratch-buffered interpolation ───────────────
+
     /// <summary>
-    /// Gets an interpolated sample value at the current position using 7-point
-    /// windowed-sinc interpolation. This is the standard upgrade over Hermite for
-    /// SF2 synthesis: preserves substantially more HF content (much closer to the
-    /// ideal anti-aliased sample-rate conversion), at the cost of 7 multiplies per
-    /// output sample instead of 3. Coefficients come from <see cref="SincInterpolator"/>.
+    /// Returns the interpolated sample value at the current fractional position
+    /// using 7-tap windowed-sinc. Reads through the scratch buffer; refills the
+    /// scratch from <see cref="ISampleSource"/> when the interpolation window
+    /// straddles its edge.
     /// </summary>
     private double GetInterpolatedSample()
     {
-        var index = (int)_position;
-        var frac = _position - index;
+        int idx = (int)_position;
+        double frac = _position - idx;
 
-        if (index < 0 || index >= _sampleData!.Length)
-            return 0;
-
-        // Inlined sinc evaluation: fetch the 7-tap coefficient slice for this fractional
-        // position, multiply by 7 neighbouring sample values (with loop/boundary handling),
-        // sum. Avoids a per-sample delegate allocation that would otherwise dominate cost.
-        var fIdx = (int)(frac * SincInterpolator.FractionSlots);
+        int fIdx = (int)(frac * SincInterpolator.FractionSlots);
         if (fIdx >= SincInterpolator.FractionSlots) fIdx = SincInterpolator.FractionSlots - 1;
         var coeffs = SincInterpolator.Coefficients;
-        var baseOff = fIdx * SincInterpolator.Width;
+        int baseOff = fIdx * SincInterpolator.Width;
 
-        // HalfWidth = 3 → taps at index-3, index-2, …, index+3.
-        return coeffs[baseOff + 0] * ReadSampleAt(index - 3)
-             + coeffs[baseOff + 1] * ReadSampleAt(index - 2)
-             + coeffs[baseOff + 2] * ReadSampleAt(index - 1)
-             + coeffs[baseOff + 3] * _sampleData[index]
-             + coeffs[baseOff + 4] * ReadSampleAt(index + 1)
-             + coeffs[baseOff + 5] * ReadSampleAt(index + 2)
-             + coeffs[baseOff + 6] * ReadSampleAt(index + 3);
+        return coeffs[baseOff + 0] * ReadSampleAt(idx - 3)
+             + coeffs[baseOff + 1] * ReadSampleAt(idx - 2)
+             + coeffs[baseOff + 2] * ReadSampleAt(idx - 1)
+             + coeffs[baseOff + 3] * ReadSampleAt(idx + 0)
+             + coeffs[baseOff + 4] * ReadSampleAt(idx + 1)
+             + coeffs[baseOff + 5] * ReadSampleAt(idx + 2)
+             + coeffs[baseOff + 6] * ReadSampleAt(idx + 3);
     }
 
     /// <summary>
-    /// Reads one sample at an absolute frame index, honouring loop boundaries.
-    /// Returns 0 for indices before the buffer start or beyond the sample end
-    /// (when not looping).
+    /// Reads one frame at a sample-relative frame index, going through the
+    /// scratch buffer for cache hits and refilling when needed. Honors loop
+    /// boundaries; returns 0 before the buffer start.
     /// </summary>
     private double ReadSampleAt(int idx)
     {
-        // Callers already guard on _sampleData being non-null (only invoked from inside
-        // the per-sample loop in Process, which is itself guarded). Capture once into a
-        // local so the compiler can prove non-null for the rest of the method.
-        var data = _sampleData!;
-
         if (idx < 0)
-            // Before the buffer start — clamp to the first valid sample. The interpolator
-            // uses this for the left neighbour at the very start of a sample.
-            return data[0];
-
-        var looping = _loopMode != LoopMode.NoLoop;
-        var boundary = looping ? _loopEnd : _sampleEnd;
-
-        if (idx < boundary && idx < data.Length)
-            return data[idx];
-
-        if (looping)
         {
-            // Past loop end — wrap. (idx - loopEnd) tells us how far past we are.
-            var loopLen = _loopEnd - _loopStart;
-            if (loopLen == 0) return data[_loopStart];
-            var offset = (uint)(idx - _loopEnd) % loopLen;
-            return data[_loopStart + offset];
+            // Before the first valid frame — clamp to frame 0 (interpolator left edge).
+            return ReadFrameDirect(_sampleStart);
         }
 
-        // Past the end of a non-looped sample — clamp to last valid frame.
-        return data[Math.Min((int)_sampleEnd - 1, data.Length - 1)];
+        bool looping = _loopMode != IRLoopMode.None;
+        long boundary = looping ? _loopEnd : _sampleEnd;
+        long absoluteFrame;
+
+        if (idx < boundary)
+        {
+            absoluteFrame = idx;
+        }
+        else if (looping)
+        {
+            long loopLen = _loopEnd - _loopStart;
+            if (loopLen <= 0) return ReadFrameDirect(_loopStart);
+            long offset = (idx - _loopEnd) % loopLen;
+            absoluteFrame = _loopStart + offset;
+        }
+        else
+        {
+            // Past the end of a non-looped sample — clamp to last valid frame.
+            absoluteFrame = Math.Min((long)idx, _sampleEnd - 1);
+        }
+
+        return ReadFrameDirect(absoluteFrame);
+    }
+
+    /// <summary>
+    /// Reads one frame at an exact sample-relative frame index via the scratch
+    /// buffer. Refills the scratch around <paramref name="frame"/> if it falls
+    /// outside the currently-cached range.
+    /// </summary>
+    private double ReadFrameDirect(long frame)
+    {
+        long local = frame - _scratchBaseFrame;
+        if (local < 0 || local >= _scratchFramesAvailable)
+        {
+            RefillScratch(frame);
+            local = frame - _scratchBaseFrame;
+            if (local < 0 || local >= _scratchFramesAvailable) return 0.0;
+        }
+        return _scratch[(int)local];
+    }
+
+    /// <summary>
+    /// Refills the scratch buffer centered on <paramref name="frame"/>. Aims to
+    /// put the read point about a quarter of the way into the buffer so most of
+    /// the buffer remains ahead for the playback advance.
+    /// </summary>
+    private void RefillScratch(long frame)
+    {
+        long fillStart = Math.Max(0, frame - ScratchSize / 4);
+        _scratchBaseFrame = fillStart;
+        _scratchFramesAvailable = _sampleSource!.ReadFrames(_sampleId, fillStart, _scratch.AsSpan());
     }
 }

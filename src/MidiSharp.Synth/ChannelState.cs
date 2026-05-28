@@ -372,4 +372,48 @@ public sealed class ChannelState
         Program = 0;
         Reset();
     }
+
+    /// <summary>
+    /// Returns the current value of the given MIDI continuous controller as a
+    /// 0..127 byte. Used by the modulation route evaluator when a route's
+    /// source is <c>ChannelController(n)</c>. Controllers that are stored as
+    /// booleans (sustain/sostenuto/portamento on/off) return 127 when on, 0 when
+    /// off; unknown / unstored controllers return 0.
+    /// </summary>
+    public byte GetCC(int controller)
+    {
+        switch (controller)
+        {
+            case 0: return BankMsb;
+            case 1: return Modulation;
+            case 5: return PortamentoTimeCc;
+            case 7: return Volume;
+            case 8: return Balance;
+            case 10: return Pan;
+            case 11: return Expression;
+            case 32: return BankLsb;
+            case 64: return (byte)(Sustain ? 127 : 0);
+            case 65: return (byte)(PortamentoOn ? 127 : 0);
+            case 66: return (byte)(Sostenuto ? 127 : 0);
+            case 67: return SoftPedal;
+            case 71: return FilterResonanceCc;
+            case 72: return ReleaseTimeCc;
+            case 73: return AttackTimeCc;
+            case 74: return FilterCutoffCc;
+            case 75: return DecayTimeCc;
+            case 76: return VibratoRateCc;
+            case 77: return VibratoDepthCc;
+            case 78: return VibratoDelayCc;
+            case 80: return Gp5;
+            case 81: return Gp6;
+            case 82: return Gp7;
+            case 83: return Gp8;
+            case 91: return ReverbSendCc;
+            case 92: return TremoloDepth;
+            case 93: return ChorusSendCc;
+            case 94: return DetuneDepth;
+            case 95: return PhaserDepth;
+            default: return 0;
+        }
+    }
 }

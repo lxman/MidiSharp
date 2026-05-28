@@ -52,38 +52,36 @@ public sealed class LowPassFilter
     }
 
     /// <summary>
-    /// Sets filter parameters from SF2 generator values.
+    /// Sets filter parameters from SF2 generator values. Delegates to the
+    /// domain-typed overload after converting absolute cents → Hz and
+    /// centibels → dB.
     /// </summary>
     /// <param name="cutoffCents">Cutoff frequency in absolute cents (1500 = 100Hz to 13500 = 20kHz)</param>
     /// <param name="resonanceCentibels">Resonance in centibels (0 to 960)</param>
     public void SetParameters(short cutoffCents, short resonanceCentibels)
     {
-        // Convert cents to Hz: 8.176 * 2^(cents/1200)
-        _cutoffFrequency = 8.176 * Math.Pow(2.0, cutoffCents / 1200.0);
-
-        // Clamp to reasonable range
-        _cutoffFrequency = Math.Clamp(_cutoffFrequency, 20, _sampleRate * 0.45);
-
-        // Convert centibels to Q factor
-        // SF2: 0 cb = no resonance (Q=1), 960 cb = max resonance (Q~96)
-        // Q = 10^(cb/200)
-        _resonance = Math.Pow(10.0, resonanceCentibels / 200.0);
-        _resonance = Math.Clamp(_resonance, 0.5, 40.0);
-
-        // Enable filter if cutoff is below Nyquist
-        _enabled = _cutoffFrequency < _sampleRate * 0.45;
-
-        if (_enabled)
-            CalculateCoefficients();
+        SetParameters(
+            cutoffHz: 8.176 * Math.Pow(2.0, cutoffCents / 1200.0),
+            resonanceDb: resonanceCentibels / 10.0);
     }
 
     /// <summary>
-    /// Sets filter parameters directly.
+    /// Sets filter parameters in domain-natural units. Preferred over the
+    /// SF2-unit overload going forward.
     /// </summary>
-    public void SetParameters(double cutoffHz, double q)
+    /// <param name="cutoffHz">Cutoff frequency in Hz.</param>
+    /// <param name="resonanceDb">Resonance peak height in dB (0 = no resonance).</param>
+    public void SetParameters(double cutoffHz, double resonanceDb)
     {
         _cutoffFrequency = Math.Clamp(cutoffHz, 20, _sampleRate * 0.45);
-        _resonance = Math.Clamp(q, 0.5, 40.0);
+
+        // SF2 spec §8.1.3: InitialFilterQ is "resonance height in centibels".
+        // Q-factor mapping: Q = 10^(dB/20), matching the cb-based formula
+        // (Q = 10^(cb/200) = 10^((cb/10)/20)) so behavior is identical when
+        // the same physical resonance is expressed in either unit.
+        _resonance = Math.Pow(10.0, resonanceDb / 20.0);
+        _resonance = Math.Clamp(_resonance, 0.5, 40.0);
+
         _enabled = _cutoffFrequency < _sampleRate * 0.45;
 
         if (_enabled)

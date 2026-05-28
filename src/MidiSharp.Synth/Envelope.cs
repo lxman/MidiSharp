@@ -86,7 +86,9 @@ public sealed class Envelope
     }
 
     /// <summary>
-    /// Sets envelope parameters from SF2 generator values.
+    /// Sets envelope parameters from SF2 generator values. Delegates to the
+    /// domain-typed overload after converting timecents → seconds and centibels
+    /// → linear amplitude.
     /// </summary>
     /// <param name="delayTimecents">Delay time in timecents (-12000 to 5000)</param>
     /// <param name="attackTimecents">Attack time in timecents (-12000 to 8000)</param>
@@ -106,14 +108,82 @@ public sealed class Envelope
         short keynumToHold = 0,
         short keynumToDecay = 0)
     {
-        _delaySamples = TimecentsToSamples(delayTimecents);
-        _attackSamples = TimecentsToSamples(attackTimecents);
-        _holdSamples = TimecentsToSamples(holdTimecents);
-        _decaySamples = TimecentsToSamples(decayTimecents);
-        _sustainLevel = CentibelsToLinear(sustainCentibels);
-        _releaseSamples = TimecentsToSamples(releaseTimecents);
-        _keynumToHold = keynumToHold;
-        _keynumToDecay = keynumToDecay;
+        SetParameters(
+            delaySeconds: TimecentsToSeconds(delayTimecents),
+            attackSeconds: TimecentsToSeconds(attackTimecents),
+            holdSeconds: TimecentsToSeconds(holdTimecents),
+            decaySeconds: TimecentsToSeconds(decayTimecents),
+            sustainLevel: CentibelsToLinear(sustainCentibels),
+            releaseSeconds: TimecentsToSeconds(releaseTimecents),
+            keynumToHoldCentsPerKey: keynumToHold,
+            keynumToDecayCentsPerKey: keynumToDecay);
+    }
+
+    /// <summary>
+    /// Sets envelope parameters in domain-natural units. This is the preferred
+    /// entry point — SF2's timecent / centibel encodings should be converted
+    /// at the boundary (loader) rather than carried into the synth.
+    /// </summary>
+    /// <param name="delaySeconds">Delay before attack starts. 0 = no delay phase.</param>
+    /// <param name="attackSeconds">Attack time (0 → peak). 0 = instantaneous attack.</param>
+    /// <param name="holdSeconds">Time held at peak before decay begins.</param>
+    /// <param name="decaySeconds">Decay time (peak → sustain). 0 = jump directly to sustain.</param>
+    /// <param name="sustainLevel">Sustain level as a 0..1 linear amplitude multiplier.</param>
+    /// <param name="releaseSeconds">Release time (current → 0). 0 = instant cutoff.</param>
+    /// <param name="keynumToHoldCentsPerKey">Cents of hold-time offset per key away from middle C.</param>
+    /// <param name="keynumToDecayCentsPerKey">Cents of decay-time offset per key away from middle C.</param>
+    public void SetParameters(
+        double delaySeconds,
+        double attackSeconds,
+        double holdSeconds,
+        double decaySeconds,
+        double sustainLevel,
+        double releaseSeconds,
+        double keynumToHoldCentsPerKey = 0,
+        double keynumToDecayCentsPerKey = 0)
+    {
+        _delaySamples = SecondsToSamples(delaySeconds);
+        _attackSamples = SecondsToSamples(attackSeconds);
+        _holdSamples = SecondsToSamples(holdSeconds);
+        _decaySamples = SecondsToSamples(decaySeconds);
+        _sustainLevel = sustainLevel;
+        _releaseSamples = SecondsToSamples(releaseSeconds);
+        _keynumToHold = keynumToHoldCentsPerKey;
+        _keynumToDecay = keynumToDecayCentsPerKey;
+    }
+
+    private int SecondsToSamples(double seconds)
+    {
+        if (seconds <= 0) return 0;
+        return Math.Max(1, (int)(seconds * _sampleRate));
+    }
+
+    /// <summary>
+    /// Scales the attack, decay, and release stage times in place by powers
+    /// of two (octaves). Used by Synthesizer for GM2 sound-controller CCs
+    /// 72/73/75 which adjust per-channel envelope times. Hold and delay
+    /// are unaffected.
+    /// </summary>
+    public void ScaleStageTimes(double attackOctaves, double decayOctaves, double releaseOctaves)
+    {
+        if (attackOctaves != 0) _attackSamples = ScaleSamples(_attackSamples, attackOctaves);
+        if (decayOctaves != 0) _decaySamples = ScaleSamples(_decaySamples, decayOctaves);
+        if (releaseOctaves != 0) _releaseSamples = ScaleSamples(_releaseSamples, releaseOctaves);
+    }
+
+    private int ScaleSamples(int samples, double octaves)
+    {
+        if (samples <= 0) return 0;
+        double scaled = samples * Math.Pow(2.0, octaves);
+        if (scaled <= 0) return 0;
+        if (scaled >= int.MaxValue) return int.MaxValue;
+        return Math.Max(1, (int)scaled);
+    }
+
+    private static double TimecentsToSeconds(short timecents)
+    {
+        if (timecents <= -12000) return 0;
+        return Math.Pow(2.0, timecents / 1200.0);
     }
 
     /// <summary>

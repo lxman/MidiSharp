@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
-using SF2.Net;
+using MidiSharp.SoundBank;
+using IRBank = MidiSharp.SoundBank.SoundBank;
 
 namespace MidiSharp.Synth;
 
@@ -18,8 +19,7 @@ public sealed class Synthesizer
     private readonly int _sampleRate;
     private int _generationCounter;
 
-    private SoundFont? _soundFont;
-    private float[]? _sampleData;
+    private IRBank? _soundBank;
 
     // Temporary buffers for mixing
     private float[] _leftBuffer;
@@ -32,7 +32,7 @@ public sealed class Synthesizer
     // value — sub-block tremolo would be inaudible (5.5Hz << buffer rate).
     private readonly double[] _tremoloPhase = new double[16];
     private const double TremoloFrequencyHz = 5.5;
-    private const double TremoloMaxAttenCb = 60.0;  // ±6 dB at CC92=127
+    private const double TremoloMaxAttenDb = 6.0;  // ±6 dB at CC92=127
 
     // Global effect processors driven by per-voice send amounts.
     private readonly Reverb _reverb;
@@ -85,9 +85,9 @@ public sealed class Synthesizer
     }
 
     /// <summary>
-    /// Gets the currently loaded SoundFont.
+    /// Gets the currently loaded sound bank, or null if none has been loaded.
     /// </summary>
-    public SoundFont? SoundFont => _soundFont;
+    public IRBank? SoundBank => _soundBank;
 
     /// <summary>
     /// Creates a new synthesizer.
@@ -136,41 +136,16 @@ public sealed class Synthesizer
     }
 
     /// <summary>
-    /// Loads a SoundFont for playback.
+    /// Installs a pre-loaded <see cref="IRBank"/>. Replaces any current bank;
+    /// the old one is disposed only when the caller does so explicitly (the synth
+    /// doesn't own banks it didn't load).
     /// </summary>
-    public void LoadSoundFont(string path)
+    public void LoadSoundFont(IRBank soundBank)
     {
-        if (path == null) throw new ArgumentNullException(nameof(path));
-        var sf = SoundFont.Load(path);
-        LoadSoundFont(sf);
-    }
+        if (soundBank == null) throw new ArgumentNullException(nameof(soundBank));
 
-    /// <summary>
-    /// Loads a SoundFont for playback.
-    /// </summary>
-    public void LoadSoundFont(SoundFont soundFont)
-    {
-        if (soundFont == null) throw new ArgumentNullException(nameof(soundFont));
-
-        // Stop all voices
         AllSoundOff();
-
-        _soundFont = soundFont;
-
-        // Decode the whole smpl chunk to normalized float once at load time.
-        // The synth's inner loop then works in [-1, 1] without per-sample division.
-        var raw = soundFont.RawSampleData;
-        if (raw.Length == 0)
-        {
-            _sampleData = null;
-            return;
-        }
-
-        var buf = new float[raw.Length];
-        const float inv = 1f / 32768f;
-        for (var i = 0; i < raw.Length; i++)
-            buf[i] = raw[i] * inv;
-        _sampleData = buf;
+        _soundBank = soundBank;
     }
 
     /// <summary>
@@ -212,28 +187,21 @@ public sealed class Synthesizer
         // but matches the behavior of every hardware/software synth I've checked.
         KillVoicesByChannelKey(channel, key);
 
-        if (_soundFont == null || _sampleData == null)
-            return;
+        if (_soundBank == null) return;
 
         var channelState = _channels[channel];
 
-        // Find the preset
-        var preset = _soundFont.FindPreset(channelState.Bank, channelState.Program);
-        if (preset == null)
-        {
-            // Try bank 0 as fallback
-            preset = _soundFont.FindPreset(0, channelState.Program);
-            if (preset == null)
-                return;
-        }
+        var patch = _soundBank.FindPatch(channelState.Bank, channelState.Program)
+                    ?? _soundBank.FindPatch(0, channelState.Program);
+        if (patch == null) return;
 
         // Determine portamento source (key we should glide from). CC 84 (one-shot) wins
         // over LastNoteKey when set, and falls back only when CC 65 (portamento on) is true.
         int portamentoSource = channelState.PortamentoSourceKey >= 0
             ? channelState.PortamentoSourceKey
             : channelState.PortamentoOn ? channelState.LastNoteKey : (sbyte)-1;
-        var portamentoStartCents = 0.0;
-        var portamentoTimeSeconds = 0.0;
+        double portamentoStartCents = 0.0;
+        double portamentoTimeSeconds = 0.0;
         if (portamentoSource >= 0 && portamentoSource != key)
         {
             portamentoStartCents = (portamentoSource - key) * 100.0;
@@ -241,209 +209,64 @@ public sealed class Synthesizer
             var t = channelState.PortamentoTimeCc / 127.0;
             portamentoTimeSeconds = t * t * 6.0;
         }
-        // CC 84 is consumed at NoteOn whether or not it produced a glide.
         channelState.PortamentoSourceKey = -1;
-        // Track this key as the next note's potential source.
         channelState.LastNoteKey = (sbyte)key;
 
-        // Cache the global zones so we can skip them in the iteration loops.
-        // Per SF2 spec their generators are applied as defaults inside Voice.Configure,
-        // never as a playable zone in their own right.
-        var presetGlobal = preset.GlobalZone;
+        // GM2 sound-controller offsets in octaves (±1 octave at CC=0/127, 0 at CC=64).
+        double attackOctaves = (channelState.AttackTimeCc - 64) / 64.0;
+        double decayOctaves = (channelState.DecayTimeCc - 64) / 64.0;
+        double releaseOctaves = (channelState.ReleaseTimeCc - 64) / 64.0;
+        double vibFreqOctaves = (channelState.VibratoRateCc - 64) / 64.0;
+        double vibDelayOctaves = (channelState.VibratoDelayCc - 64) / 64.0;
+        double filterQDbOffset = channelState.FilterQOffsetCb / 10.0;
 
-        foreach (var presetZone in preset.Zones)
+        var samples = _soundBank.Samples;
+
+        foreach (var zone in patch.Zones)
         {
-            if (ReferenceEquals(presetZone, presetGlobal))
-                continue;
+            if (!zone.Keys.Contains(key)) continue;
+            if (!zone.Velocities.Contains(velocity)) continue;
+            // CC-gated zones (SFZ; empty for SF2/SF3/DLS).
+            if (zone.CCGates.Count > 0 && !PassesCCGates(zone.CCGates, channelState)) continue;
 
-            if (!presetZone.MatchesKeyVelocity(key, velocity))
-                continue;
+            var voice = AllocateVoice(channel, key);
+            if (voice == null) continue;
 
-            // Resolve the instrument referenced by this preset zone
-            var instIdx = presetZone.InstrumentIndex;
-            if (instIdx < 0 || instIdx >= _soundFont.Instruments.Count)
-                continue;
-            var instrument = _soundFont.Instruments[instIdx];
-            var instGlobal = instrument.GlobalZone;
+            // Exclusive group: silence any sounding voice in the same group on the channel.
+            if (zone.ExclusiveGroup is int eg && eg > 0)
+                KillVoicesByExclusiveClass(channel, eg);
 
-            foreach (var instZone in instrument.Zones)
-            {
-                if (ReferenceEquals(instZone, instGlobal))
-                    continue;
+            voice.Configure(zone, samples, key, velocity, channel, ++_generationCounter);
 
-                if (!instZone.MatchesKeyVelocity(key, velocity))
-                    continue;
+            // GM2 CC72/73/75 envelope time scaling.
+            if (attackOctaves != 0 || decayOctaves != 0 || releaseOctaves != 0)
+                voice.ApplyEnvelopeTimeScaling(attackOctaves, decayOctaves, releaseOctaves);
 
-                // Must have a sample
-                if (instZone.Sample == null)
-                    continue;
+            // CC 71 Q offset baked at NoteOn — live CC 71 changes don't retrofit.
+            if (filterQDbOffset != 0)
+                voice.ApplyExtraResonance(filterQDbOffset);
 
-                // Allocate a voice
-                var voice = AllocateVoice(channel, key);
-                if (voice == null)
-                    continue;
+            if (portamentoStartCents != 0.0 && portamentoTimeSeconds > 0.0)
+                voice.StartPortamento(portamentoStartCents, portamentoTimeSeconds);
 
-                // Handle exclusive class (mute other voices in same class)
-                var exclusiveClass = GetExclusiveClass(instZone);
-                if (exclusiveClass > 0)
-                {
-                    KillVoicesByExclusiveClass(channel, exclusiveClass);
-                }
+            if (vibFreqOctaves != 0 || vibDelayOctaves != 0)
+                voice.AdjustVibratoLfo(vibFreqOctaves, vibDelayOctaves);
 
-                var sampleHeader = instZone.Sample;
-
-                voice.Configure(
-                    _sampleData,
-                    sampleHeader,
-                    instZone,
-                    presetZone,
-                    instGlobal,
-                    presetGlobal,
-                    key,
-                    velocity,
-                    channel,
-                    ++_generationCounter);
-
-                ApplyEnvelopeParameters(voice, instZone, instGlobal, presetZone, presetGlobal,
-                    channelState);
-
-                // CC 71 Q offset is baked in at NoteOn — live CC 71 changes don't retrofit.
-                if (channelState.FilterQOffsetCb != 0)
-                    voice.ApplyExtraResonance(channelState.FilterQOffsetCb);
-
-                // Portamento start: voice's pitch begins offset by portamentoStartCents,
-                // decays linearly to 0 over portamentoTimeSeconds.
-                if (portamentoStartCents != 0.0 && portamentoTimeSeconds > 0.0)
-                    voice.StartPortamento(portamentoStartCents, portamentoTimeSeconds);
-
-                // GM2 CC 76 (vibrato rate) and CC 78 (delay): ±1200 cents/timecents at extremes.
-                var vibFreqDelta = (short)((channelState.VibratoRateCc - 64) * 1200 / 64);
-                var vibDelayDelta = (short)((channelState.VibratoDelayCc - 64) * 1200 / 64);
-                if (vibFreqDelta != 0 || vibDelayDelta != 0)
-                    voice.AdjustVibratoLfo(vibFreqDelta, vibDelayDelta);
-
-                // GS drum NRPN overrides for this specific (channel, key). Only applied
-                // on drum channels (the IsDrumPart check in the NRPN setter handler means
-                // overrides never get populated on non-drum channels in the first place).
-                if (channelState.DrumOverrides != null &&
-                    channelState.DrumOverrides.TryGetValue(key, out var drumOv))
-                    voice.ApplyDrumOverride(drumOv);
-            }
+            // GS drum NRPN overrides for this specific (channel, key).
+            if (channelState.DrumOverrides != null &&
+                channelState.DrumOverrides.TryGetValue(key, out var drumOv))
+                voice.ApplyDrumOverride(drumOv);
         }
     }
 
-    private static int GetExclusiveClass(Zone zone)
+    private static bool PassesCCGates(IReadOnlyList<CCGate> gates, ChannelState ch)
     {
-        foreach (var gen in zone.Generators)
+        for (int i = 0; i < gates.Count; i++)
         {
-            if (gen.Operator == SFGenerator.ExclusiveClass)
-                return gen.Amount.Signed;
+            var gate = gates[i];
+            if (!gate.Contains(ch.GetCC(gate.Controller))) return false;
         }
-        return 0;
-    }
-
-    private static void ApplyEnvelopeParameters(Voice voice, Zone instZone, Zone? instGlobal,
-        Zone? presetZone, Zone? presetGlobal, ChannelState channelState)
-    {
-        // Collect envelope parameters from all zones
-        // SF2 spec: Instrument zones SET absolute values, Preset zones ADD offsets
-        short delayVol = -12000, attackVol = -12000, holdVol = -12000, decayVol = -12000;
-        short sustainVol = 0, releaseVol = -12000;
-        short keynumToHoldVol = 0, keynumToDecayVol = 0;
-
-        short delayMod = -12000, attackMod = -12000, holdMod = -12000, decayMod = -12000;
-        short sustainMod = 0, releaseMod = -12000;
-        short keynumToHoldMod = 0, keynumToDecayMod = 0;
-
-        // Apply instrument zones (set absolute values)
-        void ApplyInstEnvGens(Zone? zone)
-        {
-            if (zone == null) return;
-            foreach (var gen in zone.Generators)
-            {
-                switch (gen.Operator)
-                {
-                    case SFGenerator.DelayVolEnv: delayVol = gen.Amount.Signed; break;
-                    case SFGenerator.AttackVolEnv: attackVol = gen.Amount.Signed; break;
-                    case SFGenerator.HoldVolEnv: holdVol = gen.Amount.Signed; break;
-                    case SFGenerator.DecayVolEnv: decayVol = gen.Amount.Signed; break;
-                    case SFGenerator.SustainVolEnv: sustainVol = gen.Amount.Signed; break;
-                    case SFGenerator.ReleaseVolEnv: releaseVol = gen.Amount.Signed; break;
-                    case SFGenerator.KeynumToVolEnvHold: keynumToHoldVol = gen.Amount.Signed; break;
-                    case SFGenerator.KeynumToVolEnvDecay: keynumToDecayVol = gen.Amount.Signed; break;
-
-                    case SFGenerator.DelayModEnv: delayMod = gen.Amount.Signed; break;
-                    case SFGenerator.AttackModEnv: attackMod = gen.Amount.Signed; break;
-                    case SFGenerator.HoldModEnv: holdMod = gen.Amount.Signed; break;
-                    case SFGenerator.DecayModEnv: decayMod = gen.Amount.Signed; break;
-                    case SFGenerator.SustainModEnv: sustainMod = gen.Amount.Signed; break;
-                    case SFGenerator.ReleaseModEnv: releaseMod = gen.Amount.Signed; break;
-                    case SFGenerator.KeynumToModEnvHold: keynumToHoldMod = gen.Amount.Signed; break;
-                    case SFGenerator.KeynumToModEnvDecay: keynumToDecayMod = gen.Amount.Signed; break;
-                }
-            }
-        }
-
-        // Apply preset zones (add offsets to instrument values)
-        void ApplyPresetEnvGens(Zone? zone)
-        {
-            if (zone == null) return;
-            foreach (var gen in zone.Generators)
-            {
-                switch (gen.Operator)
-                {
-                    case SFGenerator.DelayVolEnv: delayVol = (short)(delayVol + gen.Amount.Signed); break;
-                    case SFGenerator.AttackVolEnv: attackVol = (short)(attackVol + gen.Amount.Signed); break;
-                    case SFGenerator.HoldVolEnv: holdVol = (short)(holdVol + gen.Amount.Signed); break;
-                    case SFGenerator.DecayVolEnv: decayVol = (short)(decayVol + gen.Amount.Signed); break;
-                    case SFGenerator.SustainVolEnv: sustainVol = (short)(sustainVol + gen.Amount.Signed); break;
-                    case SFGenerator.ReleaseVolEnv: releaseVol = (short)(releaseVol + gen.Amount.Signed); break;
-                    case SFGenerator.KeynumToVolEnvHold: keynumToHoldVol = (short)(keynumToHoldVol + gen.Amount.Signed); break;
-                    case SFGenerator.KeynumToVolEnvDecay: keynumToDecayVol = (short)(keynumToDecayVol + gen.Amount.Signed); break;
-
-                    case SFGenerator.DelayModEnv: delayMod = (short)(delayMod + gen.Amount.Signed); break;
-                    case SFGenerator.AttackModEnv: attackMod = (short)(attackMod + gen.Amount.Signed); break;
-                    case SFGenerator.HoldModEnv: holdMod = (short)(holdMod + gen.Amount.Signed); break;
-                    case SFGenerator.DecayModEnv: decayMod = (short)(decayMod + gen.Amount.Signed); break;
-                    case SFGenerator.SustainModEnv: sustainMod = (short)(sustainMod + gen.Amount.Signed); break;
-                    case SFGenerator.ReleaseModEnv: releaseMod = (short)(releaseMod + gen.Amount.Signed); break;
-                    case SFGenerator.KeynumToModEnvHold: keynumToHoldMod = (short)(keynumToHoldMod + gen.Amount.Signed); break;
-                    case SFGenerator.KeynumToModEnvDecay: keynumToDecayMod = (short)(keynumToDecayMod + gen.Amount.Signed); break;
-                }
-            }
-        }
-
-        // Instrument zones set values
-        ApplyInstEnvGens(instGlobal);
-        ApplyInstEnvGens(instZone);
-        // Preset zones add offsets
-        ApplyPresetEnvGens(presetGlobal);
-        ApplyPresetEnvGens(presetZone);
-
-        // GM2 sound controllers CC 72/73/75: bipolar (64 = no change). Each unit at the
-        // extremes represents 2^((cc-64)/64) time multiplier — in SF2 timecents that's a
-        // linear add of (cc-64)/64 * 1200 cents. Apply to both vol and mod envelopes
-        // (RP-021 doesn't distinguish; treating mod the same as vol is the convention).
-        var attackOffset = (short)((channelState.AttackTimeCc - 64) * 1200 / 64);
-        var decayOffset = (short)((channelState.DecayTimeCc - 64) * 1200 / 64);
-        var releaseOffset = (short)((channelState.ReleaseTimeCc - 64) * 1200 / 64);
-        if (attackVol > -12000) attackVol = SaturatingAdd(attackVol, attackOffset);
-        if (decayVol > -12000) decayVol = SaturatingAdd(decayVol, decayOffset);
-        if (releaseVol > -12000) releaseVol = SaturatingAdd(releaseVol, releaseOffset);
-        if (attackMod > -12000) attackMod = SaturatingAdd(attackMod, attackOffset);
-        if (decayMod > -12000) decayMod = SaturatingAdd(decayMod, decayOffset);
-        if (releaseMod > -12000) releaseMod = SaturatingAdd(releaseMod, releaseOffset);
-
-        voice.SetVolumeEnvelope(delayVol, attackVol, holdVol, decayVol, sustainVol, releaseVol, keynumToHoldVol, keynumToDecayVol);
-        voice.SetModulationEnvelope(delayMod, attackMod, holdMod, decayMod, sustainMod, releaseMod, keynumToHoldMod, keynumToDecayMod);
-    }
-
-    private static short SaturatingAdd(short a, short b)
-    {
-        var sum = a + b;
-        if (sum > short.MaxValue) return short.MaxValue;
-        if (sum < short.MinValue) return short.MinValue;
-        return (short)sum;
+        return true;
     }
 
     /// <summary>
@@ -890,24 +713,24 @@ public sealed class Synthesizer
     }
 
     /// <summary>
-    /// Processes a MIDI polyphonic aftertouch event. Per SF2 default modulator #5
-    /// (poly pressure → vibrato LFO pitch depth, amount 50 cents, linear-unipolar),
-    /// each matching voice gets up to 50 cents of vibrato depth at full pressure.
+    /// Processes a MIDI polyphonic aftertouch event. Stores the raw 0..127
+    /// value on the matching voice; the route evaluator reads it on the next
+    /// block when SF2 default modulator #5 (PolyPressure → VibratoLfoPitchDepth)
+    /// or any other zone-authored route references the PolyPressure source.
     /// </summary>
     public void PolyPressure(int channel, int key, int pressure)
     {
         if ((uint)channel >= ChannelCount) return;
         if ((uint)key >= 128) return;
-        pressure = Math.Clamp(pressure, 0, 127);
+        byte clamped = (byte)Math.Clamp(pressure, 0, 127);
 
-        var contrib = pressure / 127.0 * 50.0;
         foreach (var voice in _voices)
         {
             if (voice.State != VoiceState.Free &&
                 voice.Channel == channel &&
                 voice.KeyNumber == key)
             {
-                voice.PolyPressureVibDepthCents = contrib;
+                voice.PolyPressure = clamped;
             }
         }
     }
@@ -1309,73 +1132,52 @@ public sealed class Synthesizer
 
             var channelState = _channels[voice.Channel];
 
-            // SF2 default modulators 9 & 10: CC 91/93 contribute amount=200 (0.1% units)
-            // → 0.2 fraction max — added on top of the voice's own ReverbSend/ChorusSend.
-            var channelReverbContrib = 0.2f * (channelState.ReverbSendCc / 127f);
-            var channelChorusContrib = 0.2f * (channelState.ChorusSendCc / 127f);
+            // Extras outside the route framework: things that aren't standard
+            // modulators or that don't fit the unipolar/bipolar source model.
 
-            // SF2 default modulators 3 & 4: channel pressure and CC1 (mod wheel) each add
-            // up to ModulationDepthRangeCents (default 50, RPN 0,5 settable) of vibrato
-            // LFO pitch depth at full value, linear-unipolar. Both default modulators
-            // target the same destination so they sum independently — full mod wheel +
-            // full aftertouch can drive vibrato depth to 2× the range on top of the
-            // patch's own VibLfoToPitch.
-            var channelVibDepthCents =
-                (channelState.Modulation / 127.0 + channelState.ChannelPressure / 127.0)
-                * channelState.ModulationDepthRangeCents;
+            // GM2 CC 77 (vibrato depth): bipolar around 64, ±50 cents. The route
+            // framework uses unipolar sources only, so this stays synth-level.
+            double extraVibCents = (channelState.VibratoDepthCc - 64) * (50.0 / 64.0);
 
-            // GM2 CC 77 vibrato depth: bipolar around 64, adds ±50 cents independently
-            // of mod wheel / aftertouch.
-            channelVibDepthCents += (channelState.VibratoDepthCc - 64) * (50.0 / 64.0);
+            // CC 67 (soft pedal / una corda): ≥ 64 = ~6 dB attenuation.
+            double softPedalAttenDb = channelState.SoftPedal >= 64 ? 6.0 : 0.0;
 
-            // CC 10 pan: 0=hard left, 64=center, 127=hard right. SF2 _pan is in -500..500
-            // units, so scale CC10 the same way. The voice then clamps the sum, so a
-            // hard-panned SF2 patch with extra CC10 in the same direction stays at hard pan.
-            var channelPan = (channelState.Pan - 64) * (500.0 / 63.0);
-
-            // CC 67 (soft pedal / una corda): ≥ 64 applies ~6 dB attenuation = 60 cB.
-            // GM2 RP-021 doesn't fix a number; 6 dB matches what most software synths use
-            // and is audible without being dramatic.
-            var softPedalAttenuationCb = channelState.SoftPedal >= 64 ? 60.0 : 0.0;
-
-            // CC 92 tremolo: sin LFO modulates voice attenuation symmetrically up to
-            // ±TremoloMaxAttenCb at full depth. Phase is advanced once per Generate call.
-            var tremoloAttenCb = 0.0;
+            // CC 92 tremolo: sin LFO modulates attenuation symmetrically up to
+            // ±TremoloMaxAttenDb at full depth. Phase advances once per Generate.
+            double tremoloAttenDb = 0.0;
             if (channelState.TremoloDepth > 0)
             {
                 var depth = channelState.TremoloDepth / 127.0;
-                // sin returns -1..+1; map to 0..1 then to attenuation (no negative gain).
                 var lfo = 0.5 * (1.0 - Math.Sin(_tremoloPhase[voice.Channel]));
-                tremoloAttenCb = lfo * depth * TremoloMaxAttenCb;
+                tremoloAttenDb = lfo * depth * TremoloMaxAttenDb;
             }
 
-            // CC 8 Balance: 0=mute left, 64=unity, 127=mute right. Applied as additional
-            // per-channel L/R gain multipliers inside Voice.Process after the pan calc.
-            var balanceLeft = channelState.Balance >= 64 ? 1f : channelState.Balance / 64f;
-            var balanceRight = channelState.Balance <= 64 ? 1f : (127 - channelState.Balance) / 63f;
+            // CC 8 Balance: post-pan L/R gain multipliers.
+            float balanceLeft = channelState.Balance >= 64 ? 1f : channelState.Balance / 64f;
+            float balanceRight = channelState.Balance <= 64 ? 1f : (127 - channelState.Balance) / 63f;
 
-            // Master tune (cents) and master key shift (semitones) from GS/XG SysEx are
-            // additive to every voice's pitch offset.
-            var pitchOffset = channelState.TotalPitchOffsetCents
-                              + _masterTuneCents
-                              + _masterKeyShiftSemitones * 100.0;
+            // Non-bend channel-level pitch offset: master tune + master key shift
+            // + RPN 0,1 fine tune + RPN 0,2 coarse tune. The pitch-bend portion is
+            // handled by the modulation route #10 inside the voice.
+            double nonBendPitchCents =
+                channelState.FineTuneCents
+                + channelState.CoarseTuneSemitones * 100.0
+                + _masterTuneCents
+                + _masterKeyShiftSemitones * 100.0;
 
             voice.Process(
                 left,
                 right,
                 reverbSend,
                 chorusSend,
-                pitchOffset,
-                channelState.VolumeNormalized,
-                channelState.ExpressionNormalized,
-                Math.Max(GlobalReverbSend, channelReverbContrib),
-                Math.Max(GlobalChorusSend, channelChorusContrib),
-                channelVibDepthCents,
-                channelPan,
-                softPedalAttenuationCb + tremoloAttenCb,
-                channelState.FilterCutoffOffsetCents,
-                balanceLeft,
-                balanceRight);
+                channelState,
+                extraAttenuationDb: softPedalAttenDb + tremoloAttenDb,
+                nonBendPitchCents: nonBendPitchCents,
+                balanceLeft: balanceLeft,
+                balanceRight: balanceRight,
+                extraVibLfoDepthCents: extraVibCents,
+                globalReverbFloor: GlobalReverbSend,
+                globalChorusFloor: GlobalChorusSend);
 
             // Check if voice finished
             if (voice.IsFinished)
@@ -1489,13 +1291,13 @@ public sealed class Synthesizer
         }
     }
 
-    private void KillVoicesByExclusiveClass(int channel, int exclusiveClass)
+    private void KillVoicesByExclusiveClass(int channel, int exclusiveGroup)
     {
         foreach (var voice in _voices)
         {
             if (voice.State != VoiceState.Free &&
                 voice.Channel == channel &&
-                voice.ExclusiveClass == exclusiveClass)
+                voice.ExclusiveGroup == exclusiveGroup)
             {
                 voice.Kill();
             }
