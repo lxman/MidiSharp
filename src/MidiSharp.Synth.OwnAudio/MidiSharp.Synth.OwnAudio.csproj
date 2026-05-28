@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>MidiSharp.Synth.OwnAudio</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MidiSharp.Synth\MidiSharp.Synth.csproj" />
+    <PackageReference Include="OwnAudioSharp.Basic" Version="3.0.7" />
+  </ItemGroup>
+
+</Project>

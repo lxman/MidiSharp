@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>MidiSharp.Output.Windows</RootNamespace>
+    <Description>Windows MIDI output implementation using WinMM API</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MidiSharp.Core\MidiSharp.Core.csproj" />
+  </ItemGroup>
+
+</Project>

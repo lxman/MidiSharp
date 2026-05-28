@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>MidiSharp</RootNamespace>
+    <Description>Cross-platform MIDI file parsing, sequencing, and playback library</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Shift-JIS / legacy code pages for RP-026 SMF Language and Display Extensions.
+         Japanese Karaoke lyric meta events declaring {@JP} use Shift-JIS; the BCL on
+         netstandard2.1 doesn't include those by default. Small (~80KB) optional dep. -->
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="8.*" />
+  </ItemGroup>
+
+</Project>

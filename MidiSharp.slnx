@@ -1,0 +1,25 @@
+<Solution>
+  <Folder Name="/Core/">
+    <Project Path="src/MidiSharp.Core/MidiSharp.Core.csproj" />
+  </Folder>
+  <Folder Name="/SF2Net/">
+    <Project Path="SF2Net\SF2Net.SmokeTest\SF2Net.SmokeTest.csproj" />
+    <Project Path="SF2Net\SF2Net.Tests\SF2Net.Tests.csproj" />
+    <Project Path="SF2Net\SF2Net\SF2Net.csproj" />
+  </Folder>
+  <Folder Name="/SoftSynth/">
+    <Project Path="src/MidiSharp.Sf2/MidiSharp.Sf2.csproj" />
+    <Project Path="src/MidiSharp.Synth/MidiSharp.Synth.csproj" />
+    <Project Path="src/MidiSharp.Synth.OwnAudio/MidiSharp.Synth.OwnAudio.csproj" />
+  </Folder>
+  <Folder Name="/Samples/">
+    <Project Path="samples/MidiSharp.Demo/MidiSharp.Demo.csproj" />
+  </Folder>
+  <Folder Name="/SolutionFiles/">
+    <File Path="LICENSE" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="tests/MidiSharp.Core.Tests/MidiSharp.Core.Tests.csproj" />
+  </Folder>
+</Solution>
