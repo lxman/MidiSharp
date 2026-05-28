@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Vendored copy of NVorbis (https://github.com/NVorbis/NVorbis) v0.10.5.
+    Pristine source — only this .csproj has been replaced to drop the
+    upstream NuGet-packaging metadata. All .cs files are unmodified.
+
+    Original author: Andrew Ward. License: MIT (see ../LICENSE).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <RootNamespace>NVorbis</RootNamespace>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <Description>Pure-managed Ogg Vorbis decoder. Vendored from NVorbis v0.10.5.</Description>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;CS0618</NoWarn>
+  </PropertyGroup>
+
+</Project>
