@@ -28,8 +28,15 @@ if (!File.Exists(midiPath)) { Console.WriteLine($"MIDI not found: {midiPath}"); 
 if (!sf2Path.Contains('+') && !File.Exists(sf2Path)) { Console.WriteLine($"SoundFont not found: {sf2Path}"); return 1; }
 
 Console.WriteLine($"Loading MIDI: {midiPath}");
-var midiFile = MidiFileReader.Read(File.ReadAllBytes(midiPath));
-Console.WriteLine($"  Format: {midiFile.Header.Format}, Tracks: {midiFile.Header.TrackCount}, " +
+var repair = SmfRepairFilter.Scan(File.ReadAllBytes(midiPath));
+if (repair.HasDefects)
+{
+    Console.WriteLine($"  Repair: {repair.CorrectedCount} corrected of {repair.Defects.Count} defect(s):");
+    foreach (var d in repair.Defects)
+        Console.WriteLine($"    {d}");
+}
+var midiFile = MidiFileReader.Read(repair.Data);
+Console.WriteLine($"  Format: {midiFile.Header.Format}, Tracks: {midiFile.Tracks.Count}, " +
                   $"Division: {midiFile.Header.Division.TicksPerQuarterNote} ticks/quarter");
 
 Console.WriteLine($"Loading SoundFont: {sf2Path}");

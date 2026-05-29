@@ -44,6 +44,14 @@ public static class MidiFileReader
     /// <summary>
     /// Reads a MIDI file from a span of bytes.
     /// </summary>
+    /// <remarks>
+    /// This is a strict Standard MIDI File parser: it assumes well-formed input
+    /// and throws on malformed structure (a missing <c>MTrk</c> marker, a data
+    /// byte with no running status, an unsupported system message). Real-world
+    /// files with newline-translation or dropped-byte damage should be passed
+    /// through <see cref="SmfRepairFilter"/> first, which corrects the byte
+    /// stream and reports exactly what it changed.
+    /// </remarks>
     public static MidiFile Read(ReadOnlySpan<byte> data)
     {
         var reader = new SpanReader(data);
