@@ -114,7 +114,15 @@ internal static class Sf2BankLoader
             if (state.KeyRangeLow > state.KeyRangeHigh) continue;
             if (state.VelRangeLow > state.VelRangeHigh) continue;
 
-            output.Add(Sf2ZoneTranslator.Build(state, sampleId));
+            // Combine this zone's explicit modulators with the 10 defaults
+            // (instrument modulators overwrite, preset modulators sum — SF2 §9.5).
+            var routes = Sf2ModulatorTranslator.Combine(
+                instrumentGlobal?.Modulators,
+                instZone.Modulators,
+                presetGlobal?.Modulators,
+                presetZone.Modulators);
+
+            output.Add(Sf2ZoneTranslator.Build(state, sampleId, routes));
         }
     }
 

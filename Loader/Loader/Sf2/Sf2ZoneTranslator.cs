@@ -18,7 +18,7 @@ internal static class Sf2ZoneTranslator
     /// emitted only when their corresponding generators are non-default, so
     /// the synth's "is this feature active?" checks stay branch-cheap.
     /// </summary>
-    public static PatchZone Build(Sf2GeneratorState state, int sampleId)
+    public static PatchZone Build(Sf2GeneratorState state, int sampleId, IReadOnlyList<ModulationRoute> routes)
     {
         return new PatchZone
         {
@@ -39,7 +39,7 @@ internal static class Sf2ZoneTranslator
             ReverbSend = TenthOfPercentToFraction(state.ReverbEffectsSend),
             ChorusSend = TenthOfPercentToFraction(state.ChorusEffectsSend),
 
-            Routes = Sf2DefaultModulators.All,
+            Routes = routes,
         };
     }
 
