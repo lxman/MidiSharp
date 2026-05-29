@@ -8,6 +8,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\..\src\MidiSharp.Core\MidiSharp.Core.csproj" />
+      <ProjectReference Include="..\..\src\MidiSharp.Audio\MidiSharp.Audio.csproj" />
       <ProjectReference Include="..\DLS\DLS.Net\DLS.Net.csproj" />
       <ProjectReference Include="..\SF2\SF2.Net\SF2.Net.csproj" />
       <ProjectReference Include="..\SF3\SF3.Net\SF3.Net.csproj" />

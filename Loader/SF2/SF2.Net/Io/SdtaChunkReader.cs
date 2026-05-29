@@ -17,6 +17,13 @@ internal sealed class SdtaChunkReader
 
     public bool Has24BitData => !_data24.IsEmpty;
 
+    /// <summary>
+    /// Raw bytes of the <c>smpl</c> chunk. For SF2 these are little-endian int16 PCM;
+    /// for SF3 they're a sequence of Vorbis bitstreams whose start/end byte offsets are
+    /// in each <see cref="SampleHeader.Start"/> / <see cref="SampleHeader.End"/>.
+    /// </summary>
+    public ReadOnlyMemory<byte> RawBytes => _data16;
+
     public SdtaChunkReader(ReadOnlyMemory<byte> sdtaList)
     {
         var span = sdtaList.Span;

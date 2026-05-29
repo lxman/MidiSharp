@@ -27,6 +27,19 @@ public class SoundFontTests
     }
 
     [Fact]
+    public void Load_ExcludesTerminalPresetEvenWhenNotNamedEOP()
+    {
+        // The terminal phdr is identified by position (last record), not by name.
+        // Some real banks (e.g. FluidR3Mono) ship a blank-named terminal; it must
+        // still be excluded, or it leaks as a phantom bank-0/program-0 preset that
+        // shadows the real one in a (bank, program) lookup.
+        var sf = SoundFont.Load(SyntheticSoundFont.Build(terminalName: ""));
+
+        Assert.Single(sf.Presets);
+        Assert.Equal("TestPiano", sf.Presets[0].Name);
+    }
+
+    [Fact]
     public void Load_LinksZoneToInstrument()
     {
         var sf = SoundFont.Load(SyntheticSoundFont.Build());

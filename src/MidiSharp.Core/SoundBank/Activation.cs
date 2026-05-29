@@ -27,12 +27,17 @@ public readonly record struct CCGate(byte Controller, byte Low, byte High)
 }
 
 /// <summary>
-/// SFZ-style keyswitching. Keys in [Low, High] don't sound notes — pressing one
-/// selects an articulation. <see cref="Default"/> is the articulation active
-/// before any keyswitch has been pressed; <see cref="LastPressed"/> is the
-/// per-channel runtime state the synth maintains.
+/// SFZ-style keyswitching. Keys in [Low, High] are switch keys — pressing one
+/// selects an articulation instead of sounding a note. A zone carrying this is
+/// active only when the channel's currently-selected switch key equals
+/// <see cref="SelectingKey"/> (SFZ <c>sw_last</c>). <see cref="Default"/> is the
+/// switch key treated as selected before any has been pressed (<c>sw_default</c>).
 /// </summary>
-public readonly record struct KeySwitch(byte Low, byte High, byte Default, byte? LastPressed);
+/// <remarks>
+/// Per-channel selection is runtime state held by the synth's channel, not here —
+/// this record is immutable IR shared across channels and voices.
+/// </remarks>
+public readonly record struct KeySwitch(byte Low, byte High, byte SelectingKey, byte Default);
 
 /// <summary>
 /// SFZ-style round-robin. This zone plays on the <see cref="Position"/>-th of

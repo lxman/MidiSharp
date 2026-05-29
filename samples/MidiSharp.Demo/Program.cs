@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
@@ -7,12 +8,15 @@ using MidiSharp.Model.Events;
 using MidiSharp.SoundBank;
 using MidiSharp.Synth;
 using MidiSharp.Synth.OwnAudio;
+using IRBank = MidiSharp.SoundBank.SoundBank;
 
 if (args.Length < 2)
 {
     Console.WriteLine("Usage:");
     Console.WriteLine("  Live playback:    MidiSharp.Demo <midi> <sf2>");
     Console.WriteLine("  Render to WAV:    MidiSharp.Demo <midi> <sf2> <out.wav>");
+    Console.WriteLine("  GM SFZ + drums:   pass \"melodic.sfz+drums.sfz\" as <sf2> (1st→bank 0, rest→bank 128),");
+    Console.WriteLine("                    or just the \"... Melodic ....sfz\" file and its \"Drums\" sibling auto-pairs.");
     return 1;
 }
 
@@ -21,7 +25,7 @@ var sf2Path = args[1];
 var renderPath = args.Length >= 3 ? args[2] : null;
 
 if (!File.Exists(midiPath)) { Console.WriteLine($"MIDI not found: {midiPath}"); return 1; }
-if (!File.Exists(sf2Path)) { Console.WriteLine($"SF2 not found: {sf2Path}"); return 1; }
+if (!sf2Path.Contains('+') && !File.Exists(sf2Path)) { Console.WriteLine($"SoundFont not found: {sf2Path}"); return 1; }
 
 Console.WriteLine($"Loading MIDI: {midiPath}");
 var midiFile = MidiFileReader.Read(File.ReadAllBytes(midiPath));
@@ -29,7 +33,7 @@ Console.WriteLine($"  Format: {midiFile.Header.Format}, Tracks: {midiFile.Header
                   $"Division: {midiFile.Header.Division.TicksPerQuarterNote} ticks/quarter");
 
 Console.WriteLine($"Loading SoundFont: {sf2Path}");
-var soundBank = SoundBankLoader.Load(sf2Path);
+var soundBank = LoadBank(sf2Path);
 Console.WriteLine($"  {soundBank.Name}: {soundBank.Patches.Count} patches, " +
                   $"{soundBank.Samples.Count} samples");
 
@@ -46,6 +50,35 @@ if (renderPath != null)
     return RenderToWav(player, renderPath, sampleRate);
 
 return PlayLive(player, sampleRate);
+
+// Loads a sound bank. Plain path → single bank. For GM SFZ banks split into
+// melodic + percussion files, either pass "melodic.sfz+drums.sfz" (1st on bank 0,
+// the rest on bank 128 where the synth routes channel 10), or pass a "... Melodic
+// ....sfz" file and let its "Drums" sibling auto-pair.
+static IRBank LoadBank(string spec)
+{
+    if (spec.Contains('+'))
+    {
+        var parts = spec.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var files = new List<(string, int)>();
+        for (int i = 0; i < parts.Length; i++) files.Add((parts[i], i == 0 ? 0 : 128));
+        return SoundBankLoader.LoadSfz(files);
+    }
+
+    if (spec.EndsWith(".sfz", StringComparison.OrdinalIgnoreCase) &&
+        spec.Contains("Melodic", StringComparison.OrdinalIgnoreCase))
+    {
+        int i = spec.IndexOf("Melodic", StringComparison.OrdinalIgnoreCase);
+        string drums = spec[..i] + "Drums" + spec[(i + "Melodic".Length)..];
+        if (File.Exists(drums))
+        {
+            Console.WriteLine($"  (auto-pairing percussion: {Path.GetFileName(drums)} → bank 128)");
+            return SoundBankLoader.LoadSfz(new[] { (spec, 0), (drums, 128) });
+        }
+    }
+
+    return SoundBankLoader.Load(spec);
+}
 
 static int PlayLive(RealtimePlayer player, int sampleRate)
 {

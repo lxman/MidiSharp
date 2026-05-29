@@ -220,6 +220,15 @@ public sealed class Voice
         _pitchCorrectionCents = metadata.PitchCorrectionCents;
         _loopMode = sampleRef.LoopMode;
 
+        // Defensive bounds: clamp addressing to the actual sample length and
+        // disable looping if the loop window is empty/inverted. Some banks (and
+        // especially small SF3 wavetable samples whose loop points were authored
+        // for a different bit depth) ship with end < start or zero-length loops.
+        if (_sampleEnd > fullLength) _sampleEnd = fullLength;
+        if (_sampleEnd <= _sampleStart) _sampleEnd = _sampleStart + 1;
+        if (_loopEnd <= _loopStart || _loopEnd > _sampleEnd || _loopStart < _sampleStart)
+            _loopMode = IRLoopMode.None;
+
         // Pitch settings (zone + sample-level tuning sum at Configure time).
         _coarseTuneSemitones = zone.Pitch.CoarseTuneSemitones + sampleRef.CoarseTuneSemitones;
         _fineTuneCents = zone.Pitch.FineTuneCents + sampleRef.FineTuneCents;
@@ -565,7 +574,21 @@ public sealed class Voice
 
             if (_loopMode != IRLoopMode.None && _position >= _loopEnd)
             {
-                _position = _loopStart + (_position - _loopEnd);
+                // Modulo-normalize the overshoot so a single-block advance that
+                // crosses many loop iterations (small wavetable samples played
+                // high; SF3 in particular) still wraps cleanly into [loopStart,
+                // loopEnd). Single-subtract wrap can grow position unboundedly
+                // when increment-per-block exceeds the loop length.
+                double loopLen = _loopEnd - _loopStart;
+                if (loopLen > 0)
+                {
+                    double overshoot = _position - _loopEnd;
+                    _position = _loopStart + (overshoot - Math.Floor(overshoot / loopLen) * loopLen);
+                }
+                else
+                {
+                    _position = _loopStart;
+                }
             }
             else if (_position >= _sampleEnd)
             {

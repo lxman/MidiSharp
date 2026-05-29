@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using MidiSharp.SoundBank.Format;
 using MidiSharp.SoundBank.Sf2;
@@ -36,9 +37,9 @@ public static class SoundBankLoader
             return format switch
             {
                 SoundBankFormat.Sf2 => Sf2BankLoader.Load(SF2.Net.SoundFont.Load(path), options),
-                SoundBankFormat.Sf3 => throw new NotSupportedException("SF3 loader not yet implemented"),
-                SoundBankFormat.Sfz => throw new NotSupportedException("SFZ loader not yet implemented"),
-                SoundBankFormat.Dls => throw new NotSupportedException("DLS loader not yet implemented"),
+                SoundBankFormat.Sf3 => Sf3.Sf3BankLoader.Load(SF2.Net.SoundFont.Load(path), options),
+                SoundBankFormat.Sfz => Sfz.SfzBankLoader.Load(path, options),
+                SoundBankFormat.Dls => Dls.DlsBankLoader.Load(DLS.Net.DlsReader.Load(path), options),
                 _ => throw new UnsupportedFormatException($"Unknown format: {format}"),
             };
         }
@@ -46,6 +47,25 @@ public static class SoundBankLoader
         {
             throw new SoundBankLoadException($"Failed to parse SF2 file '{path}': {ex.Message}", ex);
         }
+    }
+
+    /// <summary>
+    /// Combine several SFZ files into one bank, each placed on its own MIDI bank
+    /// number. The standard use is a GM bank split into melodic and percussion
+    /// files: load the melodic file on bank 0 and the drum file on bank 128 (where
+    /// the synth routes MIDI channel 10), e.g.
+    /// <c>LoadSfz(new[] {(melodic, 0), (drums, 128)})</c>. Samples are pooled and
+    /// de-duplicated across the files.
+    /// </summary>
+    public static SoundBank LoadSfz(
+        IReadOnlyList<(string Path, int Bank)> sfzFiles, SoundBankLoadOptions? options = null)
+    {
+        if (sfzFiles == null || sfzFiles.Count == 0)
+            throw new ArgumentException("At least one SFZ file is required", nameof(sfzFiles));
+        foreach (var (path, _) in sfzFiles)
+            if (!File.Exists(path)) throw new FileNotFoundException($"SFZ file not found: {path}", path);
+
+        return Sfz.SfzBankLoader.LoadCombined(sfzFiles, options ?? new SoundBankLoadOptions());
     }
 
     /// <summary>
@@ -78,11 +98,24 @@ public static class SoundBankLoader
                 }
             }
             case SoundBankFormat.Sf3:
-                throw new NotSupportedException("SF3 loader not yet implemented");
+            {
+                var bytes = ReadAllBytes(stream);
+                try
+                {
+                    return Sf3.Sf3BankLoader.Load(SF2.Net.SoundFont.Load(bytes), options);
+                }
+                catch (SF2.Net.SoundFontException ex)
+                {
+                    throw new SoundBankLoadException($"Failed to parse SF3 stream: {ex.Message}", ex);
+                }
+            }
             case SoundBankFormat.Sfz:
-                throw new NotSupportedException("SFZ loader not yet implemented");
+                return Sfz.SfzBankLoader.Load(stream, basePath, options);
             case SoundBankFormat.Dls:
-                throw new NotSupportedException("DLS loader not yet implemented");
+            {
+                var bytes = ReadAllBytes(stream);
+                return Dls.DlsBankLoader.Load(DLS.Net.DlsReader.Load(bytes), options);
+            }
             default:
                 throw new UnsupportedFormatException($"Unknown format: {format}");
         }

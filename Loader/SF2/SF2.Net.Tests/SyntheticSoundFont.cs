@@ -18,7 +18,8 @@ internal static class SyntheticSoundFont
         string sampleName = "TestSample",
         ushort bank = 0,
         ushort preset = 0,
-        uint sampleRate = 22050)
+        uint sampleRate = 22050,
+        string terminalName = "EOP")
     {
         // ----- smpl (16-bit LE PCM) ----
         var smpl = new byte[SampleFrames * 2];
@@ -73,7 +74,7 @@ internal static class SyntheticSoundFont
         // EOP.BagIdx points at the terminal pbag (index 1 here).
         var phdr = new byte[38 * 2];
         WritePhdr(phdr.AsSpan(0, 38), presetName, preset, bank, 0, 0, 0, 0);
-        WritePhdr(phdr.AsSpan(38, 38), "EOP", 0, 0, 1, 0, 0, 0);
+        WritePhdr(phdr.AsSpan(38, 38), terminalName, 0, 0, 1, 0, 0, 0);
 
         // ----- Wrap chunks ----
         var pdta = BuildList("pdta", new[]

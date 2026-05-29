@@ -1,8 +1,13 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <TargetFramework>netstandard2.1</TargetFramework>
         <Nullable>enable</Nullable>
+        <LangVersion>latest</LangVersion>
+        <RootNamespace>DLS.Net</RootNamespace>
+        <Description>Downloadable Sounds (DLS) Level 1/2 reader. Parses RIFF-DLS files
+            into a structured Collection of instruments, regions, articulators, and
+            wave-table samples. No IR translation — that's the loader's job.</Description>
     </PropertyGroup>
 
 </Project>

@@ -36,6 +36,14 @@ public sealed class SoundFont
     /// </summary>
     public ReadOnlySpan<short> RawSampleData => _sdta.GetAllSamples16();
 
+    /// <summary>
+    /// Raw bytes of the <c>smpl</c> chunk. For SF2 this is the same data as
+    /// <see cref="RawSampleData"/> in byte form. For SF3 it's a sequence of Vorbis
+    /// bitstreams whose start/end byte offsets are in each
+    /// <see cref="SampleHeader.Start"/> / <see cref="SampleHeader.End"/>.
+    /// </summary>
+    public ReadOnlyMemory<byte> RawSampleBytes => _sdta.RawBytes;
+
     private SoundFont(InfoMetadata info, Preset[] presets, Instrument[] instruments,
         SampleHeader[] sampleHeaders, SdtaChunkReader sdta)
     {
@@ -160,10 +168,14 @@ public sealed class SoundFont
     private static Preset[] BuildPresets(PresetHeaderRecord[] phdrs, BagRecord[] pbags,
         Generator[] pgens, Modulator[] pmods)
     {
-        // phdrs includes terminal EOP header; build N-1 presets, using header[i+1].BagIndex
-        // to bound zone count for preset i.
-        var presets = new Preset[phdrs.Length];
-        for (var i = 0; i < phdrs.Length; i++)
+        // The final phdr record is the terminal "EOP" sentinel (SF2 §7.2): it
+        // exists only to bound the previous preset's zone range and is not itself
+        // a preset. Build N-1 presets, excluding it by position — a name-based
+        // strip alone misses terminals with a blank/non-standard name (e.g.
+        // FluidR3Mono, whose empty-named terminal would otherwise shadow the real
+        // bank-0/program-0 preset). header[i+1].BagIndex bounds preset i's zones.
+        var presets = new Preset[phdrs.Length - 1];
+        for (var i = 0; i < phdrs.Length - 1; i++)
         {
             var ph = phdrs[i];
             presets[i] = new Preset

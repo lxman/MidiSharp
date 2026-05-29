@@ -195,6 +195,10 @@ public sealed class Synthesizer
                     ?? _soundBank.FindPatch(0, channelState.Program);
         if (patch == null) return;
 
+        // SFZ keyswitch: a key inside a zone's switch range selects an articulation
+        // for this channel and sounds no note of its own.
+        if (TrySelectKeyswitch(patch, key, channelState)) return;
+
         // Determine portamento source (key we should glide from). CC 84 (one-shot) wins
         // over LastNoteKey when set, and falls back only when CC 65 (portamento on) is true.
         int portamentoSource = channelState.PortamentoSourceKey >= 0
@@ -222,12 +226,31 @@ public sealed class Synthesizer
 
         var samples = _soundBank.Samples;
 
+        // Round-robin sequence index for this NoteOn, computed once (lazily, only
+        // if a round-robin zone is actually reached) and shared across zones.
+        int? rrIndex = null;
+
         foreach (var zone in patch.Zones)
         {
             if (!zone.Keys.Contains(key)) continue;
             if (!zone.Velocities.Contains(velocity)) continue;
             // CC-gated zones (SFZ; empty for SF2/SF3/DLS).
             if (zone.CCGates.Count > 0 && !PassesCCGates(zone.CCGates, channelState)) continue;
+
+            // SFZ keyswitch: zone is active only when the channel's selected switch
+            // key (or this zone's default, before any switch was pressed) matches.
+            if (zone.KeySwitch is KeySwitch ks)
+            {
+                int selected = channelState.SelectedKeyswitch >= 0 ? channelState.SelectedKeyswitch : ks.Default;
+                if (selected != ks.SelectingKey) continue;
+            }
+
+            // SFZ round-robin: rotate seq_position zones across successive NoteOns.
+            if (zone.RoundRobin is RoundRobin rr && rr.Length > 1)
+            {
+                rrIndex ??= channelState.NextRoundRobin(key);
+                if (rrIndex.Value % rr.Length != rr.Position) continue;
+            }
 
             var voice = AllocateVoice(channel, key);
             if (voice == null) continue;
@@ -267,6 +290,25 @@ public sealed class Synthesizer
             if (!gate.Contains(ch.GetCC(gate.Controller))) return false;
         }
         return true;
+    }
+
+    /// <summary>
+    /// SFZ keyswitching: if <paramref name="key"/> falls inside any zone's
+    /// keyswitch range, record it as the channel's selected switch and return true
+    /// (the caller then sounds no note). Cheap no-op for banks without keyswitches.
+    /// </summary>
+    private static bool TrySelectKeyswitch(Patch patch, int key, ChannelState ch)
+    {
+        var zones = patch.Zones;
+        for (int i = 0; i < zones.Count; i++)
+        {
+            if (zones[i].KeySwitch is KeySwitch ks && key >= ks.Low && key <= ks.High)
+            {
+                ch.SelectedKeyswitch = (sbyte)key;
+                return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>

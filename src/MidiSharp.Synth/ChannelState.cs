@@ -281,6 +281,29 @@ public sealed class ChannelState
     public sbyte LastNoteKey { get; set; } = -1;
 
     /// <summary>
+    /// SFZ keyswitch: the switch key currently selected on this channel, or -1 if
+    /// none has been pressed yet (zones then fall back to their <c>sw_default</c>).
+    /// Set when a key inside a zone's keyswitch range is pressed.
+    /// </summary>
+    public sbyte SelectedKeyswitch { get; set; } = -1;
+
+    // SFZ round-robin: per-key sequence counters, lazily allocated (null until a
+    // round-robin zone is first played, so non-RR banks pay nothing).
+    private int[]? _roundRobinCounters;
+
+    /// <summary>
+    /// Returns the current round-robin sequence index for <paramref name="key"/>,
+    /// then advances it — so successive NoteOns on the key rotate through
+    /// <c>seq_position</c> regions.
+    /// </summary>
+    public int NextRoundRobin(int key)
+    {
+        if ((uint)key >= 128) return 0;
+        _roundRobinCounters ??= new int[128];
+        return _roundRobinCounters[key]++;
+    }
+
+    /// <summary>
     /// Gets the volume as a 0-1 value.
     /// </summary>
     public double VolumeNormalized => Volume / 127.0;
@@ -356,6 +379,8 @@ public sealed class ChannelState
         VibratoRateCc = 64;
         VibratoDepthCc = 64;
         VibratoDelayCc = 64;
+        SelectedKeyswitch = -1;
+        _roundRobinCounters = null;
         // Per GS spec, "Reset All Controllers" does NOT clear drum NRPN overrides.
         // Only a full GM/GS Reset (handled by Synthesizer.Reset) clears DrumOverrides.
     }

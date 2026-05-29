@@ -31,7 +31,12 @@ internal static class Sf2BankLoader
 
     // ── Patch / zone flattening ───────────────────────────────────────
 
-    private static IReadOnlyList<Patch> BuildPatches(SoundFont sf)
+    /// <summary>
+    /// Walk the SF2 preset/instrument/zone hierarchy and emit flat IR patches.
+    /// Shared with the SF3 loader — SF3 is structurally identical to SF2;
+    /// only the sample-data encoding differs.
+    /// </summary>
+    internal static IReadOnlyList<Patch> BuildPatches(SoundFont sf)
     {
         var instrumentsByIndex = new Dictionary<int, Instrument>(sf.Instruments.Count);
         for (int i = 0; i < sf.Instruments.Count; i++)
@@ -44,7 +49,12 @@ internal static class Sf2BankLoader
         var patches = new List<Patch>(sf.Presets.Count);
         foreach (var preset in sf.Presets)
         {
-            patches.Add(BuildPatch(preset, instrumentsByIndex, sampleIdByHeader));
+            var patch = BuildPatch(preset, instrumentsByIndex, sampleIdByHeader);
+            // A zero-zone patch can never sound, and a stray empty preset sharing a
+            // (bank, program) with a real one would shadow it in FindPatch's
+            // last-wins lookup. Drop them.
+            if (patch.Zones.Count > 0)
+                patches.Add(patch);
         }
         return patches;
     }
