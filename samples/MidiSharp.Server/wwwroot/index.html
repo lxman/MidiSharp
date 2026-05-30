@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MidiSharp Web Player</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family: system-ui, sans-serif; background: #15171c; color: #e6e6e6;
+           margin: 0; display: flex; justify-content: center; }
+    main { width: min(640px, 92vw); padding: 2rem 0 4rem; }
+    h1 { font-size: 1.3rem; font-weight: 600; }
+    .sub { color: #8b93a1; font-size: .85rem; margin-top: -.5rem; }
+    label { display: block; margin: 1rem 0 .3rem; font-size: .8rem; color: #9aa3b2;
+            text-transform: uppercase; letter-spacing: .04em; }
+    select { width: 100%; padding: .55rem .6rem; background: #1e2128; color: #e6e6e6;
+             border: 1px solid #333a46; border-radius: 6px; font-size: .95rem; }
+    .row { display: flex; align-items: center; gap: .6rem; margin-top: 1.2rem; }
+    .check { display: flex; align-items: center; gap: .5rem; font-size: .9rem; color: #c7cdd8; }
+    button { padding: .6rem 1.1rem; border: 0; border-radius: 6px; font-size: .95rem;
+             cursor: pointer; font-weight: 600; }
+    #play { background: #3b82f6; color: #fff; }
+    #stop { background: #353b46; color: #e6e6e6; }
+    #exit { background: #5a2330; color: #f0c4cc; margin-left: auto; }
+    button:disabled { opacity: .45; cursor: default; }
+    #status { margin-top: 1.6rem; padding: .9rem 1rem; background: #1a1d24; border-radius: 8px;
+              border: 1px solid #2a2f3a; font-variant-numeric: tabular-nums; }
+    .state { font-weight: 600; }
+    .bar { height: 6px; background: #2a2f3a; border-radius: 3px; margin-top: .6rem; overflow: hidden; }
+    .bar > i { display: block; height: 100%; width: 0; background: #3b82f6; transition: width .25s linear; }
+    #defects { margin-top: 1rem; font-size: .82rem; color: #d8b56b; white-space: pre-wrap;
+               line-height: 1.45; }
+    #error { margin-top: 1rem; color: #f0808a; font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>MidiSharp Web Player</h1>
+    <p class="sub">Audio plays on the server machine. The browser is the remote.</p>
+
+    <label for="device">Output device</label>
+    <select id="device"></select>
+
+    <label for="midi">MIDI file</label>
+    <select id="midi"></select>
+
+    <label for="soundfont">SoundFont</label>
+    <select id="soundfont"></select>
+
+    <div class="row">
+      <button id="play">▶ Play</button>
+      <button id="stop" disabled>■ Stop</button>
+      <button id="exit">Exit server</button>
+    </div>
+
+    <div id="status">
+      <span class="state" id="state">Idle</span>
+      <span id="time"></span>
+      <div class="bar"><i id="fill"></i></div>
+    </div>
+    <div id="error"></div>
+    <div id="defects"></div>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

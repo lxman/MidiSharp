@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>MidiSharp.Server</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Loader\Loader\Loader.csproj" />
+    <ProjectReference Include="..\..\src\MidiSharp.Core\MidiSharp.Core.csproj" />
+    <ProjectReference Include="..\..\src\MidiSharp.Synth\MidiSharp.Synth.csproj" />
+    <ProjectReference Include="..\..\src\MidiSharp.Synth.OwnAudio\MidiSharp.Synth.OwnAudio.csproj" />
+  </ItemGroup>
+
+</Project>

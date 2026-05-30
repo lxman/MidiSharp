@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Ownaudio.Core;
 using OwnaudioNET;
 using OwnaudioNET.Mixing;
@@ -15,6 +16,7 @@ public sealed class OwnAudioOutput : IAudioOutput
     private readonly int _sampleRate;
     private readonly int _channels;
     private readonly int _bufferSizeFrames;
+    private readonly string? _outputDeviceId;
 
     private AudioMixer? _mixer;
     private SynthCallbackSource? _source;
@@ -42,11 +44,59 @@ public sealed class OwnAudioOutput : IAudioOutput
     /// <param name="sampleRate">Output sample rate in Hz.</param>
     /// <param name="channels">Channel count (2 = stereo). Must match the synth's interleaved output.</param>
     /// <param name="bufferSizeFrames">Audio engine buffer size in frames; smaller = lower latency.</param>
-    public OwnAudioOutput(int sampleRate = 44100, int channels = 2, int bufferSizeFrames = 1024)
+    /// <param name="outputDeviceId">
+    /// Output device id from <see cref="GetOutputDevices"/> (an <c>AudioDeviceInfo.DeviceId</c>),
+    /// or null for the system default. Applied via <c>AudioConfig.OutputDeviceId</c> at engine init.
+    /// </param>
+    public OwnAudioOutput(int sampleRate = 44100, int channels = 2, int bufferSizeFrames = 1024, string? outputDeviceId = null)
     {
         _sampleRate = sampleRate;
         _channels = channels;
         _bufferSizeFrames = bufferSizeFrames;
+        _outputDeviceId = outputDeviceId;
+    }
+
+    /// <summary>A selectable audio output device — a leak-free view of OwnAudio's AudioDeviceInfo.</summary>
+    public sealed record OutputDevice(string Id, string Name, string EngineName, bool IsDefault);
+
+    /// <summary>
+    /// Enumerate the available audio output devices. The OwnAudio engine must be
+    /// initialized to enumerate, so when nothing is playing this does a transient
+    /// init/shutdown; when a stream is already running it queries the live engine.
+    /// </summary>
+    public static IReadOnlyList<OutputDevice> GetOutputDevices()
+    {
+        lock (s_initLock)
+        {
+            var transient = s_initRefCount == 0;
+            if (transient)
+            {
+                OwnaudioNet.Initialize(new AudioConfig
+                {
+                    SampleRate = 44100,
+                    Channels = 2,
+                    BufferSize = 1024,
+                    HostType = EngineHostType.None,
+                });
+            }
+            try
+            {
+                var devices = new List<OutputDevice>();
+                foreach (var d in OwnaudioNet.GetOutputDevices())
+                {
+                    if (!d.IsOutput) continue;
+                    devices.Add(new OutputDevice(d.DeviceId, d.Name, d.EngineName, d.IsDefault));
+                }
+                return devices;
+            }
+            finally
+            {
+                if (transient)
+                {
+                    try { OwnaudioNet.Shutdown(); } catch { /* best-effort teardown */ }
+                }
+            }
+        }
     }
 
     /// <inheritdoc />
@@ -63,7 +113,7 @@ public sealed class OwnAudioOutput : IAudioOutput
         ThrowIfDisposed();
         if (_isPlaying) return;
 
-        EnsureEngineInitialized(_sampleRate, _channels, _bufferSizeFrames);
+        EnsureEngineInitialized(_sampleRate, _channels, _bufferSizeFrames, _outputDeviceId);
 
         var engine = OwnaudioNet.Engine!.UnderlyingEngine;
         _mixer = new AudioMixer(engine, bufferSizeInFrames: _bufferSizeFrames);
@@ -103,7 +153,7 @@ public sealed class OwnAudioOutput : IAudioOutput
         if (_disposed) throw new ObjectDisposedException(nameof(OwnAudioOutput));
     }
 
-    private static void EnsureEngineInitialized(int sampleRate, int channels, int bufferSizeFrames)
+    private static void EnsureEngineInitialized(int sampleRate, int channels, int bufferSizeFrames, string? outputDeviceId)
     {
         lock (s_initLock)
         {
@@ -115,6 +165,7 @@ public sealed class OwnAudioOutput : IAudioOutput
                 Channels = channels,
                 BufferSize = bufferSizeFrames,
                 HostType = EngineHostType.None,
+                OutputDeviceId = outputDeviceId,   // null = system default
             };
             OwnaudioNet.Initialize(config);
             OwnaudioNet.Start();
