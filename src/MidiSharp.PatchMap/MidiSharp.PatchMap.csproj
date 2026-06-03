@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>MidiSharp.PatchMap</RootNamespace>
+    <Description>Patch-level instrument substitution: compose a SoundBank from a base font plus per-patch overrides drawn from other fonts. Independent of the synth and audio backend.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MidiSharp.Core\MidiSharp.Core.csproj" />
+  </ItemGroup>
+
+</Project>

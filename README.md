@@ -1,18 +1,35 @@
 # MidiSharp
 
-A cross-platform, pure-managed C# software synthesizer that renders MIDI files through SoundFont 2 (.sf2) presets. Built around a fully spec-compliant MIDI 1.0 / GM / GM2 / GS / XG protocol implementation and an SF2 generator/modulator engine validated against fluidsynth.
+A cross-platform, pure-managed C# software synthesizer that renders MIDI files through SoundFont presets — **SF2, SF3, SFZ, and DLS**, all loaded into one common in-memory representation (the *SoundBank IR*). Built around a fully spec-compliant MIDI 1.0 / GM / GM2 / GS / XG protocol implementation and an SF2-style generator/modulator engine validated against fluidsynth.
+
+It also ships a patch-level **instrument-substitution** layer: list the instruments a song calls for and swap any of them for an instrument cherry-picked from another font, without altering the song's sequencing.
 
 ## Quick start
 
 ```bash
 # Live playback (use single quotes around files with ! or spaces)
-dotnet run --project samples/MidiSharp.Demo -- \
-  '<path-to>.mid' '<path-to>.sf2'
+dotnet run --project samples/MidiSharp.Demo -- '<song>.mid' '<base>.sf2'
 # Controls: Space pause/resume, S reset, Q quit
 
 # Render to WAV instead of live playback
-dotnet run --project samples/MidiSharp.Demo -- \
-  '<path-to>.mid' '<path-to>.sf2' /tmp/out.wav
+dotnet run --project samples/MidiSharp.Demo -- '<song>.mid' '<base>.sf2' /tmp/out.wav
+
+# List the patches (instruments) a song uses, named against a base font
+dotnet run --project samples/MidiSharp.Demo -- --patches '<song>.mid' '<base>.sf2'
+
+# Override patches with instruments from other fonts (repeatable), then play or render
+dotnet run --project samples/MidiSharp.Demo -- '<song>.mid' '<base>.sf2' \
+  --map 30=OtherGM.sf2            # program 30 ← OtherGM's program 30 (GM-aligned)
+  # --map 30=Guitars.sf2:5       program 30 ← Guitars' program 5
+  # --map 128:0=OtherDrums.sf2   swap the whole drum kit (bank 128)
+```
+
+A browser-based player is also included:
+
+```bash
+dotnet run --project samples/MidiSharp.Server -- --sf-root ~/soundfonts --midi-root ~/midi
+# then open http://localhost:5005 — a file browser for picking the song and fonts,
+# a "patches used" panel, and per-patch override pickers. Audio plays on the server machine.
 ```
 
 Tested daily against `GeneralUser-GS.sf2` and `TyrolandSFX.sf2`. End-to-end A/B vs fluidsynth on real GS-heavy content stays within ±3.5 dB worst case across the entire spectrum, with bass essentially identical (±1 dB).
@@ -22,28 +39,28 @@ Tested daily against `GeneralUser-GS.sf2` and `TyrolandSFX.sf2`. End-to-end A/B 
 ```
 MidiSharp.slnx                       Root solution file
 ├── src/
-│   ├── MidiSharp.Core/              MIDI file parsing, sequencing, tempo map, lyric parser (netstandard2.1)
-│   ├── MidiSharp.Synth/             Software synthesizer + RealtimePlayer (netstandard2.1)
-│   ├── MidiSharp.Synth.OwnAudio/    Cross-platform audio backend via OwnAudioSharp (net10.0)
-│   └── MidiSharp.Sf2/               Legacy SF2 library retained for the writer support SF2.Net lacks
-├── Loader/                          Soundbank loading subsystem
-│   ├── Loader/Loader/               Unified loader — depends on all four <format>.Net readers and (planned) MidiSharp.Core for IR; hosts the format-to-IR translators
-│   ├── SF2/
-│   │   ├── SF2.Net/                 SF2 reader — RIFF parsing, presets/instruments/zones, sample chunk access
-│   │   ├── SF2.Net.Tests/
-│   │   └── SF2.Net.SmokeTest/
-│   ├── SF3/SF3.Net/                 SF3 reader (Vorbis-compressed SF2) — scaffolding, not yet implemented
-│   ├── SFZ/SFZ.Net/                 SFZ reader — text + WAV references; scaffolding
-│   └── DLS/DLS.Net/                 DLS Level 1/2 reader — scaffolding
-├── samples/MidiSharp.Demo/          Live + render-to-WAV demo
-├── tests/                           xUnit tests (currently 36 passing)
-├── docs/                            Design docs for the planned IR refactor (see Roadmap below)
+│   ├── MidiSharp.Core/              MIDI parsing, sequencing, tempo map, lyrics, AND the SoundBank IR (netstandard2.1)
+│   ├── MidiSharp.Audio/             Sample-file decoders — WAV/AIFF/FLAC/Vorbis/PCM (netstandard2.1)
+│   ├── MidiSharp.Synth/             Software synthesizer + RealtimePlayer; consumes the IR (netstandard2.1)
+│   ├── MidiSharp.Synth.OwnAudio/    Cross-platform audio output via OwnAudioSharp (net10.0)
+│   └── MidiSharp.PatchMap/          Instrument substitution — composes SoundBanks (netstandard2.1, Core-only)
+├── Loader/                          Soundbank loading → SoundBank IR
+│   ├── Loader/Loader/               Unified loader + format-to-IR translators (SF2/SF3/SFZ/DLS) + sample sources
+│   ├── SF2/SF2.Net/                 SF2 reader — RIFF parsing, presets/instruments/zones, sample access (+ tests)
+│   ├── SF3/SF3.Net/                 SF3 reader (Vorbis-compressed SF2)
+│   ├── SFZ/SFZ.Net/                 SFZ reader (text opcodes + WAV references)
+│   └── DLS/DLS.Net/                 DLS Level 1/2 reader
+├── samples/
+│   ├── MidiSharp.Demo/              CLI: live playback / WAV render / --patches / --map
+│   └── MidiSharp.Server/            Browser player: file browser + per-patch override UI
+├── tests/                           xUnit — 101 passing (Core, Synth, Loader, Audio, SF2.Net, PatchMap)
+├── docs/                            SoundBank IR + loader design docs
 └── MIDI/                            Reference PDFs (MIDI 1.0 / 2.0 / SMF / RPs / Universal SysEx)
 ```
 
-The `<format>.Net` projects are intentionally MidiSharp-free — pure-managed readers, publishable as independent NuGet packages. The bridge between them and the synth lives in `MidiSharp.Core` (which will own the SoundBank IR) and the unified `Loader/Loader/` project (which translates each format's parsed types into IR); see [`docs/sound-bank-loader.md`](docs/sound-bank-loader.md).
+The `<format>.Net` reader projects are intentionally MidiSharp-free — pure-managed, publishable as independent NuGet packages. The bridge between them and the synth is `MidiSharp.Core` (which owns the SoundBank IR) and the unified `Loader/Loader/` project (which translates each format's parsed types into IR); see [`docs/sound-bank-loader.md`](docs/sound-bank-loader.md).
 
-Build everything from the repo root:
+Build and test everything from the repo root:
 
 ```bash
 dotnet build MidiSharp.slnx
@@ -63,7 +80,7 @@ dotnet test  MidiSharp.slnx
 | SysEx | GM/GM2/GS/XG Reset, Universal Master Volume/Pan/Fine/Coarse Tuning, GS Master Volume/Tune/Pan/Key Shift, GS Reverb/Chorus parameter, GS Part Parameters (Use For Rhythm, Pitch Key Shift, Volume, Pan, Velocity Sense), XG Master/Part Mode, MTS (accepted) |
 | SMF Meta | SetTempo & EOT consumed by sequencer; lyrics/markers/text/copyright/signatures surfaced via `RealtimePlayer.MetaEventDispatched`; ChannelPrefix/MidiPort intentionally dropped (single-port synth) |
 
-### SF2 engine
+### Synthesis engine
 
 - All 10 SF2 default modulators (velocity → attenuation/filter, CC91/93 sends, CC1/aftertouch/poly-aftertouch → vibrato depth)
 - EMU8k attenuation factor (0.4 scaling) applied to InitialAttenuation
@@ -71,7 +88,20 @@ dotnet test  MidiSharp.slnx
 - Per-voice envelopes (volume + modulation), per-voice LFOs (modulation + vibrato), 2-pole resonant low-pass filter
 - FDN reverb (Jot 1991, 8 lines, Hadamard feedback) and stereo chorus
 - Voice retrigger semantics, exclusive class handling, sample looping with loop-until-release
-- RealtimePlayer drives the synth from the audio callback for sample-accurate event timing on every platform
+- The engine consumes the **format-neutral SoundBank IR** and never branches on source format; `RealtimePlayer` drives it from the audio callback for sample-accurate event timing on every platform
+
+### Multi-format loading (SoundBank IR)
+
+Every supported format loads through one in-memory representation. `SoundBankLoader.Load(path)` sniffs the format and dispatches to a translator that flattens the source hierarchy into the IR (`SoundBank` → `Patch` → `PatchZone` → `SampleRef`); the synth resolves every note through a single seam, `SoundBank.FindPatch(bank, program)`, and reads samples through one `ISampleSource`.
+
+| Format | Reader | Status |
+|---|---|---|
+| SF2 | `Loader/SF2/SF2.Net/` | Working — the primary, fluidsynth-validated path; memory-mapped sample source |
+| SF3 | `Loader/SF3/SF3.Net/` | Implemented — lazy Vorbis-decoding sample source |
+| SFZ | `Loader/SFZ/SFZ.Net/` | Implemented — text-opcode parser + WAV resolution; supports keyswitch, round-robin, CC gates |
+| DLS | `Loader/DLS/DLS.Net/` | Implemented — Level 1/2 RIFF + articulation translation |
+
+SF2 is the most thoroughly validated; SF3/SFZ/DLS are newer but render through the same IR and synth path. The contract is documented in [`docs/sound-bank-ir.md`](docs/sound-bank-ir.md) and [`docs/sound-bank-loader.md`](docs/sound-bank-loader.md).
 
 ### Recommended Practices
 
@@ -86,53 +116,36 @@ Implemented: RP-001 (SMF 1.0), RP-013 (GM Level 1), RP-014 (Bank Select Response
 | Jump! (post-LFO-generator fix) | -4.26 dB at 10-20 kHz; ≤2 dB elsewhere | -0.99 dB |
 | Jump! with Tyroland (same-soundfont A/B) | -3.45 dB at 500-2000 Hz | -1.67 dB |
 
-36 unit tests cover MIDI file parsing, sequencer timing, tempo map, and RP-026 lyric parsing.
+101 unit tests across the suite cover MIDI parsing, sequencer timing, tempo map, RP-026 lyric parsing, the SF2 reader, synthesis, the loaders, and patch substitution.
+
+## Instrument substitution (`MidiSharp.PatchMap`)
+
+A standalone module that lets you re-author what a song plays without touching the song. The mental model: a soundfont *is* a `(bank, program) → instrument` map, and the synth resolves every note through exactly one seam (`SoundBank.FindPatch`). So substitution is a SoundBank-**composition** problem, not a synth change.
+
+- **`PatchUsageAnalyzer`** — walks the sequenced events and reports the patches a song actually uses (the resolved `(bank, program)` active at each note), named against a base font. Bank resolution is shared with the synth (`MidiSharp.SoundBank.BankResolution`) so the list matches playback exactly.
+- **`PatchMapSession`** — holds a base font, any number of preloaded *source* fonts, and a map of overrides: `(logical bank, program) → a patch in a source font`. `BuildComposite()` returns a `SoundBank`.
+- **`SoundBankComposer` + `ConcatenatedSampleSource`** — the composite is base patches ∪ overrides over a concatenated sample space (overridden zones get their `SampleId` re-based; stereo links rebased). The synth consumes it through the ordinary `LoadSoundFont`/`FindPatch` contract and can't tell it from a native font — **zero synth changes.**
+
+Sequencing is untouched: the file's program changes still pick *logical* patches; only what they resolve to changes. Overrides are sparse by default (a few on top of a base font) or can cover the whole set; drums are swapped as a whole kit (bank 128). The session owns the lifetime of the base + source fonts; composites are lightweight borrowed views, rebuilt per playback.
+
+Both front-ends use it: the Demo CLI (`--patches`, `--map`) and the web player (file browser + per-patch override pickers, building the composite server-side before play).
 
 ## Out-of-scope by design
 
-- **Mastering / output EQ / limiting** — the synth renders the spec; mastering belongs in the caller's signal chain.
-- **MIDI 2.0 / UMP** — different wire format, per-note expression model doesn't map cleanly to SF2, no real-world content. Could revisit when real Clip Files appear.
+- **Mastering / output EQ / limiting** — the synth renders the spec; mastering belongs in the caller's signal chain (or a separate helper project).
+- **Hardware / OS MIDI-port output** — this renders *audio* from MIDI files; it is not a MIDI router. `RealtimePlayer` drives the in-process synth directly. (The legacy WinMM/CoreMIDI `IMidiOutput` + `MidiPlayer` path has been removed.)
+- **SoundFont authoring / writing** — load-and-render only; the standalone SF2 read/write library has been removed. Recreate it if editing is ever needed.
+- **MIDI 2.0 / UMP** — different wire format; the per-note expression model doesn't map cleanly to SF2's channel-sourced modulators, and there's no real-world content yet. Could revisit when real Clip Files appear (MPE is the lower-cost on-ramp if per-note expression is ever wanted).
 - **XMF container format** (RP-032 through RP-037), Mobile DLS (RP-031), Scalable Polyphony (RP-027), Mobile Phone Control (RP-028).
-- **GM1/GM2 sound-set name registries** (RP-024/029/039) — descriptive only; the SF2 supplies actual sounds.
+- **GM1/GM2 sound-set name registries** (RP-024/029/039) — descriptive only; the soundfont supplies the actual sounds.
 
-## Roadmap: multi-format support via a common SoundBank IR
+## Future work
 
-The plan is to add SF3, SFZ, and DLS support alongside SF2 by generalizing the synth's input. Every loader produces the same in-memory representation (`SoundBank`); the synth consumes that representation and never branches on source format. Designed for desktop and mobile — structural data resident in RAM, sample data backed by mmap with format-specific decoders.
-
-Three design docs spell out the contract:
-
-- [`docs/sound-bank-loader.md`](docs/sound-bank-loader.md) — loader architecture, dispatch, lifetime/threading rules, per-format sample-source strategies.
-- [`docs/sound-bank-ir.md`](docs/sound-bank-ir.md) — field-by-field reference for the in-memory IR. Domain-natural units (seconds, Hz, dB), pre-flattened zones, route-as-data modulation.
-- [`docs/synth-genericization.md`](docs/synth-genericization.md) — step-by-step refactor sequence for the existing SF2-shaped synth, with concrete code sketches and a regression-test strategy that keeps audio output stable at each step.
-
-### Where each piece lives
-
-| Component | Location | Status |
-|---|---|---|
-| Pure SF2 reader | `Loader/SF2/SF2.Net/` | Working |
-| Pure SF3 reader | `Loader/SF3/SF3.Net/` | Scaffolding |
-| Pure SFZ reader | `Loader/SFZ/SFZ.Net/` | Scaffolding |
-| Pure DLS reader | `Loader/DLS/DLS.Net/` | Scaffolding |
-| Unified Loader project | `Loader/Loader/` | Scaffolding (references all four readers; no translators yet) |
-| SoundBank IR types | `src/MidiSharp.Core/SoundBank/` (planned) | Not started |
-| Format-to-IR translators | `Loader/Loader/` (planned, alongside unified dispatch) | Not started |
-
-### Sequencing
-
-1. Define the IR in `MidiSharp.Core`. No synth changes; just types.
-2. Add the SF2-to-IR translator and dispatch entry point inside `Loader/Loader/`. Verify round-trip rendering matches current output within ±0.5 dB.
-3. Generalize the synth's `Voice` to consume IR directly, with the old SF2-direct path kept alive in parallel; switch over gradually. Full sequence in [`docs/synth-genericization.md`](docs/synth-genericization.md).
-4. Add the SF3 translator inside `Loader/Loader/` (Vorbis decode in the sample source, otherwise identical to SF2 — same translator with a different sample-source implementation).
-5. Add the SFZ translator (text parser + WAV resolution + opcode → IR translation).
-6. Add the DLS translator (RIFF parser closer to SF2 than SFZ).
-7. Memory-mapped sample sources for SF2/SF3/SFZ/DLS — orthogonal to the IR work; ship per format when the IR is ready.
-
-Total estimated effort 4-6 weeks of focused work, none of it big-bang. The synth keeps rendering correctly at every commit.
-
-### Other potential future work
-
-- **UMP-to-MIDI-1.0 translation layer** if MIDI 2.0 hardware comes through the door (most "MIDI 2.0" devices ship in 1.0-compatibility mode anyway).
-- **Master EQ / mastering** as a *separate* helper project. The synth deliberately renders the spec without master processing.
+- **Memory-mapped/streaming sample sources for SFZ and DLS** (SF2 is mmap'd, SF3 lazily decodes Vorbis).
+- **Global "search all fonts by name"** in the web player's file browser (it currently filters per folder).
+- **Saved override presets** ("remaps") and instrument **upload** in the web player (overrides are currently in-session, sourced from the configured font folders).
+- **UMP-to-MIDI-1.0 translation layer** if MIDI 2.0 hardware ever shows up (most "MIDI 2.0" devices ship in 1.0-compatibility mode anyway).
+- Further SF3/SFZ/DLS hardening toward the SF2 path's fluidsynth-validated fidelity.
 
 ## License
 

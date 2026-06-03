@@ -569,22 +569,10 @@ public sealed class Synthesizer
         }
     }
 
+    // Delegates to the shared, pure BankResolution helper so offline patch-usage analysis
+    // resolves banks identically to playback. Behavior is unchanged from the inline version.
     private static void ResolveBank(ChannelState ch)
-    {
-        // Drum part overrides everything to DrumBank (128 by default; 127 for MAP2),
-        // regardless of CC 0/32. Set either by GM default (channel 10) or by GS rhythm-part SysEx.
-        if (ch.IsDrumPart)
-        {
-            ch.Bank = ch.DrumBank;
-            return;
-        }
-
-        // GS-style soundfonts (incl. GeneralUser-GS) keep CC 0 at 0 and use CC 32 for the
-        // variation number; XG-style use CC 0. Prefer LSB if non-zero, else MSB. The
-        // NoteOn path additionally falls back to bank 0 if exact match misses, so picking
-        // the wrong one here is recoverable.
-        ch.Bank = ch.BankLsb != 0 ? ch.BankLsb : ch.BankMsb;
-    }
+        => ch.Bank = (ushort)BankResolution.Resolve(ch.BankMsb, ch.BankLsb, ch.IsDrumPart, ch.DrumBank);
 
     private static void ApplyDataEntryMsb(ChannelState ch, int value)
     {

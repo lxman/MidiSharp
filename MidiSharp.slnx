@@ -6,9 +6,11 @@
     <Project Path="src/MidiSharp.Audio/MidiSharp.Audio.csproj" />
   </Folder>
   <Folder Name="/SoftSynth/">
-    <Project Path="src/MidiSharp.Sf2/MidiSharp.Sf2.csproj" />
     <Project Path="src/MidiSharp.Synth/MidiSharp.Synth.csproj" />
     <Project Path="src/MidiSharp.Synth.OwnAudio/MidiSharp.Synth.OwnAudio.csproj" />
+  </Folder>
+  <Folder Name="/PatchMap/">
+    <Project Path="src/MidiSharp.PatchMap/MidiSharp.PatchMap.csproj" />
   </Folder>
   <Folder Name="/Loader/">
     <Project Path="Loader/Loader/Loader.csproj" />
@@ -44,6 +46,7 @@
     <Project Path="tests/MidiSharp.Audio.Tests/MidiSharp.Audio.Tests.csproj" />
     <Project Path="tests/MidiSharp.Core.Tests/MidiSharp.Core.Tests.csproj" />
     <Project Path="tests/MidiSharp.Loader.Tests/MidiSharp.Loader.Tests.csproj" />
+    <Project Path="tests/MidiSharp.PatchMap.Tests/MidiSharp.PatchMap.Tests.csproj" />
     <Project Path="tests/MidiSharp.Synth.Tests/MidiSharp.Synth.Tests.csproj" />
   </Folder>
 </Solution>

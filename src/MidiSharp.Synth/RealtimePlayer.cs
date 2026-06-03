@@ -13,13 +13,11 @@ namespace MidiSharp.Synth;
 /// audio via the underlying <see cref="Synthesizer"/>.
 ///
 /// <para>
-/// This is the modern replacement for <c>MidiPlayer</c> + <c>SynthesizerMidiOutput</c>
-/// when you have an in-process synth. Rather than scheduling events with
-/// <c>Task.Delay</c> on a wall-clock thread (which is sloppy on Windows due to the
-/// 15.6 ms system timer tick), the player slaves to whatever clock pulls audio
-/// from it — typically the audio backend's callback, or a tight render loop
-/// when writing to a WAV file. Same code, sample-accurate timing on every
-/// platform.
+/// The player slaves to whatever clock pulls audio from it — typically the audio
+/// backend's callback, or a tight render loop when writing to a WAV file — rather
+/// than scheduling events with <c>Task.Delay</c> on a wall-clock thread (which is
+/// sloppy on Windows due to the 15.6 ms system timer tick). Same code, sample-accurate
+/// timing on every platform.
 /// </para>
 ///
 /// <para>
