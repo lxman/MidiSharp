@@ -132,6 +132,8 @@ internal static class SfzParser
     {
         var control = new SfzControl();
         var regions = new List<SfzRegion>();
+        var ignoredHeaders = new Dictionary<string, int>(StringComparer.Ordinal);
+        var controlIgnored = new Dictionary<string, int>(StringComparer.Ordinal);
 
         // Cascade scopes. Each new header at a given level resets it and all
         // lower levels (a new <master> clears the running <group>, etc.).
@@ -172,7 +174,11 @@ internal static class SfzParser
                     case "master": master.Clear(); group.Clear(); scope = Scope.Master; break;
                     case "group": group.Clear(); scope = Scope.Group; break;
                     case "region": region = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase); scope = Scope.Region; break;
-                    default: scope = Scope.Ignore; break;  // <curve>, <effect>, <sample>, …
+                    default:  // <curve>, <effect>, <sample>, … — skipped, but recorded for diagnostics
+                        ignoredHeaders.TryGetValue(header, out int count);
+                        ignoredHeaders[header] = count + 1;
+                        scope = Scope.Ignore;
+                        break;
                 }
                 continue;
             }
@@ -185,7 +191,13 @@ internal static class SfzParser
 
             switch (scope)
             {
-                case Scope.Control: ApplyControl(control, key, value); break;
+                case Scope.Control:
+                    if (!ApplyControl(control, key, value))
+                    {
+                        controlIgnored.TryGetValue(key, out int cc);
+                        controlIgnored[key] = cc + 1;
+                    }
+                    break;
                 case Scope.Global: global[key] = value; break;
                 case Scope.Master: master[key] = value; break;
                 case Scope.Group: group[key] = value; break;
@@ -195,24 +207,33 @@ internal static class SfzParser
         }
 
         FlushRegion();
-        return new SfzInstrument { Control = control, Regions = regions };
+        return new SfzInstrument
+        {
+            Control = control,
+            Regions = regions,
+            IgnoredHeaders = ignoredHeaders,
+            ControlIgnored = controlIgnored,
+        };
     }
 
-    private static void ApplyControl(SfzControl control, string key, string value)
+    /// <summary>Apply a <c>&lt;control&gt;</c> opcode. Returns false if it's not one we act on.</summary>
+    private static bool ApplyControl(SfzControl control, string key, string value)
     {
         switch (key)
         {
             case "default_path":
                 control.DefaultPath = value.Replace('\\', '/');
-                break;
+                return true;
             case "octave_offset":
                 if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int oo))
                     control.OctaveOffset = oo;
-                break;
+                return true;
             case "note_offset":
                 if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int no))
                     control.NoteOffset = no;
-                break;
+                return true;
+            default:
+                return false;
         }
     }
 

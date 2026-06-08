@@ -44,3 +44,12 @@ public readonly record struct KeySwitch(byte Low, byte High, byte SelectingKey, 
 /// every <see cref="Length"/> consecutive matching NoteOns (0-indexed).
 /// </summary>
 public readonly record struct RoundRobin(int Position, int Length);
+
+/// <summary>
+/// SFZ-style random round-robin (<c>lorand</c>/<c>hirand</c>). Each NoteOn rolls
+/// one value in [0, 1); this zone sounds only when the roll is in [<see cref="Lo"/>,
+/// <see cref="Hi"/>). The roll is shared by all zones of the note, so a set of zones
+/// whose ranges tile [0, 1) selects exactly one at random. Independent of the
+/// sequence <see cref="RoundRobin"/>; a zone may carry either, both, or neither.
+/// </summary>
+public readonly record struct RandomRange(double Lo, double Hi);

@@ -19,7 +19,17 @@ public sealed class Synthesizer
     private readonly int _sampleRate;
     private int _generationCounter;
 
+    // SFZ random round-robin (lorand/hirand). Fixed seed → identical note selections
+    // for the same event sequence, so renders stay reproducible for A/B comparison.
+    private readonly System.Random _rng = new(0x5F2_A12A);
+
     private IRBank? _soundBank;
+
+    // Per-track instrument routing: trackIndex → the synthetic (bank, program) its forced patch
+    // lives at in the loaded composite. Empty by default (notes resolve by channel as usual).
+    private IReadOnlyDictionary<int, (int Bank, int Program)> _trackPatchMap = EmptyTrackPatchMap;
+    private static readonly IReadOnlyDictionary<int, (int Bank, int Program)> EmptyTrackPatchMap
+        = new Dictionary<int, (int Bank, int Program)>();
 
     // Temporary buffers for mixing
     private float[] _leftBuffer;
@@ -149,9 +159,27 @@ public sealed class Synthesizer
     }
 
     /// <summary>
+    /// Installs a per-track instrument routing map (trackIndex → synthetic (bank, program) in the
+    /// loaded composite, as produced by <c>SoundBankComposer.BuildComposite</c>). A NoteOn that
+    /// carries a track index present in this map resolves to the mapped patch instead of the
+    /// channel's program — letting one part be forced to an instrument independent of the
+    /// channel/program its notes carry. Pass an empty map (or none) to route purely by channel.
+    /// </summary>
+    public void SetTrackPatchMap(IReadOnlyDictionary<int, (int Bank, int Program)> map)
+        => _trackPatchMap = map ?? EmptyTrackPatchMap;
+
+    /// <summary>
     /// Processes a MIDI note on event.
     /// </summary>
-    public void NoteOn(int channel, int key, int velocity)
+    public void NoteOn(int channel, int key, int velocity) => NoteOn(channel, key, velocity, -1);
+
+    /// <summary>
+    /// Processes a MIDI note on event originating from <paramref name="trackIndex"/>. When the
+    /// track has a per-track override (see <see cref="SetTrackPatchMap"/>) the note is forced to
+    /// that instrument; otherwise it resolves by channel program exactly as the 3-arg overload.
+    /// Pass <c>-1</c> for <paramref name="trackIndex"/> when the source track is unknown.
+    /// </summary>
+    public void NoteOn(int channel, int key, int velocity, int trackIndex)
     {
         if ((uint)channel >= ChannelCount) return;     // MIDI is 4-bit channel; silently drop bad input
         if ((uint)key >= 128) return;                  // 7-bit key
@@ -191,8 +219,14 @@ public sealed class Synthesizer
 
         var channelState = _channels[channel];
 
-        var patch = _soundBank.FindPatch(channelState.Bank, channelState.Program)
-                    ?? _soundBank.FindPatch(0, channelState.Program);
+        // Per-track override wins: a note from a mapped track is forced to its instrument,
+        // ignoring the channel's program. Falls through to channel resolution if unmapped or
+        // (defensively) if the synthetic patch is somehow absent.
+        Patch? patch = null;
+        if (trackIndex >= 0 && _trackPatchMap.TryGetValue(trackIndex, out var addr))
+            patch = _soundBank.FindPatch(addr.Bank, addr.Program);
+        patch ??= _soundBank.FindPatch(channelState.Bank, channelState.Program)
+                  ?? _soundBank.FindPatch(0, channelState.Program);
         if (patch == null) return;
 
         // SFZ keyswitch: a key inside a zone's switch range selects an articulation
@@ -230,6 +264,12 @@ public sealed class Synthesizer
         // if a round-robin zone is actually reached) and shared across zones.
         int? rrIndex = null;
 
+        // Random round-robin roll for this NoteOn — one value shared by every zone so
+        // a set of lorand/hirand ranges tiling [0,1) selects exactly one. Lazy: the
+        // RNG only advances when a random zone is actually evaluated, so non-random
+        // banks leave the stream (and reproducibility) untouched.
+        double? roll = null;
+
         foreach (var zone in patch.Zones)
         {
             if (!zone.Keys.Contains(key)) continue;
@@ -250,6 +290,13 @@ public sealed class Synthesizer
             {
                 rrIndex ??= channelState.NextRoundRobin(key);
                 if (rrIndex.Value % rr.Length != rr.Position) continue;
+            }
+
+            // SFZ random round-robin: zone sounds only if this note's roll is in range.
+            if (zone.Random is RandomRange rand)
+            {
+                roll ??= _rng.NextDouble();
+                if (roll.Value < rand.Lo || roll.Value >= rand.Hi) continue;
             }
 
             var voice = AllocateVoice(channel, key);

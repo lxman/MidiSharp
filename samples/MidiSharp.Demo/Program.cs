@@ -2,11 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using MidiSharp.IO;
 using MidiSharp.Model.Events;
 using MidiSharp.PatchMap;
 using MidiSharp.SoundBank;
+using MidiSharp.SoundBank.Sfz;
 using MidiSharp.Synth;
 using MidiSharp.Synth.OwnAudio;
 using IRBank = MidiSharp.SoundBank.SoundBank;
@@ -15,11 +17,16 @@ using IRBank = MidiSharp.SoundBank.SoundBank;
 var positionals = new List<string>();
 var maps = new List<string>();
 var listPatches = false;
+string? sfzReportTarget = null;
 for (var i = 0; i < args.Length; i++)
 {
     switch (args[i])
     {
         case "--patches": listPatches = true; break;
+        case "--sfz-report":
+            if (i + 1 >= args.Length) { Console.WriteLine("--sfz-report needs a .sfz file or a folder"); return 1; }
+            sfzReportTarget = args[++i];
+            break;
         case "--map":
             if (i + 1 >= args.Length) { Console.WriteLine("--map needs a spec, e.g. --map 30=Other.sf2"); return 1; }
             maps.Add(args[++i]);
@@ -27,6 +34,11 @@ for (var i = 0; i < args.Length; i++)
         default: positionals.Add(args[i]); break;
     }
 }
+
+// Standalone: report which ARIA/SFZ opcodes a font (or a whole folder) uses that the loader
+// drops. Parse-only, no audio — for triaging a collection. Returns before the playback path.
+if (sfzReportTarget != null)
+    return RunSfzReport(sfzReportTarget);
 
 if (positionals.Count < 2)
 {
@@ -37,6 +49,7 @@ if (positionals.Count < 2)
     Console.WriteLine("                    or just the \"... Melodic ....sfz\" file and its \"Drums\" sibling auto-pairs.");
     Console.WriteLine();
     Console.WriteLine("  List patches:     MidiSharp.Demo --patches <midi> <sf2>");
+    Console.WriteLine("  SFZ opcode report: MidiSharp.Demo --sfz-report <font.sfz | folder>   (which ARIA opcodes are dropped)");
     Console.WriteLine("  Override patches: MidiSharp.Demo <midi> <sf2> [out.wav] --map <prog>=<font>[:<srcProg>] [--map ...]");
     Console.WriteLine("                      --map 30=OtherGM.sf2        program 30 ← OtherGM's program 30 (GM-aligned)");
     Console.WriteLine("                      --map 30=Guitars.sf2:5      program 30 ← Guitars' program 5");
@@ -135,6 +148,64 @@ return exitCode;
 // melodic + percussion files, either pass "melodic.sfz+drums.sfz" (1st on bank 0,
 // the rest on bank 128 where the synth routes channel 10), or pass a "... Melodic
 // ....sfz" file and let its "Drums" sibling auto-pair.
+// Scan one .sfz or a folder of them and print which opcodes/headers the loader drops.
+static int RunSfzReport(string target)
+{
+    var files = new List<string>();
+    if (Directory.Exists(target))
+        files.AddRange(Directory.EnumerateFiles(target, "*.sfz", SearchOption.AllDirectories)
+            .OrderBy(p => p, StringComparer.OrdinalIgnoreCase));
+    else if (File.Exists(target))
+        files.Add(target);
+    else { Console.WriteLine($"Not found: {target}"); return 1; }
+
+    if (files.Count == 0) { Console.WriteLine($"No .sfz files under {target}"); return 0; }
+    bool single = files.Count == 1;
+
+    // family -> (#fonts using it, total regions across fonts, note)
+    var rollup = new Dictionary<string, (int Fonts, int Regions, string? Note)>(StringComparer.Ordinal);
+    int withFindings = 0;
+
+    foreach (var f in files)
+    {
+        SfzLoadReport rep;
+        try { rep = SfzDiagnostics.Scan(f); }
+        catch (Exception ex) { Console.WriteLine($"\n{Path.GetFileName(f)}: scan failed — {ex.Message}"); continue; }
+
+        if (rep.HasFindings) withFindings++;
+
+        if (single || rep.HasFindings)
+        {
+            Console.WriteLine();
+            Console.WriteLine($"{rep.Name}  ({rep.RegionCount} region{(rep.RegionCount == 1 ? "" : "s")})");
+            if (rep.IgnoredHeaders.Count > 0)
+                Console.WriteLine("  ignored headers: " +
+                    string.Join(", ", rep.IgnoredHeaders.Select(h => $"<{h.Header}>×{h.Count}")));
+            foreach (var op in rep.UnsupportedOpcodes)
+                Console.WriteLine($"  {op.Opcode,-24}{op.Count,6}  {op.Note}");
+            if (!rep.HasFindings)
+                Console.WriteLine("  fully supported");
+        }
+
+        foreach (var op in rep.UnsupportedOpcodes)
+        {
+            rollup.TryGetValue(op.Opcode, out var agg);
+            rollup[op.Opcode] = (agg.Fonts + 1, agg.Regions + op.Count, op.Note);
+        }
+    }
+
+    if (!single)
+    {
+        Console.WriteLine();
+        Console.WriteLine($"=== Rollup: {files.Count} fonts scanned, {withFindings} use unsupported opcodes ===");
+        Console.WriteLine($"  {"opcode",-24}{"fonts",6}{"regions",9}  note");
+        foreach (var kv in rollup.OrderByDescending(k => k.Value.Fonts).ThenByDescending(k => k.Value.Regions)
+                                  .ThenBy(k => k.Key, StringComparer.Ordinal))
+            Console.WriteLine($"  {kv.Key,-24}{kv.Value.Fonts,6}{kv.Value.Regions,9}  {kv.Value.Note}");
+    }
+    return 0;
+}
+
 static IRBank LoadBank(string spec)
 {
     if (spec.Contains('+'))

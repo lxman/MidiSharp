@@ -7,8 +7,13 @@
   <style>
     :root { color-scheme: dark; }
     body { font-family: system-ui, sans-serif; background: #15171c; color: #e6e6e6;
-           margin: 0; display: flex; justify-content: center; }
-    main { width: min(680px, 92vw); padding: 2rem 0 4rem; }
+           margin: 0; display: flex; justify-content: center; min-height: 100dvh; }
+    main { width: min(680px, 92vw); height: 100dvh; box-sizing: border-box;
+           padding: 1.4rem 0 1rem; display: flex; flex-direction: column; }
+    /* App-shell: pickers stay up top, the analysis results scroll in the middle,
+       and the transport + status stay put at the bottom so they're never pushed off-screen. */
+    .top, .bottom { flex: 0 0 auto; }
+    .mid { flex: 0 1 auto; min-height: 0; overflow-y: auto; padding-right: .3rem; }
     h1 { font-size: 1.3rem; font-weight: 600; }
     .sub { color: #8b93a1; font-size: .85rem; margin-top: -.5rem; }
     label { display: block; margin: 1rem 0 .3rem; font-size: .8rem; color: #9aa3b2;
@@ -32,7 +37,8 @@
     .state { font-weight: 600; }
     .bar { height: 6px; background: #2a2f3a; border-radius: 3px; margin-top: .6rem; overflow: hidden; }
     .bar > i { display: block; height: 100%; width: 0; background: #3b82f6; transition: width .25s linear; }
-    #defects { margin-top: 1rem; font-size: .82rem; color: #d8b56b; white-space: pre-wrap; line-height: 1.45; }
+    #defects { margin-top: 1rem; font-size: .82rem; color: #d8b56b; white-space: pre-wrap; line-height: 1.45;
+               max-height: 22vh; overflow-y: auto; }
     #error { margin-top: 1rem; color: #f0808a; font-size: .9rem; }
     #patchHint { margin: 0; }
     #patches { margin-top: .6rem; }
@@ -49,6 +55,12 @@
     .patch select { flex: 1 1 12rem; padding: .35rem .45rem; font-size: .85rem; }
     .patch .tag { font-size: .78rem; color: #6ee7a8; }
     .patch .clear { background: none; color: #8b93a1; font-weight: 400; font-size: .8rem; padding: .2rem .35rem; }
+    /* track rows reuse .patch layout; the heading shows the instrument name + what it sounds today */
+    .patch .track-name { font-size: .95rem; font-weight: 600; }
+    .patch .track-sub { color: #8b93a1; font-size: .78rem; font-variant-numeric: tabular-nums; }
+    .patch.silent { opacity: .5; }
+    #tracks { margin-top: .6rem; }
+    .patchSummary { cursor: pointer; color: #9aa3b2; font-size: .82rem; margin-top: 1.2rem; }
 
     /* File browser dialog */
     #browseBackdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55);
@@ -76,37 +88,50 @@
 </head>
 <body>
   <main>
-    <h1>MidiSharp Web Player</h1>
-    <p class="sub">Audio plays on the server machine. The browser is the remote.</p>
+    <div class="top">
+      <h1>MidiSharp Web Player</h1>
+      <p class="sub">Audio plays on the server machine. The browser is the remote.</p>
 
-    <label for="device">Output device</label>
-    <select id="device"></select>
+      <label for="device">Output device</label>
+      <select id="device"></select>
 
-    <label>MIDI file</label>
-    <button class="picker empty" id="midiPick" data-kind="midi">Choose a MIDI file…</button>
+      <label>MIDI file</label>
+      <button class="picker empty" id="midiPick" data-kind="midi">Choose a MIDI file…</button>
 
-    <label>SoundFont (base)</label>
-    <button class="picker empty" id="sfPick" data-kind="sf">Choose a base SoundFont…</button>
+      <label>SoundFont (base)</label>
+      <button class="picker empty" id="sfPick" data-kind="sf">Choose a base SoundFont…</button>
 
-    <div class="row">
-      <button id="analyze">Show patches used</button>
-      <span id="patchHint" class="sub"></span>
-    </div>
-    <div id="patches"></div>
-
-    <div class="row">
-      <button id="play">▶ Play</button>
-      <button id="stop" disabled>■ Stop</button>
-      <button id="exit">Exit server</button>
+      <div class="row">
+        <button id="analyze">Analyze</button>
+        <span id="trackHint" class="sub"></span>
+      </div>
     </div>
 
-    <div id="status">
-      <span class="state" id="state">Idle</span>
-      <span id="time"></span>
-      <div class="bar"><i id="fill"></i></div>
+    <div class="mid">
+      <div id="tracks"></div>
+
+      <details id="patchWrap" hidden>
+        <summary class="patchSummary">Advanced: override by patch (channel + program)</summary>
+        <span id="patchHint" class="sub"></span>
+        <div id="patches"></div>
+      </details>
     </div>
-    <div id="error"></div>
-    <div id="defects"></div>
+
+    <div class="bottom">
+      <div class="row">
+        <button id="play">▶ Play</button>
+        <button id="stop" disabled>■ Stop</button>
+        <button id="exit">Exit server</button>
+      </div>
+
+      <div id="status">
+        <span class="state" id="state">Idle</span>
+        <span id="time"></span>
+        <div class="bar"><i id="fill"></i></div>
+      </div>
+      <div id="error"></div>
+      <div id="defects"></div>
+    </div>
   </main>
 
   <div id="browseBackdrop" hidden>

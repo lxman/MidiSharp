@@ -30,6 +30,7 @@
     <Project Path="Loader/SFZ/SFZ.Net/SFZ.Net.csproj" />
   </Folder>
   <Folder Name="/Samples/">
+    <File Path="samples\MidiSharp.Server\MidiSharp.Server.csproj" />
     <Project Path="samples/MidiSharp.Demo/MidiSharp.Demo.csproj" />
   </Folder>
   <Folder Name="/Vendor/">

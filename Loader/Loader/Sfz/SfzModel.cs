@@ -115,4 +115,20 @@ internal sealed class SfzInstrument
 {
     public SfzControl Control { get; init; } = new();
     public IReadOnlyList<SfzRegion> Regions { get; init; } = Array.Empty<SfzRegion>();
+
+    /// <summary>
+    /// Non-cascading headers the parser skipped (e.g. <c>curve</c>, <c>effect</c>,
+    /// <c>sample</c>), as header-name → occurrence count. Their opcodes are dropped;
+    /// this records that they were present so a diagnostic can surface them.
+    /// </summary>
+    public IReadOnlyDictionary<string, int> IgnoredHeaders { get; init; }
+        = new Dictionary<string, int>();
+
+    /// <summary>
+    /// <c>&lt;control&gt;</c> opcodes the parser didn't act on (e.g. ARIA <c>set_ccN</c>,
+    /// <c>label_ccN</c>, <c>hint_*</c>), as opcode → occurrence count. These never reach a
+    /// region, so the diagnostic relies on this to surface them.
+    /// </summary>
+    public IReadOnlyDictionary<string, int> ControlIgnored { get; init; }
+        = new Dictionary<string, int>();
 }

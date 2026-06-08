@@ -159,7 +159,7 @@ public sealed class RealtimePlayer
                 var eventFrame = (long)(events[_eventIndex].AbsoluteTime.TotalSeconds * _sampleRate);
                 if (eventFrame <= absFrame)
                 {
-                    DispatchEvent(events[_eventIndex].Event);
+                    DispatchEvent(events[_eventIndex]);
                     _eventIndex++;
                     continue;
                 }
@@ -206,13 +206,14 @@ public sealed class RealtimePlayer
         }
     }
 
-    private void DispatchEvent(MidiEvent evt)
+    private void DispatchEvent(in ScheduledEvent se)
     {
+        var evt = se.Event;
         switch (evt)
         {
             case NoteOnEvent e:
                 if (e.Velocity == 0) _synth.NoteOff(e.Channel, e.Note);
-                else _synth.NoteOn(e.Channel, e.Note, e.Velocity);
+                else _synth.NoteOn(e.Channel, e.Note, e.Velocity, se.TrackIndex);
                 break;
             case NoteOffEvent e:
                 _synth.NoteOff(e.Channel, e.Note);

@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using MidiSharp.SoundBank;
+using MidiSharp.SoundBank.Sfz;
 using Xunit;
 using IRBank = MidiSharp.SoundBank.SoundBank;
 
@@ -367,6 +368,79 @@ public sealed class SfzLoaderTests : IDisposable
         var kick = Assert.Single(bank.FindPatch(128, 0)!.Zones);
         Assert.Equal(36, kick.Keys.Low);
         Assert.Equal(36, kick.Keys.High);                    // melodic (0-127) didn't leak onto bank 128
+    }
+
+    [Fact]
+    public void Lorand_hirand_emit_random_range()
+    {
+        WriteWav("a.wav");
+        var path = WriteSfz("<region> sample=a.wav lorand=0.25 hirand=0.75");
+
+        using var bank = SoundBankLoader.Load(path);
+        var z = ZonesOf(bank).Single();
+
+        Assert.Equal(new RandomRange(0.25, 0.75), z.Random);
+    }
+
+    [Fact]
+    public void AmpVelcurve_builds_table_and_suppresses_velocity_route()
+    {
+        WriteWav("a.wav");
+        // One interior point: 64→0.5, with implied anchors 0→0 and 127→1.
+        var path = WriteSfz("<region> sample=a.wav amp_velcurve_064=0.5");
+
+        using var bank = SoundBankLoader.Load(path);
+        var z = ZonesOf(bank).Single();
+
+        Assert.NotNull(z.AmpVelCurve);
+        Assert.Equal(128, z.AmpVelCurve!.Length);
+        Assert.Equal(0.0, z.AmpVelCurve[0], 4);
+        Assert.Equal(0.5, z.AmpVelCurve[64], 4);
+        Assert.Equal(1.0, z.AmpVelCurve[127], 4);
+        Assert.Equal(0.25, z.AmpVelCurve[32], 4);   // interpolated halfway from 0→64
+        Assert.True(z.AmpVelCurve[96] > 0.5 && z.AmpVelCurve[96] < 1.0);  // monotonic up from 64→127
+        // The default velocity→attenuation route is replaced by the curve.
+        Assert.DoesNotContain(z.Routes, r => r.Source is ModSource.Velocity && r.Dest == ModDestination.AttenuationDb);
+    }
+
+    [Fact]
+    public void Diagnostics_reports_unsupported_opcodes_and_ignored_headers_but_not_handled_ones()
+    {
+        var path = WriteSfz("""
+            <control> set_cc7=100 default_path=samples/
+            <curve> curve_index=1 v000=0 v127=1
+            <region> sample=a.wav volume=-3 lorand=0.0 hirand=0.5 off_mode=fast direction=reverse width_oncc20=50
+            """);
+
+        var report = SfzDiagnostics.Scan(path);
+
+        Assert.Equal(1, report.RegionCount);
+        var ops = report.UnsupportedOpcodes.Select(o => o.Opcode).ToList();
+        // Genuinely-dropped opcodes are reported (numbered ones aggregated to a family).
+        Assert.Contains("off_mode", ops);
+        Assert.Contains("direction", ops);
+        Assert.Contains("width_onccN", ops);
+        Assert.Contains("set_ccN", ops);                 // <control>-scope opcode, also surfaced
+        // Handled opcodes — including the two just implemented — are NOT reported.
+        Assert.DoesNotContain("volume", ops);
+        Assert.DoesNotContain("lorand", ops);
+        Assert.DoesNotContain("hirand", ops);
+        Assert.DoesNotContain("sample", ops);
+        Assert.DoesNotContain("default_path", ops);
+        // The skipped <curve> header is recorded.
+        Assert.Contains(report.IgnoredHeaders, h => h.Header == "curve");
+        // A known ARIA opcode carries an explanatory note.
+        Assert.Contains(report.UnsupportedOpcodes, o => o.Opcode == "direction" && o.Note != null);
+    }
+
+    [Fact]
+    public void Diagnostics_clean_font_has_no_findings()
+    {
+        var path = WriteSfz("<region> sample=a.wav volume=-3 ampeg_release=0.4 amp_velcurve_064=0.5");
+
+        var report = SfzDiagnostics.Scan(path);
+
+        Assert.False(report.HasFindings);
     }
 
     /// <summary>

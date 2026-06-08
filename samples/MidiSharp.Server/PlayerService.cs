@@ -11,10 +11,12 @@ public enum PlayerState { Idle, Playing, Completed }
 
 public sealed record DeviceDto(string id, string name, string engine, bool isDefault);
 public sealed record PatchOverrideDto(int logicalBank, int logicalProgram, string sourcePath, int sourceBank, int sourceProgram);
-public sealed record PlayRequest(string? deviceId, string midiPath, string soundfontPath, PatchOverrideDto[]? overrides = null);
+public sealed record TrackOverrideDto(int trackIndex, string? trackName, string sourcePath, int sourceBank, int sourceProgram);
+public sealed record PlayRequest(string? deviceId, string midiPath, string soundfontPath, PatchOverrideDto[]? overrides = null, TrackOverrideDto[]? trackOverrides = null);
 public sealed record PlayResponse(bool ok, double durationSeconds, string[] defects, string? error);
 public sealed record StatusDto(string state, double positionSeconds, double durationSeconds, string? midi, string? soundfont);
 public sealed record UsedPatchDto(int bank, int program, string? name, bool isDrum, int[] channels);
+public sealed record TrackInfoDto(int trackIndex, string? name, int[] channels, int[] programs, string? baseName);
 public sealed record SoundfontPatchDto(int bank, int program, string name);
 public sealed record SoundfontCatalogDto(string name, SoundfontPatchDto[] patches);
 
@@ -64,6 +66,21 @@ public sealed class PlayerService : IDisposable
     }
 
     /// <summary>
+    /// A song's tracks with the instrument each currently sounds (named against
+    /// <paramref name="soundfontPath"/>) — the per-instrument view the user binds overrides to.
+    /// Stateless: loads the base font transiently. Resolves banks identically to playback.
+    /// </summary>
+    public IReadOnlyList<TrackInfoDto> GetSongTracks(string midiPath, string soundfontPath)
+    {
+        var repair = SmfRepairFilter.Scan(File.ReadAllBytes(midiPath));
+        var midi = MidiFileReader.Read(repair.Data);
+        using var bank = SoundBankLoader.Load(soundfontPath);
+        return TrackUsageAnalyzer.Analyze(midi, bank)
+            .Select(t => new TrackInfoDto(t.TrackIndex, t.Name, t.Channels.ToArray(), t.Programs.ToArray(), t.BaseName))
+            .ToList();
+    }
+
+    /// <summary>
     /// A source font's full instrument catalog (for the override picker), grouped/ordered by
     /// (bank, program). Stateless: loads the font transiently.
     /// </summary>
@@ -98,10 +115,14 @@ public sealed class PlayerService : IDisposable
                 // step throws. The composite it builds is a borrowed view the synth consumes.
                 var session = new PatchMapSession(SoundBankLoader.Load(req.soundfontPath));
                 _session = session;
-                ApplyOverrides(session, req.overrides);
+                var sources = new Dictionary<string, IRBank>(StringComparer.OrdinalIgnoreCase);
+                ApplyOverrides(session, req.overrides, sources);
+                ApplyTrackOverrides(session, req.trackOverrides, sources);
 
                 var synth = new Synthesizer(SampleRate);
-                synth.LoadSoundFont(session.BuildComposite());
+                var composite = session.BuildResolved();
+                synth.LoadSoundFont(composite.Bank);
+                synth.SetTrackPatchMap(composite.TrackPatchMap);
                 var player = new RealtimePlayer(midi, synth);
                 var output = new OwnAudioOutput(SampleRate, channels: 2,
                     outputDeviceId: string.IsNullOrEmpty(req.deviceId) ? null : req.deviceId);
@@ -129,23 +150,42 @@ public sealed class PlayerService : IDisposable
         }
     }
 
-    // Load each distinct override source font once, register it with the session (which owns its
-    // lifetime), and map each logical (bank, program) to the chosen source patch.
-    private static void ApplyOverrides(PatchMapSession session, PatchOverrideDto[]? overrides)
+    // Load each distinct override source font once (shared across patch- and track-overrides via
+    // the byPath cache), register it with the session (which owns its lifetime), and map each
+    // logical (bank, program) to the chosen source patch.
+    private static void ApplyOverrides(PatchMapSession session, PatchOverrideDto[]? overrides,
+        Dictionary<string, IRBank> byPath)
     {
         if (overrides == null || overrides.Length == 0) return;
 
-        var byPath = new Dictionary<string, IRBank>(StringComparer.OrdinalIgnoreCase);
         foreach (var o in overrides)
         {
-            if (!byPath.TryGetValue(o.sourcePath, out var src))
-            {
-                src = SoundBankLoader.Load(o.sourcePath);
-                session.AddSource(src);
-                byPath[o.sourcePath] = src;
-            }
+            var src = LoadSource(session, byPath, o.sourcePath);
             session.SetOverride(o.logicalBank, o.logicalProgram, new PatchRef(src, o.sourceBank, o.sourceProgram));
         }
+    }
+
+    // Force every note from a given track to a chosen source patch, sharing the byPath cache so a
+    // font used by both a patch- and a track-override loads only once.
+    private static void ApplyTrackOverrides(PatchMapSession session, TrackOverrideDto[]? overrides,
+        Dictionary<string, IRBank> byPath)
+    {
+        if (overrides == null || overrides.Length == 0) return;
+
+        foreach (var o in overrides)
+        {
+            var src = LoadSource(session, byPath, o.sourcePath);
+            session.SetTrackOverride(o.trackIndex, new PatchRef(src, o.sourceBank, o.sourceProgram));
+        }
+    }
+
+    private static IRBank LoadSource(PatchMapSession session, Dictionary<string, IRBank> byPath, string path)
+    {
+        if (byPath.TryGetValue(path, out var src)) return src;
+        src = SoundBankLoader.Load(path);
+        session.AddSource(src);
+        byPath[path] = src;
+        return src;
     }
 
     private async Task MonitorCompletionAsync(int gen, RealtimePlayer player)

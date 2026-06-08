@@ -66,6 +66,8 @@ public sealed class Voice
     private int _rootKey;
     private int _keyNumber;
     private int _velocity;
+    // SFZ amp_velcurve_N gain for this note's velocity (1.0 = no custom curve).
+    private double _ampVelCurveFactor = 1.0;
     private double _pitchCorrectionCents;
     private double _coarseTuneSemitones;
     private double _fineTuneCents;
@@ -170,6 +172,7 @@ public sealed class Voice
         _portamentoCents = 0;
         _portamentoStepPerSample = 0;
         _routes = Array.Empty<ModulationRoute>();
+        _ampVelCurveFactor = 1.0;
         _volumeEnvelope.Reset();
         _modulationEnvelope.Reset();
         _vibratoLfo.Reset();
@@ -205,6 +208,12 @@ public sealed class Voice
         _generationId = generationId;
         _state = VoiceState.Playing;
         _exclusiveGroup = zone.ExclusiveGroup ?? 0;
+
+        // SFZ amp_velcurve_N: look up this note's gain once (velocity is fixed per note).
+        // Replaces the default velocity→attenuation route (the translator drops it).
+        _ampVelCurveFactor = zone.AmpVelCurve is { } velCurve
+            ? velCurve[Math.Clamp(velocity, 0, 127)]
+            : 1.0;
 
         // Sample addressing — IR fields are sample-relative frames. The metadata's
         // base length/loop points are overridable by the zone's optional offset
@@ -558,10 +567,12 @@ public sealed class Voice
                 sample = _filter.Process(sample);
             }
 
-            // Gain: zone attenuation + route contribution + envelope + LFO volume mod.
+            // Gain: zone attenuation + route contribution + envelope + LFO volume mod,
+            // then the SFZ amp_velcurve_N factor (1.0 when no custom curve; a flat
+            // multiply so a curve value of 0 yields true silence without a dB log).
             double volumeMod = modLfo * effectiveModLfoVolumeDepthDb;
             double totalAttenuationDb = effectiveAttenuationDb + volumeMod;
-            double gain = Math.Pow(10.0, -totalAttenuationDb / 20.0) * volEnv;
+            double gain = Math.Pow(10.0, -totalAttenuationDb / 20.0) * volEnv * _ampVelCurveFactor;
 
             float outputSample = (float)(sample * gain);
             leftBuffer[i] += outputSample * (float)leftGain;

@@ -9,8 +9,9 @@ const escapeHtml = s => String(s).replace(/[&<>"']/g,
 
 let selectedMidi = null;        // { name, path }
 let selectedSoundfont = null;   // { name, path }
-const overrides = new Map();    // "bank:program" -> override DTO
-const catalogCache = new Map(); // font path -> catalog
+const overrides = new Map();      // "bank:program" -> patch override DTO
+const trackOverrides = new Map(); // trackIndex -> track override DTO
+const catalogCache = new Map();   // font path -> catalog
 
 async function loadDevices() {
   const devices = await fetch('/api/devices').then(r => r.json());
@@ -114,11 +115,15 @@ function addRow(list, icon, label, cls, onClick) {
   list.appendChild(row);
 }
 
-// ---------------- patches + overrides ----------------
-function resetPatches() {
+// ---------------- analysis + overrides ----------------
+function resetAnalysis() {
   overrides.clear();
+  trackOverrides.clear();
+  $('tracks').innerHTML = '';
   $('patches').innerHTML = '';
   $('patchHint').textContent = '';
+  $('trackHint').textContent = '';
+  $('patchWrap').hidden = true;
 }
 
 async function getCatalog(path) {
@@ -137,29 +142,144 @@ function instLabel(c) {
 
 async function analyze() {
   $('error').textContent = '';
-  resetPatches();
+  resetAnalysis();
   if (!selectedMidi || !selectedSoundfont) {
     $('error').textContent = 'Choose a MIDI file and a base SoundFont first.';
     return;
   }
-  $('patchHint').textContent = 'Analyzing…';
-  let used;
+  $('trackHint').textContent = 'Analyzing…';
+  const qs = `midiPath=${encodeURIComponent(selectedMidi.path)}`
+    + `&soundfontPath=${encodeURIComponent(selectedSoundfont.path)}`;
+  let tracks, used;
   try {
-    used = await fetch(`/api/patches?midiPath=${encodeURIComponent(selectedMidi.path)}`
-      + `&soundfontPath=${encodeURIComponent(selectedSoundfont.path)}`).then(r => r.json());
+    [tracks, used] = await Promise.all([
+      fetch(`/api/tracks?${qs}`).then(r => r.json()),
+      fetch(`/api/patches?${qs}`).then(r => r.json()),
+    ]);
   } catch (e) {
-    $('patchHint').textContent = '';
+    $('trackHint').textContent = '';
     $('error').textContent = 'Analyze failed: ' + e;
     return;
   }
-  if (used.error) {
-    $('patchHint').textContent = '';
-    $('error').textContent = 'Analyze failed: ' + used.error;
+  const err = tracks.error || used.error;
+  if (err) {
+    $('trackHint').textContent = '';
+    $('error').textContent = 'Analyze failed: ' + err;
     return;
   }
-  renderPatches(used);
-  $('patchHint').textContent = `${used.length} patch${used.length === 1 ? '' : 'es'} used`
+
+  renderTracks(tracks);
+  const sounding = tracks.filter(t => t.channels.length > 0).length;
+  $('trackHint').textContent = `${sounding} instrument${sounding === 1 ? '' : 's'}`
     + ' — leave on the base font or override any below';
+
+  renderPatches(used);
+  $('patchHint').textContent = `${used.length} patch${used.length === 1 ? '' : 'es'} used`;
+  $('patchWrap').hidden = false;
+}
+
+// Build the shared "Choose source font… → pick instrument" override control. onPick(srcPath, sb, sp)
+// is called when an instrument is chosen; onClear() when reset. Returns the .ov element.
+function buildPicker(onPick, onClear, resetTitle) {
+  const ov = document.createElement('div');
+  ov.className = 'ov';
+
+  let srcPath = null;
+  const srcBtn = document.createElement('button');
+  srcBtn.className = 'srcbtn empty';
+  srcBtn.textContent = 'Choose source font…';
+
+  const inst = document.createElement('select');
+  inst.disabled = true;
+  inst.innerHTML = '<option>— pick instrument —</option>';
+
+  const tag = document.createElement('span');
+  tag.className = 'tag';
+
+  const clear = document.createElement('button');
+  clear.className = 'clear';
+  clear.textContent = 'reset';
+  clear.title = resetTitle;
+
+  srcBtn.onclick = () => openBrowser('sf', async f => {
+    srcPath = f.path;
+    srcBtn.classList.remove('empty');
+    srcBtn.textContent = f.name;
+    onClear();
+    tag.textContent = '';
+    inst.disabled = true;
+    inst.innerHTML = '<option>loading…</option>';
+    let cat;
+    try { cat = await getCatalog(f.path); }
+    catch { inst.innerHTML = '<option>(failed to load)</option>'; return; }
+    inst.innerHTML = '<option value="">— pick instrument —</option>';
+    for (const c of cat.patches) {
+      const o = document.createElement('option');
+      o.value = `${c.bank}:${c.program}`;
+      o.textContent = instLabel(c);
+      inst.appendChild(o);
+    }
+    inst.disabled = false;
+  });
+
+  inst.onchange = () => {
+    if (!inst.value || !srcPath) { onClear(); tag.textContent = ''; return; }
+    const [sb, sp] = inst.value.split(':').map(Number);
+    onPick(srcPath, sb, sp);
+    tag.textContent = '→ overridden';
+  };
+
+  clear.onclick = () => {
+    srcPath = null;
+    srcBtn.classList.add('empty');
+    srcBtn.textContent = 'Choose source font…';
+    inst.disabled = true;
+    inst.innerHTML = '<option>— pick instrument —</option>';
+    onClear();
+    tag.textContent = '';
+  };
+
+  ov.append(srcBtn, inst, tag, clear);
+  return ov;
+}
+
+// One row per track: the named instrument (e.g. "Violoncello") and what it currently sounds as,
+// with an override picker that forces every note of that track to a chosen font's instrument.
+function renderTracks(tracks) {
+  const box = $('tracks');
+  box.innerHTML = '';
+
+  for (const t of tracks) {
+    const silent = t.channels.length === 0;
+    const row = document.createElement('div');
+    row.className = 'patch' + (silent ? ' silent' : '');
+
+    const head = document.createElement('div');
+    head.className = 'head';
+    const name = t.name && t.name.trim() ? t.name : `Track ${t.trackIndex}`;
+    let sub;
+    if (silent) {
+      sub = 'no notes';
+    } else {
+      const chans = t.channels.map(c => c + 1).join(', ');   // show 1-based channels
+      const progs = t.programs.join(', ');
+      sub = `${t.baseName ?? '(not in base font)'} · ch ${chans} · prog ${progs}`;
+    }
+    head.innerHTML = `<span class="track-name">${escapeHtml(name)}</span>`
+      + `<span class="track-sub">${escapeHtml(sub)}</span>`;
+    row.appendChild(head);
+
+    if (!silent) {
+      row.appendChild(buildPicker(
+        (srcPath, sb, sp) => trackOverrides.set(t.trackIndex, {
+          trackIndex: t.trackIndex, trackName: t.name,
+          sourcePath: srcPath, sourceBank: sb, sourceProgram: sp,
+        }),
+        () => trackOverrides.delete(t.trackIndex),
+        'revert this instrument to the base font'));
+    }
+    box.appendChild(row);
+  }
 }
 
 function renderPatches(used) {
@@ -179,72 +299,13 @@ function renderPatches(used) {
       + `<span class="name">${escapeHtml(p.name ?? '(not in base font)')}</span>`;
     row.appendChild(head);
 
-    const ov = document.createElement('div');
-    ov.className = 'ov';
-
-    let srcPath = null;
-    const srcBtn = document.createElement('button');
-    srcBtn.className = 'srcbtn empty';
-    srcBtn.textContent = 'Choose source font…';
-
-    const inst = document.createElement('select');
-    inst.disabled = true;
-    inst.innerHTML = '<option>— pick instrument —</option>';
-
-    const tag = document.createElement('span');
-    tag.className = 'tag';
-
-    const clear = document.createElement('button');
-    clear.className = 'clear';
-    clear.textContent = 'reset';
-    clear.title = 'revert this patch to the base font';
-
-    srcBtn.onclick = () => openBrowser('sf', async f => {
-      srcPath = f.path;
-      srcBtn.classList.remove('empty');
-      srcBtn.textContent = f.name;
-      overrides.delete(key);
-      tag.textContent = '';
-      inst.disabled = true;
-      inst.innerHTML = '<option>loading…</option>';
-      let cat;
-      try { cat = await getCatalog(f.path); }
-      catch { inst.innerHTML = '<option>(failed to load)</option>'; return; }
-      inst.innerHTML = '<option value="">— pick instrument —</option>';
-      for (const c of cat.patches) {
-        const o = document.createElement('option');
-        o.value = `${c.bank}:${c.program}`;
-        o.textContent = instLabel(c);
-        inst.appendChild(o);
-      }
-      inst.disabled = false;
-    });
-
-    inst.onchange = () => {
-      if (!inst.value || !srcPath) { overrides.delete(key); tag.textContent = ''; return; }
-      const [sb, sp] = inst.value.split(':').map(Number);
-      overrides.set(key, {
+    row.appendChild(buildPicker(
+      (srcPath, sb, sp) => overrides.set(key, {
         logicalBank: p.bank, logicalProgram: p.program,
         sourcePath: srcPath, sourceBank: sb, sourceProgram: sp,
-      });
-      tag.textContent = '→ overridden';
-    };
-
-    clear.onclick = () => {
-      srcPath = null;
-      srcBtn.classList.add('empty');
-      srcBtn.textContent = 'Choose source font…';
-      inst.disabled = true;
-      inst.innerHTML = '<option>— pick instrument —</option>';
-      overrides.delete(key);
-      tag.textContent = '';
-    };
-
-    ov.appendChild(srcBtn);
-    ov.appendChild(inst);
-    ov.appendChild(tag);
-    ov.appendChild(clear);
-    row.appendChild(ov);
+      }),
+      () => overrides.delete(key),
+      'revert this patch to the base font'));
     box.appendChild(row);
   }
 }
@@ -262,6 +323,7 @@ async function play() {
     midiPath: selectedMidi.path,
     soundfontPath: selectedSoundfont.path,
     overrides: [...overrides.values()],
+    trackOverrides: [...trackOverrides.values()],
   };
   const res = await fetch('/api/play', {
     method: 'POST',
@@ -275,10 +337,10 @@ async function play() {
 }
 
 $('midiPick').onclick = () => openBrowser('midi', f => {
-  selectedMidi = f; $('midiPick').classList.remove('empty'); $('midiPick').textContent = f.name; resetPatches();
+  selectedMidi = f; $('midiPick').classList.remove('empty'); $('midiPick').textContent = f.name; resetAnalysis();
 });
 $('sfPick').onclick = () => openBrowser('sf', f => {
-  selectedSoundfont = f; $('sfPick').classList.remove('empty'); $('sfPick').textContent = f.name; resetPatches();
+  selectedSoundfont = f; $('sfPick').classList.remove('empty'); $('sfPick').textContent = f.name; resetAnalysis();
 });
 $('analyze').onclick = analyze;
 $('play').onclick = play;

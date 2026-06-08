@@ -103,8 +103,13 @@ internal static class SfzZoneTranslator
             LoopEndOffset = loopEnd,
         };
 
+        // ── Velocity curve (amp_velcurve_N) ──────────────────────────
+        // When a custom curve is present it defines velocity→gain directly, so the
+        // default velocity→attenuation route is suppressed below to avoid stacking.
+        double[]? ampVelCurve = BuildVelocityCurve(r);
+
         // ── Routes: _oncc modulations + suppressed defaults + velocity ─
-        var routes = BuildRoutes(r);
+        var routes = BuildRoutes(r, suppressVelocityRoute: ampVelCurve != null);
 
         // ── Round-robin (seq_length / seq_position) ──────────────────
         RoundRobin? roundRobin = null;
@@ -114,6 +119,11 @@ internal static class SfzZoneTranslator
             int pos = Math.Clamp(r.GetInt("seq_position", 1), 1, len);
             roundRobin = new RoundRobin(pos - 1, len);
         }
+
+        // ── Random round-robin (lorand / hirand) ─────────────────────
+        RandomRange? random = null;
+        if (r.Has("lorand") || r.Has("hirand"))
+            random = new RandomRange(r.GetDouble("lorand", 0.0), r.GetDouble("hirand", 1.0));
 
         // ── Keyswitch (sw_last / sw_lokey / sw_hikey / sw_default) ────
         KeySwitch? keySwitch = null;
@@ -138,6 +148,7 @@ internal static class SfzZoneTranslator
             Velocities = new VelocityRange((byte)Math.Clamp(lovel, 0, 127), (byte)Math.Clamp(hivel, 0, 127)),
             CCGates = ccGates,
             RoundRobin = roundRobin,
+            Random = random,
             KeySwitch = keySwitch,
             ExclusiveGroup = exclusive,
 
@@ -155,7 +166,48 @@ internal static class SfzZoneTranslator
             ChorusSend = Math.Clamp(r.GetDouble("effect2", 0) / 100.0, 0, 1),
 
             Routes = routes,
+            AmpVelCurve = ampVelCurve,
         };
+    }
+
+    /// <summary>
+    /// Builds a 128-entry velocity→gain table from <c>amp_velcurve_N</c> points, or null
+    /// when the region defines none. Defined velocities set their gain exactly; gaps are
+    /// linearly interpolated. The ends are anchored (velocity 0 → 0, velocity 127 → 1)
+    /// unless the region overrides them, matching ARIA's default curve endpoints.
+    /// </summary>
+    private static double[]? BuildVelocityCurve(SfzRegion r)
+    {
+        // amp_velcurve_{N} = gain — reuse the prefix enumerator (parses the trailing N).
+        var points = new SortedDictionary<int, double>();
+        foreach (var (vel, value) in r.EnumerateCc("amp_velcurve_"))
+        {
+            if (vel < 0 || vel > 127) continue;
+            if (double.TryParse(value.Trim(), System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out double g))
+                points[vel] = Math.Max(0.0, g);
+        }
+        if (points.Count == 0) return null;
+
+        if (!points.ContainsKey(0)) points[0] = 0.0;
+        if (!points.ContainsKey(127)) points[127] = 1.0;
+
+        var curve = new double[128];
+        var keys = new List<int>(points.Keys);
+        for (int i = 0; i < keys.Count - 1; i++)
+        {
+            int v0 = keys[i], v1 = keys[i + 1];
+            double g0 = points[v0], g1 = points[v1];
+            for (int v = v0; v <= v1; v++)
+            {
+                double t = v1 == v0 ? 0.0 : (double)(v - v0) / (v1 - v0);
+                curve[v] = g0 + (g1 - g0) * t;
+            }
+        }
+        // Flat-fill anything below the lowest / above the highest defined point.
+        for (int v = 0; v < keys[0]; v++) curve[v] = points[keys[0]];
+        for (int v = keys[keys.Count - 1] + 1; v < 128; v++) curve[v] = points[keys[keys.Count - 1]];
+        return curve;
     }
 
     private static IReadOnlyList<CCGate> BuildCcGates(SfzRegion r)
@@ -267,7 +319,7 @@ internal static class SfzZoneTranslator
     /// first, then the GM-default controller routes for any (CC, destination) the
     /// bank didn't already wire, then the velocity→amplitude route.
     /// </summary>
-    private static List<ModulationRoute> BuildRoutes(SfzRegion r)
+    private static List<ModulationRoute> BuildRoutes(SfzRegion r, bool suppressVelocityRoute = false)
     {
         var routes = new List<ModulationRoute>();
         var handled = new HashSet<(int Cc, ModDestination Dest)>();
@@ -305,9 +357,13 @@ internal static class SfzZoneTranslator
             routes.Add(d);
         }
 
-        // Velocity → amplitude. amp_veltrack defaults to 100; if a bank zeroes the
-        // base but drives it from a CC (amp_veltrack_oncc118, CC defaulting high),
-        // use that depth so dynamics aren't lost.
+        // Velocity → amplitude. Suppressed when an amp_velcurve_N table is present —
+        // that curve maps velocity→gain directly (applied in Voice), so adding a route
+        // too would double-count the dynamics.
+        if (suppressVelocityRoute) return routes;
+
+        // amp_veltrack defaults to 100; if a bank zeroes the base but drives it from a
+        // CC (amp_veltrack_oncc118, CC defaulting high), use that depth so dynamics aren't lost.
         double veltrack = r.GetDouble("amp_veltrack", 100.0);
         if (veltrack == 0)
         {

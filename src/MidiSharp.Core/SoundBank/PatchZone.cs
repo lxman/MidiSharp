@@ -30,6 +30,9 @@ public sealed class PatchZone
     /// <summary>SFZ seq_* round-robin. Null elsewhere.</summary>
     public RoundRobin? RoundRobin { get; init; }
 
+    /// <summary>SFZ lorand/hirand random round-robin. Null elsewhere.</summary>
+    public RandomRange? Random { get; init; }
+
     /// <summary>SF2 ExclusiveClass / SFZ group= + off_by=. Null = no grouping.</summary>
     public int? ExclusiveGroup { get; init; }
 
@@ -65,4 +68,12 @@ public sealed class PatchZone
     // ─── Routing matrix ─────────────────────────────────────────────
 
     public IReadOnlyList<ModulationRoute> Routes { get; init; } = Array.Empty<ModulationRoute>();
+
+    /// <summary>
+    /// SFZ amp_velcurve_N: a 128-entry velocity→gain table (index = velocity 0..127,
+    /// value = linear gain 0..1). When present it replaces the default velocity→
+    /// attenuation route for this zone. Null elsewhere (SF2/SF3/DLS and SFZ zones
+    /// without a custom curve, which use the velocity modulation route instead).
+    /// </summary>
+    public double[]? AmpVelCurve { get; init; }
 }

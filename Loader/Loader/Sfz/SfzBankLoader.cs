@@ -148,7 +148,7 @@ internal static class SfzBankLoader
 
     // ── #include resolution ─────────────────────────────────────────────
 
-    private static string? ReadInclude(string baseDir, string includePath)
+    internal static string? ReadInclude(string baseDir, string includePath)
     {
         string? resolved = ResolveExisting(baseDir, includePath.Replace('\\', '/'));
         if (resolved == null) return null;

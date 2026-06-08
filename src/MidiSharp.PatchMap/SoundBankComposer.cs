@@ -6,6 +6,27 @@ using IRBank = MidiSharp.SoundBank.SoundBank;
 namespace MidiSharp.PatchMap;
 
 /// <summary>
+/// The output of composing a bank: the composite <see cref="IRBank"/> the synth loads, plus a
+/// map from a MIDI track index to the synthetic (bank, program) address its forced instrument
+/// lives at. Hand the map to <c>Synthesizer.SetTrackPatchMap</c> so notes from that track route
+/// to the override regardless of the channel/program they carry.
+/// </summary>
+public readonly struct CompositeResult
+{
+    public CompositeResult(IRBank bank, IReadOnlyDictionary<int, (int Bank, int Program)> trackPatchMap)
+    {
+        Bank = bank;
+        TrackPatchMap = trackPatchMap;
+    }
+
+    /// <summary>The composite bank to load into the synth.</summary>
+    public IRBank Bank { get; }
+
+    /// <summary>trackIndex → synthetic (bank, program) for each resolved per-track override.</summary>
+    public IReadOnlyDictionary<int, (int Bank, int Program)> TrackPatchMap { get; }
+}
+
+/// <summary>
 /// Builds a composite <see cref="IRBank"/> from a base font plus per-patch overrides drawn
 /// from other fonts. The synth consumes the result through the ordinary
 /// <c>FindPatch</c>/<c>Samples</c> contract and cannot tell it from a natively-loaded bank.
@@ -19,41 +40,67 @@ namespace MidiSharp.PatchMap;
 public static class SoundBankComposer
 {
     /// <summary>
-    /// Compose <paramref name="baseBank"/> with <paramref name="overrides"/> (logical
-    /// (bank, program) → a patch in some source font). Overrides whose source patch can't be
-    /// found are skipped, leaving the base font's patch (and its bank-0 fallback) in place.
+    /// Reserved logical bank for per-track override patches. A track override is placed at
+    /// (<see cref="TrackOverrideBank"/>, trackIndex) so the synth can resolve it through the
+    /// ordinary <c>FindPatch</c> contract. This value lies far above anything
+    /// <c>BankResolution.Resolve</c> can produce (its max is the 14-bit 16383; drums are 128),
+    /// so it never collides with a channel-resolved bank.
+    /// </summary>
+    public const int TrackOverrideBank = 1_000_000;
+
+    /// <summary>
+    /// Compose <paramref name="overrides"/> (logical (bank, program) → a patch in some source
+    /// font). Overrides whose source patch can't be found are skipped, leaving the base font's
+    /// patch (and its bank-0 fallback) in place.
     /// </summary>
     public static IRBank BuildComposite(
         IRBank baseBank,
         IReadOnlyDictionary<(int Bank, int Program), PatchRef> overrides)
+        => BuildComposite(baseBank, overrides, EmptyTrackOverrides).Bank;
+
+    private static readonly IReadOnlyDictionary<int, PatchRef> EmptyTrackOverrides
+        = new Dictionary<int, PatchRef>();
+
+    /// <summary>
+    /// Compose <paramref name="baseBank"/> with per-patch <paramref name="patchOverrides"/> and
+    /// per-track <paramref name="trackOverrides"/>. Track overrides are placed at the reserved
+    /// (<see cref="TrackOverrideBank"/>, trackIndex) addresses and reported back in
+    /// <see cref="CompositeResult.TrackPatchMap"/> so the synth can route a note from a given
+    /// track to its forced instrument. Overrides whose source patch can't be found are skipped.
+    /// </summary>
+    public static CompositeResult BuildComposite(
+        IRBank baseBank,
+        IReadOnlyDictionary<(int Bank, int Program), PatchRef> patchOverrides,
+        IReadOnlyDictionary<int, PatchRef> trackOverrides)
     {
         // Assign each contributing font a sample-id offset. Base is always first at offset 0.
         var offsetOf = new Dictionary<IRBank, int> { [baseBank] = 0 };
         var extraSources = new List<IRBank>();
         var running = baseBank.Samples.Count;
-        foreach (var pref in overrides.Values)
+        void Reserve(PatchRef pref)
         {
-            if (offsetOf.ContainsKey(pref.Source)) continue;
+            if (offsetOf.ContainsKey(pref.Source)) return;
             offsetOf[pref.Source] = running;
             extraSources.Add(pref.Source);
             running += pref.Source.Samples.Count;
         }
+        foreach (var pref in patchOverrides.Values) Reserve(pref);
+        foreach (var pref in trackOverrides.Values) Reserve(pref);
 
         // Start from the base patches (ids valid as-is at offset 0), then apply overrides.
         var byKey = new Dictionary<(int, int), Patch>();
         foreach (var p in baseBank.Patches)
             byKey[(p.Bank, p.Program)] = p;
 
-        foreach (var entry in overrides)
+        // A composed patch at a logical address, drawn from a source font with its sample ids
+        // shifted into the concatenated sample space. Returns null when the source patch is absent.
+        Patch? Compose(int logicalBank, int logicalProgram, PatchRef pref)
         {
-            var (logicalBank, logicalProgram) = entry.Key;
-            var pref = entry.Value;
             var srcPatch = pref.Source.FindPatch(pref.Bank, pref.Program);
-            if (srcPatch == null) continue;   // unresolved → leave base/fallback in place
-
+            if (srcPatch == null) return null;   // unresolved → caller leaves base/fallback in place
             var offset = offsetOf[pref.Source];
             var zones = offset == 0 ? srcPatch.Zones : CloneZonesWithOffset(srcPatch.Zones, offset);
-            byKey[(logicalBank, logicalProgram)] = new Patch
+            return new Patch
             {
                 Bank = logicalBank,
                 Program = logicalProgram,
@@ -62,10 +109,28 @@ public static class SoundBankComposer
             };
         }
 
+        foreach (var entry in patchOverrides)
+        {
+            var (logicalBank, logicalProgram) = entry.Key;
+            var composed = Compose(logicalBank, logicalProgram, entry.Value);
+            if (composed != null) byKey[(logicalBank, logicalProgram)] = composed;
+        }
+
+        // Per-track overrides occupy the reserved bank; record trackIndex → synthetic address.
+        var trackPatchMap = new Dictionary<int, (int Bank, int Program)>();
+        foreach (var entry in trackOverrides)
+        {
+            var trackIndex = entry.Key;
+            var composed = Compose(TrackOverrideBank, trackIndex, entry.Value);
+            if (composed == null) continue;   // unresolved → track keeps its channel-based sound
+            byKey[(TrackOverrideBank, trackIndex)] = composed;
+            trackPatchMap[trackIndex] = (TrackOverrideBank, trackIndex);
+        }
+
         var sampleSources = new List<ISampleSource>(1 + extraSources.Count) { baseBank.Samples };
         sampleSources.AddRange(extraSources.Select(s => s.Samples));
 
-        return new IRBank
+        var bank = new IRBank
         {
             Name = baseBank.Name,
             Author = baseBank.Author,
@@ -75,6 +140,7 @@ public static class SoundBankComposer
             Patches = byKey.Values.ToList(),
             Samples = new ConcatenatedSampleSource(sampleSources),
         };
+        return new CompositeResult(bank, trackPatchMap);
     }
 
     // PatchZone/SampleRef are immutable; re-index a borrowed zone's sample by cloning it with
