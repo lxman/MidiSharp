@@ -28,7 +28,7 @@ public sealed record SoundfontCatalogDto(string name, SoundfontPatchDto[] patche
 /// </summary>
 public sealed class PlayerService : IDisposable
 {
-    private const int SampleRate = 44100;
+    private const int SampleRate = 48000;   // match PipeWire/JACK graph rate → no resampling
     private const double TailSeconds = 2.0;   // render this long past the last event before "done"
 
     private readonly IHostApplicationLifetime _lifetime;

@@ -24,6 +24,10 @@ async function loadDevices() {
     if (d.isDefault) o.selected = true;
     dev.appendChild(o);
   }
+  // Restore the last-used device if it's still available; otherwise keep the engine default.
+  const saved = localStorage.getItem('outputDeviceId');
+  if (saved && [...dev.options].some(o => o.value === saved)) dev.value = saved;
+  dev.onchange = () => localStorage.setItem('outputDeviceId', dev.value);
 }
 
 // ---------------- file browser ----------------

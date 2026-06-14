@@ -18,6 +18,7 @@ var positionals = new List<string>();
 var maps = new List<string>();
 var listPatches = false;
 string? sfzReportTarget = null;
+var sampleRate = 48000;   // default = PipeWire/JACK graph rate; --rate overrides (WAV export / live engine rate)
 for (var i = 0; i < args.Length; i++)
 {
     switch (args[i])
@@ -30,6 +31,10 @@ for (var i = 0; i < args.Length; i++)
         case "--map":
             if (i + 1 >= args.Length) { Console.WriteLine("--map needs a spec, e.g. --map 30=Other.sf2"); return 1; }
             maps.Add(args[++i]);
+            break;
+        case "--rate":
+            if (i + 1 >= args.Length || !int.TryParse(args[++i], out sampleRate) || sampleRate is < 8000 or > 384000)
+            { Console.WriteLine("--rate needs a sample rate in Hz (8000-384000), e.g. --rate 44100"); return 1; }
             break;
         default: positionals.Add(args[i]); break;
     }
@@ -44,7 +49,7 @@ if (positionals.Count < 2)
 {
     Console.WriteLine("Usage:");
     Console.WriteLine("  Live playback:    MidiSharp.Demo <midi> <sf2>");
-    Console.WriteLine("  Render to WAV:    MidiSharp.Demo <midi> <sf2> <out.wav>");
+    Console.WriteLine("  Render to WAV:    MidiSharp.Demo <midi> <sf2> <out.wav> [--rate <hz>]   (default 48000; e.g. --rate 44100)");
     Console.WriteLine("  GM SFZ + drums:   pass \"melodic.sfz+drums.sfz\" as <sf2> (1st→bank 0, rest→bank 128),");
     Console.WriteLine("                    or just the \"... Melodic ....sfz\" file and its \"Drums\" sibling auto-pairs.");
     Console.WriteLine();
@@ -129,7 +134,8 @@ if (maps.Count > 0)
     }
 }
 
-const int sampleRate = 44100;
+// sampleRate comes from --rate (default 48000). Live at 48000 = native JACK client (no resample);
+// for WAV export any rate works (e.g. --rate 44100 for CD-rate files).
 var synth = new Synthesizer(sampleRate);
 synth.LoadSoundFont(playBank);
 

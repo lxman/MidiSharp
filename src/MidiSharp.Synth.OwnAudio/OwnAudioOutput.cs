@@ -29,6 +29,14 @@ public sealed class OwnAudioOutput : IAudioOutput
     private static readonly object s_initLock = new();
     private static int s_initRefCount;
 
+    // On Linux, target JACK: with libportaudio2 present OwnAudio uses the PortAudio
+    // engine and connects as a native JACK client (PipeWire's JACK), running at the
+    // JACK graph rate with no extra resampling. If PortAudio is absent OwnAudio falls
+    // back to MiniAudio, which ignores HostType and uses ALSA — so this stays safe.
+    // Other platforms keep the engine default.
+    private static readonly EngineHostType DefaultHostType =
+        OperatingSystem.IsLinux() ? EngineHostType.JACK : EngineHostType.None;
+
     /// <inheritdoc />
     public int SampleRate => _sampleRate;
 
@@ -73,10 +81,13 @@ public sealed class OwnAudioOutput : IAudioOutput
             {
                 OwnaudioNet.Initialize(new AudioConfig
                 {
-                    SampleRate = 44100,
+                    // Must match the JACK graph rate (48k) or PortAudio-JACK enumeration
+                    // fails with paInvalidSampleRate and OwnAudio falls back to MiniAudio,
+                    // listing ALSA devices whose ids the JACK playback path can't use.
+                    SampleRate = 48000,
                     Channels = 2,
                     BufferSize = 1024,
-                    HostType = EngineHostType.None,
+                    HostType = DefaultHostType,
                 });
             }
             try
@@ -164,7 +175,7 @@ public sealed class OwnAudioOutput : IAudioOutput
                 SampleRate = sampleRate,
                 Channels = channels,
                 BufferSize = bufferSizeFrames,
-                HostType = EngineHostType.None,
+                HostType = DefaultHostType,
                 OutputDeviceId = outputDeviceId,   // null = system default
             };
             OwnaudioNet.Initialize(config);
