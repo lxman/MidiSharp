@@ -101,7 +101,16 @@ internal sealed class MemoryMappedSf2SampleSource : ISampleSource
 
     public void PrepareSample(int sampleId)
     {
-        // No-op: the sample bytes are already resident (a view over the loaded file).
+        // For a memory-mapped backing, ask the OS to page this sample in ahead of playback so the
+        // first read on the audio thread doesn't fault synchronously. No-op for a managed byte[]
+        // (already resident) — _backingOwner is only IPrefetchable when mmap-backed.
+        if (_backingOwner is not IPrefetchable pf) return;
+        var e = _entries[sampleId];
+        long byteStart = e.AbsoluteStart * 2;
+        long byteLen = e.LengthFrames * 2;
+        if (byteStart < 0 || byteLen <= 0 || byteStart >= _smpl.Length) return;
+        byteLen = Math.Min(byteLen, _smpl.Length - byteStart);   // clamp; never fault on a bad header
+        pf.Prefetch(_smpl.Slice((int)byteStart, (int)byteLen));
     }
 
     public void Dispose()

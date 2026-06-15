@@ -22,11 +22,12 @@ public sealed class SoundBankLoadOptions
 {
     /// <summary>
     /// Memory-map SF2 sample data instead of reading it into a managed byte[], keeping the sample
-    /// pool off the GC heap. Opt-in (default false) until cold-page behaviour on the audio thread
-    /// is validated; only applies to file-backed SF2 loads ≤ 2 GB, with an automatic managed
-    /// fallback otherwise.
+    /// pool off the GC heap. On by default: a cold-start glitch check (a full piece rendered with
+    /// pages dropped from cache) stayed well under the audio deadline, and NoteOn issues an OS
+    /// prefetch for the sample about to play. Only applies to file-backed SF2 loads ≤ 2 GB, with an
+    /// automatic managed fallback otherwise. Disable for streams or memory-constrained callers.
     /// </summary>
-    public bool MemoryMapSamples { get; init; } = false;
+    public bool MemoryMapSamples { get; init; } = true;
 
     /// <summary>
     /// Maximum RAM (bytes) for decoded sample cache. Only meaningful for SF3

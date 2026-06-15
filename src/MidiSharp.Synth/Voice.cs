@@ -202,6 +202,13 @@ public sealed class Voice
 
         _sampleSource = sampleSource;
         _sampleId = sampleRef.SampleId;
+
+        // Tell the source this sample is about to play. A memory-mapped source issues an async OS
+        // prefetch (madvise WILLNEED / PrefetchVirtualMemory) so its pages are warm by the time
+        // Process reads them; RAM-resident sources no-op. Must return quickly — it's on the audio
+        // thread at NoteOn — and the advisory call does.
+        sampleSource.PrepareSample(sampleRef.SampleId);
+
         _keyNumber = keyNumber;
         _velocity = velocity;
         _channel = channel;
