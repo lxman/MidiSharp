@@ -21,10 +21,12 @@ public enum SoundBankFormat
 public sealed class SoundBankLoadOptions
 {
     /// <summary>
-    /// Memory-map sample data when possible. Disable for streams or non-file
-    /// sources. Default true.
+    /// Memory-map SF2 sample data instead of reading it into a managed byte[], keeping the sample
+    /// pool off the GC heap. Opt-in (default false) until cold-page behaviour on the audio thread
+    /// is validated; only applies to file-backed SF2 loads ≤ 2 GB, with an automatic managed
+    /// fallback otherwise.
     /// </summary>
-    public bool MemoryMapSamples { get; init; } = true;
+    public bool MemoryMapSamples { get; init; } = false;
 
     /// <summary>
     /// Maximum RAM (bytes) for decoded sample cache. Only meaningful for SF3

@@ -36,7 +36,7 @@ public static class SoundBankLoader
         {
             return format switch
             {
-                SoundBankFormat.Sf2 => Sf2BankLoader.Load(SF2.Net.SoundFont.Load(path), options),
+                SoundBankFormat.Sf2 => LoadSf2(path, options),
                 SoundBankFormat.Sf3 => Sf3.Sf3BankLoader.Load(SF2.Net.SoundFont.Load(path), options),
                 SoundBankFormat.Sfz => Sfz.SfzBankLoader.Load(path, options),
                 SoundBankFormat.Dls => Dls.DlsBankLoader.Load(DLS.Net.DlsReader.Load(path), options),
@@ -47,6 +47,31 @@ public static class SoundBankLoader
         {
             throw new SoundBankLoadException($"Failed to parse SF2 file '{path}': {ex.Message}", ex);
         }
+    }
+
+    // SF2 load. When MemoryMapSamples is set (and the file fits a 32-bit span), the sample pool is
+    // backed by a read-only memory-mapped view instead of a managed byte[], keeping it off the GC
+    // heap. The view's owner is handed to the bank's sample source, which disposes it (after the
+    // audio output has stopped). Falls back to a managed read on opt-out or for >2 GB files.
+    private static SoundBank LoadSf2(string path, SoundBankLoadOptions options)
+    {
+        if (options.MemoryMapSamples && new FileInfo(path).Length <= int.MaxValue)
+        {
+            MemoryMappedFileManager? owner = null;
+            try
+            {
+                owner = new MemoryMappedFileManager(path);
+                var sf = SF2.Net.SoundFont.Load(owner.Memory);
+                return Sf2BankLoader.Load(sf, options, owner);   // bank takes ownership of the view
+            }
+            catch
+            {
+                ((IDisposable?)owner)?.Dispose();
+                throw;
+            }
+        }
+
+        return Sf2BankLoader.Load(SF2.Net.SoundFont.Load(path), options);
     }
 
     /// <summary>

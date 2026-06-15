@@ -30,6 +30,7 @@ internal sealed class MemoryMappedSf2SampleSource : ISampleSource
     private readonly ReadOnlyMemory<byte> _smpl;   // raw smpl-chunk bytes (int16 LE frames)
     private readonly SampleEntry[] _entries;
     private readonly SampleMetadata[] _metadata;
+    private readonly IDisposable? _backingOwner;   // mmap view to release on dispose; null for managed backing
     private bool _disposed;
 
     private readonly struct SampleEntry
@@ -47,12 +48,14 @@ internal sealed class MemoryMappedSf2SampleSource : ISampleSource
     public MemoryMappedSf2SampleSource(
         ReadOnlyMemory<byte> smplBytes,
         IReadOnlyList<SampleMetadata> metadata,
-        IReadOnlyList<(long AbsoluteStart, long LengthFrames)> entries)
+        IReadOnlyList<(long AbsoluteStart, long LengthFrames)> entries,
+        IDisposable? backingOwner = null)
     {
         if (metadata.Count != entries.Count)
             throw new ArgumentException("metadata and entries must have the same count");
 
         _smpl = smplBytes;
+        _backingOwner = backingOwner;
         _metadata = new SampleMetadata[metadata.Count];
         _entries = new SampleEntry[entries.Count];
         for (int i = 0; i < metadata.Count; i++)
@@ -105,6 +108,9 @@ internal sealed class MemoryMappedSf2SampleSource : ISampleSource
     {
         if (_disposed) return;
         _disposed = true;
-        // _smpl is a view over a managed byte[]; nothing to release.
+        // Releases the memory-mapped view when the backing is mmap'd; no-op for a managed byte[].
+        // Must run only after the audio output has stopped (no in-flight ReadFrames) — disposing an
+        // mmap view out from under a live audio-thread read is a native use-after-free.
+        _backingOwner?.Dispose();
     }
 }

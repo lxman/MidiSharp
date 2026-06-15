@@ -12,9 +12,10 @@ namespace MidiSharp.SoundBank.Sf2;
 /// </summary>
 internal static class Sf2BankLoader
 {
-    public static SoundBank Load(SoundFont sf, SoundBankLoadOptions options)
+    public static SoundBank Load(SoundFont sf, SoundBankLoadOptions options,
+        IDisposable? sampleMemoryOwner = null)
     {
-        var samples = BuildSampleSource(sf);
+        var samples = BuildSampleSource(sf, sampleMemoryOwner);
         var patches = BuildPatches(sf);
 
         return new SoundBank
@@ -128,11 +129,12 @@ internal static class Sf2BankLoader
 
     // ── Sample source construction ────────────────────────────────────
 
-    private static MemoryMappedSf2SampleSource BuildSampleSource(SoundFont sf)
+    private static MemoryMappedSf2SampleSource BuildSampleSource(SoundFont sf, IDisposable? sampleMemoryOwner)
     {
         // Hold a zero-copy view over the file's smpl bytes rather than copying the whole sample
         // pool into a fresh short[] — a large font no longer costs ~2× its sample size on the heap.
-        // The ReadOnlyMemory roots the underlying byte[], so it outlives this SoundFont safely.
+        // The ReadOnlyMemory roots its backing (a managed byte[], or an mmap view owned by
+        // sampleMemoryOwner), so it outlives this SoundFont safely.
         var smplBytes = sf.RawSampleBytes;
 
         var metadata = new SampleMetadata[sf.SampleHeaders.Count];
@@ -162,7 +164,7 @@ internal static class Sf2BankLoader
             };
         }
 
-        return new MemoryMappedSf2SampleSource(smplBytes, metadata, entries);
+        return new MemoryMappedSf2SampleSource(smplBytes, metadata, entries, sampleMemoryOwner);
     }
 
     private static int? ResolveStereoLink(SampleHeader hdr, IReadOnlyList<SampleHeader> all)
