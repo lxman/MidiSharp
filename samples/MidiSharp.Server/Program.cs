@@ -9,11 +9,12 @@ builder.WebHost.UseUrls(builder.Configuration["urls"] ?? "http://localhost:5005"
 
 var app = builder.Build();
 
-// File-browse roots (override with --midi-root / --sf-root); default to ~/soundfonts.
+// File-browse roots (override with --midi-root / --sf-root). MIDI → ~/soundfonts;
+// SoundFont → ~/soundfonts/deduped/sf2 (the deduplicated library). Navigable anywhere.
 var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 string Expand(string p) => p.StartsWith('~') ? home + p[1..] : p;
 var midiRoot = Expand(builder.Configuration["midi-root"] ?? Path.Combine(home, "soundfonts"));
-var sfRoot = Expand(builder.Configuration["sf-root"] ?? Path.Combine(home, "soundfonts"));
+var sfRoot = Expand(builder.Configuration["sf-root"] ?? Path.Combine(home, "soundfonts", "deduped", "sf2"));
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
