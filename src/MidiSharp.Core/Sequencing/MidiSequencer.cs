@@ -167,14 +167,26 @@ public sealed class MidiSequencer
     {
         if (_events.Count == 0) return TimeSpan.Zero;
 
-        // Find the last event (which should be an EndOfTrack meta event)
+        // A sequence's nominal length is its last event of any track — but exporters commonly pad
+        // the conductor track's EndOfTrack far past the final note (e.g. a delta of 0x3FFFF),
+        // which would report minutes of trailing silence as "duration". Anchor instead on the last
+        // NOTE event: every tick after it is provably silent (only meta/structural events remain),
+        // so trimming that span cannot clip a single sample of audible output. Note-off is included,
+        // so a held final chord is preserved. Fall back to the nominal length for note-less files
+        // (tempo maps, lyric/automation-only tracks), where there is nothing to anchor on.
         long maxTick = 0;
+        long lastNoteTick = 0;
+        var anyNote = false;
         foreach (var evt in _events)
         {
-            if (evt.AbsoluteTicks > maxTick)
-                maxTick = evt.AbsoluteTicks;
+            if (evt.AbsoluteTicks > maxTick) maxTick = evt.AbsoluteTicks;
+            if (evt.Event is NoteOnEvent or NoteOffEvent)
+            {
+                anyNote = true;
+                if (evt.AbsoluteTicks > lastNoteTick) lastNoteTick = evt.AbsoluteTicks;
+            }
         }
 
-        return _tempoMap.TickToTime(maxTick);
+        return _tempoMap.TickToTime(anyNote ? lastNoteTick : maxTick);
     }
 }
