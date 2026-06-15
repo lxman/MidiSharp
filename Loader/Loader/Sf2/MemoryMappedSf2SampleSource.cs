@@ -1,5 +1,7 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 
 namespace MidiSharp.SoundBank.Sf2;
 
@@ -7,16 +9,25 @@ namespace MidiSharp.SoundBank.Sf2;
 /// Reads SF2 samples and converts int16 → float on the fly.
 /// </summary>
 /// <remarks>
-/// Step 2 implementation: backed by an in-memory <c>short[]</c> copy of the
-/// SF2 file's <c>smpl</c> chunk. Step 3 replaces the backing store with an
-/// mmap'd view over the file (the public API and per-sample addressing stay
-/// the same — only the source of the int16 data changes). Until then, the
-/// "MemoryMapped" name is aspirational: working set scales with the entire
-/// sample pool, not with active polyphony.
+/// Backed by a zero-copy <see cref="ReadOnlyMemory{T}"/> view over the SF2 file's <c>smpl</c>
+/// chunk bytes — no second managed copy of the sample pool is made, so a large font no longer
+/// costs ~2× its sample size on the heap. The backing <c>byte[]</c> stays alive for as long as
+/// this source holds the <see cref="ReadOnlyMemory{T}"/>, so it safely outlives the parsed
+/// <c>SoundFont</c> and remains valid on the audio thread.
+/// <para>
+/// On little-endian platforms (every real .NET target) reads are a direct reinterpret of the
+/// file bytes via <see cref="MemoryMarshal.Cast{TFrom,TTo}(ReadOnlySpan{TFrom})"/>. The big-endian
+/// branch reads each frame as little-endian on the fly (SF2 sample data is always LE on disk),
+/// which is also copy-free.
+/// </para>
+/// <para>
+/// A future step can swap the backing store for an mmap'd view over the file (the public API and
+/// per-sample addressing stay the same — only the source of the int16 bytes changes).
+/// </para>
 /// </remarks>
 internal sealed class MemoryMappedSf2SampleSource : ISampleSource
 {
-    private readonly short[] _smpl;
+    private readonly ReadOnlyMemory<byte> _smpl;   // raw smpl-chunk bytes (int16 LE frames)
     private readonly SampleEntry[] _entries;
     private readonly SampleMetadata[] _metadata;
     private bool _disposed;
@@ -34,14 +45,14 @@ internal sealed class MemoryMappedSf2SampleSource : ISampleSource
     }
 
     public MemoryMappedSf2SampleSource(
-        short[] smplData,
+        ReadOnlyMemory<byte> smplBytes,
         IReadOnlyList<SampleMetadata> metadata,
         IReadOnlyList<(long AbsoluteStart, long LengthFrames)> entries)
     {
         if (metadata.Count != entries.Count)
             throw new ArgumentException("metadata and entries must have the same count");
 
-        _smpl = smplData;
+        _smpl = smplBytes;
         _metadata = new SampleMetadata[metadata.Count];
         _entries = new SampleEntry[entries.Count];
         for (int i = 0; i < metadata.Count; i++)
@@ -64,13 +75,22 @@ internal sealed class MemoryMappedSf2SampleSource : ISampleSource
         long available = entry.LengthFrames - frameOffset;
         int framesToRead = (int)Math.Min(available, dest.Length);
 
-        long sourceStart = entry.AbsoluteStart + frameOffset;
-        var src = new ReadOnlySpan<short>(_smpl, (int)sourceStart, framesToRead);
-
+        long sourceStart = entry.AbsoluteStart + frameOffset;   // in int16 frames
         const float Scale = 1.0f / 32768.0f;
-        for (int i = 0; i < framesToRead; i++)
+
+        if (BitConverter.IsLittleEndian)
         {
-            dest[i] = src[i] * Scale;
+            // Direct reinterpret of the file bytes as int16 — zero copy.
+            var src = MemoryMarshal.Cast<byte, short>(_smpl.Span).Slice((int)sourceStart, framesToRead);
+            for (int i = 0; i < framesToRead; i++)
+                dest[i] = src[i] * Scale;
+        }
+        else
+        {
+            // Big-endian host: SF2 data on disk is little-endian, so read each frame explicitly.
+            var bytes = _smpl.Span.Slice((int)sourceStart * 2, framesToRead * 2);
+            for (int i = 0; i < framesToRead; i++)
+                dest[i] = BinaryPrimitives.ReadInt16LittleEndian(bytes.Slice(i * 2, 2)) * Scale;
         }
 
         return framesToRead;
@@ -78,14 +98,13 @@ internal sealed class MemoryMappedSf2SampleSource : ISampleSource
 
     public void PrepareSample(int sampleId)
     {
-        // No-op while backed by managed memory. Step 3 issues madvise(WILLNEED)
-        // for the sample's pages on the mmap'd backing.
+        // No-op: the sample bytes are already resident (a view over the loaded file).
     }
 
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
-        // _smpl is a managed array; nothing to release.
+        // _smpl is a view over a managed byte[]; nothing to release.
     }
 }

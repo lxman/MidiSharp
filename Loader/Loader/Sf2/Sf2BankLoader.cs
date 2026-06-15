@@ -130,9 +130,10 @@ internal static class Sf2BankLoader
 
     private static MemoryMappedSf2SampleSource BuildSampleSource(SoundFont sf)
     {
-        var raw = sf.RawSampleData;
-        var smplCopy = new short[raw.Length];
-        raw.CopyTo(smplCopy);
+        // Hold a zero-copy view over the file's smpl bytes rather than copying the whole sample
+        // pool into a fresh short[] — a large font no longer costs ~2× its sample size on the heap.
+        // The ReadOnlyMemory roots the underlying byte[], so it outlives this SoundFont safely.
+        var smplBytes = sf.RawSampleBytes;
 
         var metadata = new SampleMetadata[sf.SampleHeaders.Count];
         var entries = new (long AbsoluteStart, long LengthFrames)[sf.SampleHeaders.Count];
@@ -161,7 +162,7 @@ internal static class Sf2BankLoader
             };
         }
 
-        return new MemoryMappedSf2SampleSource(smplCopy, metadata, entries);
+        return new MemoryMappedSf2SampleSource(smplBytes, metadata, entries);
     }
 
     private static int? ResolveStereoLink(SampleHeader hdr, IReadOnlyList<SampleHeader> all)
