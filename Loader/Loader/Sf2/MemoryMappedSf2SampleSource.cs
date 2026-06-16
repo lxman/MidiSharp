@@ -2,6 +2,7 @@ using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using MidiSharp.Audio;
 
 namespace MidiSharp.SoundBank.Sf2;
 
@@ -83,10 +84,9 @@ internal sealed class MemoryMappedSf2SampleSource : ISampleSource
 
         if (BitConverter.IsLittleEndian)
         {
-            // Direct reinterpret of the file bytes as int16 — zero copy.
+            // Direct reinterpret of the file bytes as int16 — zero copy — then SIMD int16→float.
             var src = MemoryMarshal.Cast<byte, short>(_smpl.Span).Slice((int)sourceStart, framesToRead);
-            for (int i = 0; i < framesToRead; i++)
-                dest[i] = src[i] * Scale;
+            SampleConvert.Int16ToFloat(src, dest, Scale);
         }
         else
         {

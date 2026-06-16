@@ -61,6 +61,18 @@ public sealed class Voice
     private long _scratchBaseFrame;
     private int _scratchFramesAvailable;
 
+    // Per-sample memoization. The pitch increment, the filter coefficients, and the dB→linear gain
+    // are each a pure function of one slowly-changing input (pitch cents / filter cents / attenuation
+    // dB). When nothing is modulating that input it's constant for the whole note, so recomputing the
+    // Math.Pow / Sin+Cos every sample is wasted work. Cache keyed on EXACT input equality, so the
+    // reused result is the identical double the recompute would produce — output stays bit-for-bit
+    // the same. NaN forces a recompute on the first sample of each note (and whenever the input moves).
+    private double _cachedPitchCents = double.NaN;
+    private double _cachedIncrement;
+    private double _cachedFilterCents = double.NaN;
+    private double _cachedAttenuationDb = double.NaN;
+    private double _cachedLinearGain;
+
     // ── Pitch ─────────────────────────────────────────────────────────
 
     private int _rootKey;
@@ -173,6 +185,9 @@ public sealed class Voice
         _portamentoStepPerSample = 0;
         _routes = Array.Empty<ModulationRoute>();
         _ampVelCurveFactor = 1.0;
+        _cachedPitchCents = double.NaN;
+        _cachedFilterCents = double.NaN;
+        _cachedAttenuationDb = double.NaN;
         _volumeEnvelope.Reset();
         _modulationEnvelope.Reset();
         _vibratoLfo.Reset();
@@ -561,7 +576,12 @@ public sealed class Voice
             }
 
             double pitchCents = baseStaticPitchCents + pitchMod;
-            double increment = Math.Pow(2.0, pitchCents / 1200.0) * _baseSampleRate / _sampleRate;
+            if (pitchCents != _cachedPitchCents)   // recompute only when the pitch actually moves
+            {
+                _cachedPitchCents = pitchCents;
+                _cachedIncrement = Math.Pow(2.0, pitchCents / 1200.0) * _baseSampleRate / _sampleRate;
+            }
+            double increment = _cachedIncrement;
 
             double sample = GetInterpolatedSample();
 
@@ -570,7 +590,11 @@ public sealed class Voice
                 double filterCents = modEnv * effectiveModEnvFilterDepthCents
                                    + modLfo * effectiveModLfoFilterDepthCents
                                    + contrib.FilterCutoffCents;
-                _filter.ModulateCutoff(filterCents);
+                if (filterCents != _cachedFilterCents)   // recompute coefficients only when cutoff moves
+                {
+                    _cachedFilterCents = filterCents;
+                    _filter.ModulateCutoff(filterCents);
+                }
                 sample = _filter.Process(sample);
             }
 
@@ -579,7 +603,12 @@ public sealed class Voice
             // multiply so a curve value of 0 yields true silence without a dB log).
             double volumeMod = modLfo * effectiveModLfoVolumeDepthDb;
             double totalAttenuationDb = effectiveAttenuationDb + volumeMod;
-            double gain = Math.Pow(10.0, -totalAttenuationDb / 20.0) * volEnv * _ampVelCurveFactor;
+            if (totalAttenuationDb != _cachedAttenuationDb)   // dB→linear only when attenuation moves
+            {
+                _cachedAttenuationDb = totalAttenuationDb;
+                _cachedLinearGain = Math.Pow(10.0, -totalAttenuationDb / 20.0);
+            }
+            double gain = _cachedLinearGain * volEnv * _ampVelCurveFactor;
 
             float outputSample = (float)(sample * gain);
             leftBuffer[i] += outputSample * (float)leftGain;

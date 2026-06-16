@@ -1,5 +1,6 @@
 using System;
 using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 
 namespace MidiSharp.Audio;
 
@@ -58,8 +59,11 @@ public static class PcmDecoder
             case 16:
             {
                 const float Scale = 1.0f / 32768.0f;
-                for (int i = 0; i < totalSamples; i++)
-                    output[i] = BinaryPrimitives.ReadInt16LittleEndian(bytes.Slice(i * 2, 2)) * Scale;
+                if (BitConverter.IsLittleEndian)
+                    SampleConvert.Int16ToFloat(MemoryMarshal.Cast<byte, short>(bytes.Slice(0, totalSamples * 2)), output, Scale);
+                else
+                    for (int i = 0; i < totalSamples; i++)
+                        output[i] = BinaryPrimitives.ReadInt16LittleEndian(bytes.Slice(i * 2, 2)) * Scale;
                 break;
             }
             case 24:
