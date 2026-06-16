@@ -8,12 +8,15 @@
     :root { color-scheme: dark; }
     body { font-family: system-ui, sans-serif; background: #15171c; color: #e6e6e6;
            margin: 0; display: flex; justify-content: center; min-height: 100dvh; }
-    main { width: min(1280px, 95vw); height: 100dvh; box-sizing: border-box;
-           padding: 1.4rem 0 1rem; display: flex; flex-direction: column; }
-    /* App-shell: pickers stay up top, the analysis results scroll in the middle,
-       and the transport + status stay put at the bottom so they're never pushed off-screen. */
-    .top, .bottom { flex: 0 0 auto; }
-    .mid { flex: 0 1 auto; min-height: 0; overflow-y: auto; padding-right: .3rem; }
+    main { width: min(1500px, 97vw); height: 100dvh; box-sizing: border-box;
+           padding: 1rem 0; display: flex; flex-direction: row; gap: 1.1rem; }
+    /* Two-pane: a fixed control sidebar on the left (transport pinned to its bottom),
+       the instrument grid — and future mixer/EQ panels — scrolling on the right. */
+    .side { flex: 0 0 320px; display: flex; flex-direction: column; min-height: 0;
+            overflow-y: auto; padding-right: .4rem; border-right: 1px solid #23272f; }
+    .side-foot { margin-top: auto; padding-top: 1rem; }
+    .work { flex: 1 1 auto; min-width: 0; overflow-y: auto; padding-right: .3rem; }
+    .work-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
     h1 { font-size: 1.3rem; font-weight: 600; }
     .sub { color: #8b93a1; font-size: .85rem; margin-top: -.5rem; }
     label { display: block; margin: 1rem 0 .3rem; font-size: .8rem; color: #9aa3b2;
@@ -32,8 +35,9 @@
     #stop { background: #353b46; color: #e6e6e6; }
     #exit { background: #5a2330; color: #f0c4cc; margin-left: auto; }
     button:disabled { opacity: .45; cursor: default; }
-    #setupRow select { flex: 1 1 auto; width: auto; }
-    #setupRow button { padding: .55rem .8rem; }
+    #setupRow { flex-wrap: wrap; }
+    #setupRow select { flex: 1 1 100%; width: auto; }
+    #setupRow button { padding: .5rem .7rem; }
     #loadSetup, #delSetup { background: #353b46; color: #e6e6e6; }
     #saveSetup { background: #2f5d3b; color: #cdebd6; margin-left: auto; }
     #resetAll { background: #4a3320; color: #f0d4b0; margin-left: auto; padding: .55rem .8rem; }
@@ -95,7 +99,7 @@
 </head>
 <body>
   <main>
-    <div class="top">
+    <aside class="side">
       <h1>MidiSharp Web Player</h1>
       <p class="sub">Audio plays on the server machine. The browser is the remote.</p>
 
@@ -111,7 +115,6 @@
       <div class="row">
         <button id="analyze">Analyze</button>
         <span id="trackHint" class="sub"></span>
-        <button id="resetAll" title="Revert every instrument in this song to the base font">Reset all</button>
       </div>
 
       <div class="row" id="setupRow">
@@ -120,9 +123,30 @@
         <button id="delSetup">Delete</button>
         <button id="saveSetup">💾 Save Setup</button>
       </div>
-    </div>
 
-    <div class="mid">
+      <div class="side-foot">
+        <div class="row">
+          <button id="play">▶ Play</button>
+          <button id="stop" disabled>■ Stop</button>
+        </div>
+
+        <div id="status">
+          <span class="state" id="state">Idle</span>
+          <span id="time"></span>
+          <div class="bar"><i id="fill"></i></div>
+        </div>
+        <div id="error"></div>
+        <div id="defects"></div>
+
+        <div class="row"><button id="exit">Exit server</button></div>
+      </div>
+    </aside>
+
+    <section class="work">
+      <div class="work-head">
+        <label>Instruments</label>
+        <button id="resetAll" title="Revert every instrument in this song to the base font">Reset all</button>
+      </div>
       <div id="tracks"></div>
 
       <details id="patchWrap" hidden>
@@ -130,23 +154,7 @@
         <span id="patchHint" class="sub"></span>
         <div id="patches"></div>
       </details>
-    </div>
-
-    <div class="bottom">
-      <div class="row">
-        <button id="play">▶ Play</button>
-        <button id="stop" disabled>■ Stop</button>
-        <button id="exit">Exit server</button>
-      </div>
-
-      <div id="status">
-        <span class="state" id="state">Idle</span>
-        <span id="time"></span>
-        <div class="bar"><i id="fill"></i></div>
-      </div>
-      <div id="error"></div>
-      <div id="defects"></div>
-    </div>
+    </section>
   </main>
 
   <div id="browseBackdrop" hidden>
