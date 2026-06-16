@@ -27,11 +27,16 @@ internal static class SfzParser
     private static readonly Regex Variable =
         new(@"\$[A-Za-z0-9_]+", RegexOptions.Compiled);
 
-    // #include can appear anywhere — real banks (e.g. Discord GM) tack it onto
-    // the end of a <master> line so the master's opcodes cascade into the
-    // included regions.
-    private static readonly Regex Include =
-        new(@"#include\s+""([^""]+)""", RegexOptions.Compiled);
+    // #define / #include can appear anywhere, including mid-line — real banks tack #include onto a
+    // <master> line, and some (e.g. Headroom Piano) put "<region> #define $KEY 36 ... #include …" on
+    // one line, so a later same-line #include must see the just-defined macro. We therefore process
+    // both directives in a single document-order pass rather than two separate passes.
+    private static readonly Regex Directive =
+        new(@"#(?:define|include)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex DefineTail =   // anchored just past "#define": $VAR then one token
+        new(@"\G\s*(\$[A-Za-z0-9_]+)\s+(\S+)", RegexOptions.Compiled);
+    private static readonly Regex IncludeTail =  // anchored just past "#include": "path"
+        new(@"\G\s*""([^""]+)""", RegexOptions.Compiled);
 
     /// <param name="text">The .sfz file contents.</param>
     /// <param name="readInclude">
@@ -54,42 +59,50 @@ internal static class SfzParser
     {
         text = StripComments(text);
 
-        // Collect/strip line-leading #define and substitute $vars.
+        // Single document-order pass: emit non-directive text (with $var substitution), record each
+        // #define as it's seen, and inline each #include at its position with the macros in effect so
+        // far. This is what lets "<region> #define $KEY 36 … #include …" work — the #include sees $KEY.
         var sb = new StringBuilder(text.Length);
-        foreach (var rawLine in text.Split('\n'))
+        int pos = 0;
+        while (pos < text.Length)
         {
-            string line = rawLine.TrimEnd('\r');
-            string trimmed = line.TrimStart();
-
-            if (trimmed.StartsWith("#define", StringComparison.OrdinalIgnoreCase))
+            var m = Directive.Match(text, pos);
+            if (!m.Success)
             {
-                var parts = trimmed.Substring("#define".Length).Trim();
-                int sp = IndexOfWhitespace(parts);
-                if (sp > 0)
-                {
-                    string vname = parts.Substring(0, sp);
-                    string val = parts.Substring(sp).Trim();
-                    if (vname.StartsWith("$", StringComparison.Ordinal))
-                        defines[vname] = val;
-                }
-                continue;
+                sb.Append(Substitute(text.Substring(pos), defines));
+                break;
             }
 
-            sb.Append(Substitute(line, defines));
-            sb.Append('\n');
+            sb.Append(Substitute(text.Substring(pos, m.Index - pos), defines));
+            int after = m.Index + m.Length;
+
+            if (char.ToLowerInvariant(text[m.Index + 1]) == 'd')   // #define
+            {
+                var d = DefineTail.Match(text, after);
+                if (d.Success && d.Index == after)
+                {
+                    defines[d.Groups[1].Value] = Substitute(d.Groups[2].Value, defines);
+                    pos = after + d.Length;
+                }
+                else pos = after;   // malformed — drop just the directive token and keep scanning
+            }
+            else   // #include
+            {
+                var inc = IncludeTail.Match(text, after);
+                if (inc.Success && inc.Index == after)
+                {
+                    if (readInclude != null && depth < 16)
+                    {
+                        string? incText = readInclude(Substitute(inc.Groups[1].Value, defines));
+                        if (incText != null)
+                            sb.Append('\n').Append(Preprocess(incText, readInclude, defines, depth + 1)).Append('\n');
+                    }
+                    pos = after + inc.Length;
+                }
+                else pos = after;
+            }
         }
-
-        // Inline #include directives wherever they appear (a newline is inserted
-        // before the included content so it can't fuse with a preceding header).
-        string withDefines = sb.ToString();
-        if (readInclude == null || depth >= 16 || withDefines.IndexOf("#include", StringComparison.OrdinalIgnoreCase) < 0)
-            return withDefines;
-
-        return Include.Replace(withDefines, m =>
-        {
-            string? incText = readInclude(Substitute(m.Groups[1].Value, defines));
-            return incText != null ? "\n" + Preprocess(incText, readInclude, defines, depth + 1) + "\n" : string.Empty;
-        });
+        return sb.ToString();
     }
 
     /// <summary>Removes <c>/* block */</c> and <c>// line</c> comments in one pass.</summary>
@@ -142,6 +155,11 @@ internal static class SfzParser
         var group = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, string>? region = null;
 
+        // default_path is positional, not a one-shot <control> setting: a bank can set it several
+        // times (VSCO keyswitch files, the Discord Melodic/ then Drums/ master) and each applies to
+        // the regions that follow. Track the current value and stamp it onto each flushed region.
+        string defaultPath = string.Empty;
+
         // Scope of the opcodes currently being collected.
         var scope = Scope.Global;
 
@@ -153,6 +171,7 @@ internal static class SfzParser
             foreach (var kv in master) merged[kv.Key] = kv.Value;
             foreach (var kv in group) merged[kv.Key] = kv.Value;
             foreach (var kv in region) merged[kv.Key] = kv.Value;
+            merged["default_path"] = defaultPath;   // the path in effect at this region's position
             regions.Add(new SfzRegion(merged));
             region = null;
         }
@@ -189,6 +208,14 @@ internal static class SfzParser
             int valueEnd = (m + 1 < matches.Count) ? matches[m + 1].Index : text.Length;
             string value = text.Substring(valueStart, valueEnd - valueStart).Trim();
 
+            // default_path is positional in any scope — capture it and stamp it per region (above),
+            // rather than letting it cascade or be a single global <control> value.
+            if (key == "default_path")
+            {
+                defaultPath = value.Replace('\\', '/');
+                continue;
+            }
+
             switch (scope)
             {
                 case Scope.Control:
@@ -221,9 +248,7 @@ internal static class SfzParser
     {
         switch (key)
         {
-            case "default_path":
-                control.DefaultPath = value.Replace('\\', '/');
-                return true;
+            // default_path is handled positionally in BuildRegions (it can change mid-file), not here.
             case "octave_offset":
                 if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int oo))
                     control.OctaveOffset = oo;
@@ -235,15 +260,6 @@ internal static class SfzParser
             default:
                 return false;
         }
-    }
-
-    // ── Small helpers ───────────────────────────────────────────────────
-
-    private static int IndexOfWhitespace(string s)
-    {
-        for (int i = 0; i < s.Length; i++)
-            if (char.IsWhiteSpace(s[i])) return i;
-        return -1;
     }
 
     private enum Scope { Control, Global, Master, Group, Region, Ignore }

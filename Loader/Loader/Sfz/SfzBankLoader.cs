@@ -67,7 +67,7 @@ internal static class SfzBankLoader
         private readonly List<AudioInfo> _infos = new();
         private readonly List<SampleMetadata> _metadatas = new();
         private readonly Dictionary<string, int> _idByPath = new(StringComparer.OrdinalIgnoreCase);
-        private readonly List<(int Bank, int Lo, int Hi, PatchZone Zone)> _placed = new();
+        private readonly List<(int Bank, int Lo, int Hi, PatchZone Zone, string? Label)> _placed = new();
         private int _missing;
 
         public void AddFile(string path, int bank)
@@ -85,30 +85,69 @@ internal static class SfzBankLoader
             {
                 string? sampleValue = region.Get("sample");
                 if (string.IsNullOrWhiteSpace(sampleValue)) continue;
+                sampleValue = sampleValue!.Trim();
 
-                string? resolved = ResolveSamplePath(baseDir, instrument.Control.DefaultPath, sampleValue!);
-                if (resolved == null) { _missing++; continue; }
-
-                if (!_idByPath.TryGetValue(resolved, out int sampleId))
+                int sampleId;
+                if (sampleValue.StartsWith("*", StringComparison.Ordinal))
                 {
-                    // Peek the header only — the sample is decoded lazily on first play.
-                    AudioInfo info;
-                    try { info = AudioCodecs.Peek(resolved); }
-                    catch { _missing++; continue; }
-                    if (info.FrameCount <= 0) { _missing++; continue; }   // unreadable / empty header
-                    sampleId = _paths.Count;
-                    _paths.Add(resolved);
-                    _infos.Add(info);
-                    _metadatas.Add(BuildMetadata(info, Path.GetFileNameWithoutExtension(resolved)));
-                    _idByPath[resolved] = sampleId;
+                    // ARIA built-in generator (*sine, *silence, …): no file ships, so register a
+                    // silent placeholder keyed by the token. Keeps the region — and its program
+                    // slot — loadable instead of being dropped as a missing sample.
+                    if (!_idByPath.TryGetValue(sampleValue, out sampleId))
+                    {
+                        var info = GeneratorInfo();
+                        sampleId = _paths.Count;
+                        _paths.Add(sampleValue);   // the "*…" token doubles as the source path
+                        _infos.Add(info);
+                        _metadatas.Add(BuildMetadata(info, sampleValue));
+                        _idByPath[sampleValue] = sampleId;
+                    }
+                }
+                else
+                {
+                    // Resolve against the region's positional default_path (stamped by the parser).
+                    string defaultPath = region.Get("default_path") ?? string.Empty;
+                    string? resolved = ResolveSamplePath(baseDir, defaultPath, sampleValue);
+                    if (resolved == null) { _missing++; continue; }
+
+                    if (!_idByPath.TryGetValue(resolved, out sampleId))
+                    {
+                        // Peek the header only — the sample is decoded lazily on first play.
+                        AudioInfo info;
+                        try { info = AudioCodecs.Peek(resolved); }
+                        catch { _missing++; continue; }
+                        if (info.FrameCount <= 0) { _missing++; continue; }   // unreadable / empty header
+                        sampleId = _paths.Count;
+                        _paths.Add(resolved);
+                        _infos.Add(info);
+                        _metadatas.Add(BuildMetadata(info, Path.GetFileNameWithoutExtension(resolved)));
+                        _idByPath[resolved] = sampleId;
+                    }
                 }
 
                 int lo = Math.Clamp(region.GetInt("loprog", 0), 0, 127);
                 int hi = Math.Clamp(region.GetInt("hiprog", 127), 0, 127);
+                // Patch name from the program/instrument-level label only: master_label (Discord
+                // labels its 128 GM slots this way) then global_label. group_label/region_label are
+                // sub-group names (mic, velocity layer, articulation), not instrument names, so they
+                // don't name the patch — it falls back to the filename instead.
+                string? label = region.Get("master_label") ?? region.Get("global_label");
                 _placed.Add((bank, lo, hi,
-                    SfzZoneTranslator.Build(region, instrument.Control, sampleId, _infos[sampleId])));
+                    SfzZoneTranslator.Build(region, instrument.Control, sampleId, _infos[sampleId]), label));
             }
         }
+
+        // Synthetic metadata for a built-in generator placeholder: one second of looping silence so
+        // a held note sustains instead of cutting after the sample ends.
+        private static AudioInfo GeneratorInfo() => new()
+        {
+            Channels = 1,
+            SampleRate = 44100,
+            FrameCount = 44100,
+            RootKey = -1,
+            LoopStartFrame = 0,
+            LoopEndFrame = 44100,
+        };
 
         // Sample metadata from a header peek — root key and loop fields fall back to SFZ opcodes
         // (filled by the zone translator) when the file header doesn't carry them.
@@ -135,7 +174,8 @@ internal static class SfzBankLoader
             // region's program span; the document order of zones within a patch is
             // preserved (it matters for overlapping / round-robin / keyswitch zones).
             var byKey = new Dictionary<(int Bank, int Program), List<PatchZone>>();
-            foreach (var (bank, lo, hi, zone) in _placed)
+            var labelByKey = new Dictionary<(int Bank, int Program), string>();
+            foreach (var (bank, lo, hi, zone, label) in _placed)
             {
                 for (int program = lo; program <= hi; program++)
                 {
@@ -143,6 +183,8 @@ internal static class SfzBankLoader
                     if (!byKey.TryGetValue(key, out var list))
                         byKey[key] = list = new List<PatchZone>();
                     list.Add(zone);
+                    if (label != null && !labelByKey.ContainsKey(key))
+                        labelByKey[key] = label;   // first label wins for this program
                 }
             }
 
@@ -152,7 +194,7 @@ internal static class SfzBankLoader
                 {
                     Bank = kv.Key.Bank,
                     Program = kv.Key.Program,
-                    Name = name,
+                    Name = labelByKey.TryGetValue(kv.Key, out var lbl) ? lbl : name,
                     Zones = kv.Value,
                 });
 

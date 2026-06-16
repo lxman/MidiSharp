@@ -129,6 +129,17 @@ internal sealed class SfzSampleSource : ISampleSource
 
     private (float[] data, int length, bool pooled) Decode(int sampleId)
     {
+        // Built-in generator placeholder ("*sine", "*silence", …): no file — emit silence sized to
+        // the synthetic metadata. (Rented buffers aren't zeroed, so clear it.)
+        if (_paths[sampleId].StartsWith("*", StringComparison.Ordinal))
+        {
+            int n = (int)Math.Min(_metadata[sampleId].LengthFrames, int.MaxValue);
+            if (n <= 0) return (Array.Empty<float>(), 0, false);
+            var silence = ArrayPool<float>.Shared.Rent(n);
+            Array.Clear(silence, 0, n);
+            return (silence, n, true);
+        }
+
         DecodedAudio audio;
         try { audio = AudioCodecs.Decode(_paths[sampleId]); }
         catch { return (Array.Empty<float>(), 0, false); }   // missing/corrupt at play time → silence

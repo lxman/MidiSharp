@@ -131,6 +131,73 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Positional_default_path_applies_per_region()
+    {
+        WriteWav("A/x.wav");
+        WriteWav("B/y.wav");
+        var path = WriteSfz("""
+            <control> default_path=A/
+            <region> sample=x.wav lokey=0 hikey=0
+            <control> default_path=B/
+            <region> sample=y.wav lokey=1 hikey=1
+            """);
+
+        using var bank = SoundBankLoader.Load(path);
+        // x.wav resolves under A/, y.wav under B/ — both found. (A single global default_path,
+        // last-one-wins, would leave x.wav under B/ and unresolvable.)
+        Assert.Equal(2, bank.Samples.Count);
+    }
+
+    [Fact]
+    public void Inline_define_with_same_line_include_substitutes()
+    {
+        WriteWav("36.wav");
+        WriteNamed("frag.txt", "sample=$KEY.wav\n");
+        // The #define and the #include are on the same line — the include must see $KEY=36.
+        var path = WriteSfz("""
+            <region> #define $KEY 36 lokey=36 hikey=36 #include "frag.txt"
+            """);
+
+        using var bank = SoundBankLoader.Load(path);
+        Assert.Equal(1, bank.Samples.Count);
+    }
+
+    [Fact]
+    public void Builtin_generator_loads_as_silent_placeholder()
+    {
+        var path = WriteSfz("<region> sample=*sine lokey=60 hikey=60");
+
+        using var bank = SoundBankLoader.Load(path);
+        Assert.Equal(1, bank.Samples.Count);   // *sine registers a placeholder instead of being dropped
+
+        var buf = new float[64];
+        int n = 0;
+        var deadline = DateTime.UtcNow.AddSeconds(3);
+        while (n == 0 && DateTime.UtcNow < deadline)
+        {
+            n = bank.Samples.ReadFrames(0, 0, buf);
+            if (n == 0) System.Threading.Thread.Sleep(5);
+        }
+        Assert.True(n > 0);
+        for (int i = 0; i < n; i++) Assert.Equal(0f, buf[i]);   // silent placeholder
+    }
+
+    [Fact]
+    public void Master_label_names_the_patch()
+    {
+        WriteWav("a.wav");
+        var path = WriteSfz("""
+            <master> loprog=5 hiprog=5 master_label=My Program
+            <region> sample=a.wav
+            """);
+
+        using var bank = SoundBankLoader.Load(path);
+        var patch = bank.FindPatch(0, 5);
+        Assert.NotNull(patch);
+        Assert.Equal("My Program", patch!.Name);
+    }
+
+    [Fact]
     public void Loads_instrument_with_replicated_programs_and_deduped_samples()
     {
         WriteWav("samples/a.wav");
