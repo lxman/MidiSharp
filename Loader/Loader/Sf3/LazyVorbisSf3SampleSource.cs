@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using MidiSharp.Audio;
 
@@ -14,6 +15,13 @@ namespace MidiSharp.SoundBank.Sf3;
 /// Audio-thread cache misses pay a one-time decode cost (typically a few ms
 /// per sample); the result is held in the cache until LRU eviction. Decoded
 /// frames are stored interleaved float per channel.
+/// <para>
+/// Decoded buffers are rented from <see cref="ArrayPool{T}"/> and returned on eviction/dispose,
+/// so repeated decode→evict cycles don't churn the large-object heap. Because a returned buffer can
+/// be reused immediately, reads copy out of the cache <em>under the cache lock</em> — eviction
+/// (which returns the buffer) and a concurrent read can never overlap, so a buffer is never reused
+/// while still being read. The expensive Vorbis decode itself runs outside the lock.
+/// </para>
 /// </remarks>
 internal sealed class LazyVorbisSf3SampleSource : ISampleSource
 {
@@ -39,6 +47,8 @@ internal sealed class LazyVorbisSf3SampleSource : ISampleSource
     private sealed class CacheNode
     {
         public float[] Data = Array.Empty<float>();
+        public int Length;          // valid floats (Data may be longer when pool-rented)
+        public bool Pooled;         // Data came from ArrayPool and must be returned when dropped
         public LinkedListNode<int>? LruNode;
     }
 
@@ -68,68 +78,64 @@ internal sealed class LazyVorbisSf3SampleSource : ISampleSource
 
     public int ReadFrames(int sampleId, long frameOffset, Span<float> dest)
     {
-        var decoded = GetOrDecode(sampleId);
-        int channels = _entries[sampleId].Channels;
-        long frameCount = decoded.Length / channels;
+        var channels = _entries[sampleId].Channels;
 
+        // Fast path: cache hit — refresh LRU and copy, all under the lock.
+        lock (_cacheLock)
+            if (_cache.TryGetValue(sampleId, out var hit))
+                return CopyFromNode(hit, sampleId, frameOffset, dest, channels, refreshLru: true);
+
+        // Miss: decode outside the lock so concurrent decodes don't serialize, then insert + copy.
+        var (data, length, pooled) = Decode(sampleId);
+        lock (_cacheLock)
+        {
+            if (_cache.TryGetValue(sampleId, out var raced))   // another thread decoded it meanwhile
+            {
+                if (pooled) ArrayPool<float>.Shared.Return(data);
+                return CopyFromNode(raced, sampleId, frameOffset, dest, channels, refreshLru: true);
+            }
+            EvictUntilBudgetFits(length * 4L);
+            var node = new CacheNode { Data = data, Length = length, Pooled = pooled, LruNode = _lru.AddLast(sampleId) };
+            _cache[sampleId] = node;
+            _cachedBytes += length * 4L;
+            return CopyFromNode(node, sampleId, frameOffset, dest, channels, refreshLru: false);
+        }
+    }
+
+    // Must be called holding _cacheLock — copies under the lock so the buffer can't be returned
+    // to the pool (via eviction) while this read is in progress.
+    private int CopyFromNode(CacheNode node, int sampleId, long frameOffset, Span<float> dest, int channels, bool refreshLru)
+    {
+        if (refreshLru && node.LruNode != null)
+        {
+            _lru.Remove(node.LruNode);
+            node.LruNode = _lru.AddLast(sampleId);
+        }
+
+        long frameCount = channels > 0 ? node.Length / channels : 0;
         if (frameOffset < 0 || frameOffset >= frameCount) return 0;
         int framesAvailable = (int)Math.Min(frameCount - frameOffset, dest.Length);
-        int floatsNeeded = framesAvailable * channels;
-
-        decoded.AsSpan((int)(frameOffset * channels), floatsNeeded).CopyTo(dest);
+        node.Data.AsSpan((int)(frameOffset * channels), framesAvailable * channels).CopyTo(dest);
         return framesAvailable;
     }
 
     public void PrepareSample(int sampleId)
     {
-        // Synchronous decode-on-hint. Background decoding can be added later if
-        // audio-thread blocking on NoteOn becomes measurable; for now the decode
-        // cost (one-shot per sample, then cached) is amortized across playback.
-        GetOrDecode(sampleId);
-    }
+        // Synchronous decode-on-hint so the sample is cached before it plays.
+        lock (_cacheLock)
+            if (_cache.ContainsKey(sampleId)) return;
 
-    private float[] GetOrDecode(int sampleId)
-    {
-        // Fast path: cache hit. Refresh LRU under lock.
+        var (data, length, pooled) = Decode(sampleId);
         lock (_cacheLock)
         {
-            if (_cache.TryGetValue(sampleId, out var node))
-            {
-                if (node.LruNode != null)
-                {
-                    _lru.Remove(node.LruNode);
-                    node.LruNode = _lru.AddLast(sampleId);
-                }
-                return node.Data;
-            }
-        }
-
-        // Slow path: decode outside the lock so concurrent decodes don't serialize.
-        var fresh = Decode(sampleId);
-
-        lock (_cacheLock)
-        {
-            // Re-check in case another thread decoded the same sample while we were busy.
-            if (_cache.TryGetValue(sampleId, out var existing))
-            {
-                if (existing.LruNode != null)
-                {
-                    _lru.Remove(existing.LruNode);
-                    existing.LruNode = _lru.AddLast(sampleId);
-                }
-                return existing.Data;
-            }
-
-            long addedBytes = fresh.Length * 4L;
-            EvictUntilBudgetFits(addedBytes);
-
-            var node = new CacheNode { Data = fresh, LruNode = _lru.AddLast(sampleId) };
-            _cache[sampleId] = node;
-            _cachedBytes += addedBytes;
-            return fresh;
+            if (_cache.ContainsKey(sampleId)) { if (pooled) ArrayPool<float>.Shared.Return(data); return; }
+            EvictUntilBudgetFits(length * 4L);
+            _cache[sampleId] = new CacheNode { Data = data, Length = length, Pooled = pooled, LruNode = _lru.AddLast(sampleId) };
+            _cachedBytes += length * 4L;
         }
     }
 
+    // Holds _cacheLock. Returns evicted pooled buffers to the pool.
     private void EvictUntilBudgetFits(long incoming)
     {
         while (_cachedBytes + incoming > _cacheBudgetBytes && _lru.Count > 0)
@@ -138,20 +144,33 @@ internal sealed class LazyVorbisSf3SampleSource : ISampleSource
             _lru.RemoveFirst();
             if (_cache.TryGetValue(victim, out var victimNode))
             {
-                _cachedBytes -= victimNode.Data.Length * 4L;
+                _cachedBytes -= victimNode.Length * 4L;
                 _cache.Remove(victim);
+                if (victimNode.Pooled) ArrayPool<float>.Shared.Return(victimNode.Data);
             }
         }
     }
 
-    private float[] Decode(int sampleId)
+    private (float[] data, int length, bool pooled) Decode(int sampleId)
     {
         var entry = _entries[sampleId];
-        if (entry.ByteLength <= 0) return Array.Empty<float>();
+        if (entry.ByteLength <= 0) return (Array.Empty<float>(), 0, false);
 
-        // Decode the sample's Ogg Vorbis slice through the shared codec primitive.
         var slice = _smplBytes.Slice(entry.ByteStart, entry.ByteLength);
-        return VorbisDecoder.DecodePcm(slice, out _, out _, out _);
+
+        // Known length → decode straight into a pooled buffer (the common case).
+        VorbisDecoder.Peek(slice, out int channels, out long frames);
+        if (frames > 0 && frames <= int.MaxValue / Math.Max(1, channels))
+        {
+            int floats = (int)(frames * channels);
+            var buf = ArrayPool<float>.Shared.Rent(floats);
+            int read = VorbisDecoder.DecodePcmInto(slice, buf, floats, out _, out _);
+            return (buf, read, true);
+        }
+
+        // Unknown length (rare) → fall back to the allocating decode; not pooled.
+        var arr = VorbisDecoder.DecodePcm(slice, out _, out _, out _);
+        return (arr, arr.Length, false);
     }
 
     public void Dispose()
@@ -160,6 +179,8 @@ internal sealed class LazyVorbisSf3SampleSource : ISampleSource
         _disposed = true;
         lock (_cacheLock)
         {
+            foreach (var kv in _cache)
+                if (kv.Value.Pooled) ArrayPool<float>.Shared.Return(kv.Value.Data);
             _cache.Clear();
             _lru.Clear();
             _cachedBytes = 0;

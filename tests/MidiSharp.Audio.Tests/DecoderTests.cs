@@ -96,6 +96,24 @@ public sealed class DecoderTests : IDisposable
     }
 
     [Fact]
+    public void VorbisDecodePcmInto_matches_DecodePcm()
+    {
+        if (!CodecFixtures.FfmpegAvailable) return;
+        string ogg = Path.Combine(_dir, "into.ogg");
+        if (!CodecFixtures.Transcode(_wav, ogg, "-c:a libvorbis -q:a 6")) return;
+
+        var bytes = File.ReadAllBytes(ogg);
+        var reference = VorbisDecoder.DecodePcm(bytes, out _, out _, out _);
+
+        VorbisDecoder.Peek(bytes, out int ch, out long frames);
+        var buf = new float[(int)(frames * ch)];
+        int n = VorbisDecoder.DecodePcmInto(bytes, buf, buf.Length, out _, out _);
+
+        Assert.Equal(reference.Length, n);
+        Assert.True(buf.AsSpan(0, n).SequenceEqual(reference.AsSpan()), "DecodePcmInto differs from DecodePcm");
+    }
+
+    [Fact]
     public void Dispatch_picks_decoder_by_magic_bytes()
     {
         if (!CodecFixtures.FfmpegAvailable) return;

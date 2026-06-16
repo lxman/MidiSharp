@@ -70,6 +70,35 @@ public sealed class VorbisDecoder : IAudioDecoder
         return result;
     }
 
+    /// <summary>
+    /// Decode an Ogg Vorbis bitstream into a caller-provided buffer (e.g. one rented from
+    /// <see cref="System.Buffers.ArrayPool{T}"/>), writing up to <paramref name="maxFloats"/>
+    /// interleaved float samples. Returns the number of floats actually written. Used by SF3's
+    /// pooled per-sample cache to avoid allocating a fresh array on every decode.
+    /// </summary>
+    public static int DecodePcmInto(ReadOnlyMemory<byte> ogg, float[] dest, int maxFloats,
+        out int channels, out int sampleRate)
+    {
+        if (ogg.Length == 0 || maxFloats <= 0) { channels = 1; sampleRate = 44100; return 0; }
+
+        var seg = AsSegment(ogg);
+        using var ms = new MemoryStream(seg.Array!, seg.Offset, seg.Count, writable: false, publiclyVisible: false);
+        using var reader = new VorbisReader(ms, closeOnDispose: false);
+
+        channels = reader.Channels;
+        sampleRate = reader.SampleRate;
+
+        var cap = Math.Min(maxFloats, dest.Length);
+        var total = 0;
+        while (total < cap)
+        {
+            var got = reader.ReadSamples(dest, total, cap - total);
+            if (got <= 0) break;
+            total += got;
+        }
+        return total;
+    }
+
     /// <summary>Read channel count and frame count from the headers without decoding audio.</summary>
     public static void Peek(ReadOnlyMemory<byte> ogg, out int channels, out long frames)
     {
