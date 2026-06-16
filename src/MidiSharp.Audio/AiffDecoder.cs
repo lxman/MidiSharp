@@ -27,6 +27,54 @@ public sealed class AiffDecoder : IAudioDecoder
                 pathHint.EndsWith(".aifc", StringComparison.OrdinalIgnoreCase));
     }
 
+    public AudioInfo Peek(ReadOnlySpan<byte> bytes)
+    {
+        if (bytes.Length < 12 || !Is(bytes, 0, 'F', 'O', 'R', 'M') ||
+            !(Is(bytes, 8, 'A', 'I', 'F', 'F') || Is(bytes, 8, 'A', 'I', 'F', 'C')))
+            return AudioInfo.None;
+
+        int channels = 1, sampleRate = 44100, rootKey = -1; long frameCount = 0; double fine = 0;
+        bool gotComm = false;
+
+        int off = 12;
+        while (off + 8 <= bytes.Length)
+        {
+            var id = bytes.Slice(off, 4);
+            uint size = BinaryPrimitives.ReadUInt32BigEndian(bytes.Slice(off + 4, 4));
+            int body = off + 8;
+
+            if (Is(id, 0, 'C', 'O', 'M', 'M') && body + 18 <= bytes.Length)
+            {
+                var c = bytes.Slice(body, 18);
+                channels = BinaryPrimitives.ReadInt16BigEndian(c.Slice(0, 2));
+                frameCount = BinaryPrimitives.ReadUInt32BigEndian(c.Slice(2, 4));
+                sampleRate = (int)Math.Round(ReadExtended80(c.Slice(8, 10)));
+                gotComm = true;
+            }
+            else if (Is(id, 0, 'I', 'N', 'S', 'T') && body + 2 <= bytes.Length)
+            {
+                rootKey = (sbyte)bytes[body];
+                fine = (sbyte)bytes[body + 1];
+            }
+
+            long next = (long)body + size + (size & 1);
+            if (next > bytes.Length) break;
+            off = (int)next;
+        }
+
+        if (!gotComm) return AudioInfo.None;   // COMM not in the supplied bytes
+        return new AudioInfo
+        {
+            Channels = channels < 1 ? 1 : channels,
+            SampleRate = sampleRate <= 0 ? 44100 : sampleRate,
+            FrameCount = frameCount,
+            RootKey = rootKey,
+            FineTuneCents = fine,
+            LoopStartFrame = -1,   // AIFF loops are marker-based; SFZ opcodes drive loops here
+            LoopEndFrame = -1,
+        };
+    }
+
     public DecodedAudio Decode(byte[] data)
     {
         var bytes = (ReadOnlySpan<byte>)data;

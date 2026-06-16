@@ -103,6 +103,34 @@ public sealed class SfzLoaderTests : IDisposable
     // ── Tests ───────────────────────────────────────────────────────────
 
     [Fact]
+    public void LazySample_decodes_in_background_then_reads_correct_data()
+    {
+        WriteWav("samples/a.wav", frames: 256);
+        var path = WriteSfz("""
+            <control> default_path=samples/
+            <region> sample=a.wav lokey=0 hikey=127
+            """);
+
+        using var bank = SoundBankLoader.Load(path);
+        Assert.True(bank.Samples.Count >= 1);
+
+        // Lazy: the first read kicks a background decode and returns silence (0); poll until it lands.
+        var buf = new float[256];
+        int n = 0;
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (n == 0 && DateTime.UtcNow < deadline)
+        {
+            n = bank.Samples.ReadFrames(0, 0, buf);
+            if (n == 0) System.Threading.Thread.Sleep(5);
+        }
+
+        Assert.True(n > 0, "background decode never produced data");
+        // WriteWav lays down a known ramp: sample i = (i % 64 * 32) as int16, normalised by 1/32768.
+        for (int i = 0; i < n; i++)
+            Assert.Equal((short)(i % 64 * 32) / 32768.0, buf[i], 5);
+    }
+
+    [Fact]
     public void Loads_instrument_with_replicated_programs_and_deduped_samples()
     {
         WriteWav("samples/a.wav");

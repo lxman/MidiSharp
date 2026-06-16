@@ -22,6 +22,70 @@ public sealed class WavDecoder : IAudioDecoder
         return pathHint != null && pathHint.EndsWith(".wav", StringComparison.OrdinalIgnoreCase);
     }
 
+    public AudioInfo Peek(ReadOnlySpan<byte> bytes)
+    {
+        if (bytes.Length < 12 ||
+            bytes[0] != 'R' || bytes[1] != 'I' || bytes[2] != 'F' || bytes[3] != 'F' ||
+            bytes[8] != 'W' || bytes[9] != 'A' || bytes[10] != 'V' || bytes[11] != 'E')
+            return AudioInfo.None;
+
+        int channels = 1, sampleRate = 44100, bitsPerSample = 16;
+        long dataSize = -1, loopStart = -1, loopEnd = -1;
+        int rootKey = -1; double fineTuneCents = 0;
+
+        int off = 12;
+        while (off + 8 <= bytes.Length)
+        {
+            var id = bytes.Slice(off, 4);
+            uint size = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(off + 4, 4));
+            int body = off + 8;
+
+            if (Is(id, 'f', 'm', 't', ' ') && body + 16 <= bytes.Length)
+            {
+                var f = bytes.Slice(body, 16);
+                channels = BinaryPrimitives.ReadUInt16LittleEndian(f.Slice(2, 2));
+                sampleRate = (int)BinaryPrimitives.ReadUInt32LittleEndian(f.Slice(4, 4));
+                bitsPerSample = BinaryPrimitives.ReadUInt16LittleEndian(f.Slice(14, 2));
+            }
+            else if (Is(id, 'd', 'a', 't', 'a'))
+            {
+                dataSize = size;   // the declared size — we never read the body
+            }
+            else if (Is(id, 's', 'm', 'p', 'l') && body + 60 <= bytes.Length)
+            {
+                var s = bytes.Slice(body, 60);
+                rootKey = (int)BinaryPrimitives.ReadUInt32LittleEndian(s.Slice(20, 4));
+                fineTuneCents = BinaryPrimitives.ReadUInt32LittleEndian(s.Slice(24, 4)) / 4294967296.0 * 100.0;
+                if (BinaryPrimitives.ReadUInt32LittleEndian(s.Slice(28, 4)) > 0)
+                {
+                    loopStart = BinaryPrimitives.ReadUInt32LittleEndian(s.Slice(44, 4));
+                    loopEnd = (long)BinaryPrimitives.ReadUInt32LittleEndian(s.Slice(48, 4)) + 1;
+                }
+            }
+
+            long next = (long)body + size + (size & 1);
+            if (next > bytes.Length) break;   // chunk body runs past the prefix — stop walking
+            off = (int)next;
+        }
+
+        if (dataSize < 0) return AudioInfo.None;   // didn't find the data header in the supplied bytes
+        int frameBytes = Math.Max(1, channels * ((bitsPerSample + 7) / 8));
+        long frames = dataSize / frameBytes;
+        if (loopEnd > frames) loopEnd = frames;
+        if (loopStart >= frames) { loopStart = -1; loopEnd = -1; }
+
+        return new AudioInfo
+        {
+            Channels = channels < 1 ? 1 : channels,
+            SampleRate = sampleRate <= 0 ? 44100 : sampleRate,
+            FrameCount = frames,
+            RootKey = rootKey,
+            FineTuneCents = fineTuneCents,
+            LoopStartFrame = loopStart,
+            LoopEndFrame = loopEnd,
+        };
+    }
+
     public DecodedAudio Decode(byte[] data)
     {
         var bytes = (ReadOnlySpan<byte>)data;

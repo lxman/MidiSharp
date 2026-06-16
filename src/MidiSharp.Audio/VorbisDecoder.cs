@@ -23,6 +23,29 @@ public sealed class VorbisDecoder : IAudioDecoder
         return pathHint != null && pathHint.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase);
     }
 
+    public AudioInfo Peek(ReadOnlySpan<byte> data)
+    {
+        // Vorbis frame count comes from the final page's granule position, so this needs the whole
+        // file (a prefix yields FrameCount 0 → the caller retries with the full bytes).
+        try
+        {
+            var arr = data.ToArray();
+            using var ms = new MemoryStream(arr, writable: false);
+            using var reader = new VorbisReader(ms, closeOnDispose: false);
+            long total = reader.TotalSamples;
+            return new AudioInfo
+            {
+                Channels = reader.Channels,
+                SampleRate = reader.SampleRate,
+                FrameCount = total > 0 ? total : 0,
+                RootKey = -1,
+                LoopStartFrame = -1,
+                LoopEndFrame = -1,
+            };
+        }
+        catch { return AudioInfo.None; }
+    }
+
     public DecodedAudio Decode(byte[] data)
     {
         var samples = DecodePcm(data, out int channels, out int sampleRate, out long frames);

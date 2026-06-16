@@ -27,6 +27,30 @@ public sealed class FlacDecoder : IAudioDecoder
         return pathHint != null && pathHint.EndsWith(".flac", StringComparison.OrdinalIgnoreCase);
     }
 
+    public AudioInfo Peek(ReadOnlySpan<byte> data)
+    {
+        // STREAMINFO is required to be the first metadata block (right after the "fLaC" marker),
+        // so frames/rate/channels are available in the first ~50 bytes — no audio decode needed.
+        if (data.Length < 4 + 4 + 34 || data[0] != 'f' || data[1] != 'L' || data[2] != 'a' || data[3] != 'C')
+            return AudioInfo.None;
+        int type = data[4] & 0x7F;
+        if (type != 0) return AudioInfo.None;   // first block isn't STREAMINFO → malformed for our purposes
+        var s = data.Slice(8, 34);
+        int sampleRate = (s[10] << 12) | (s[11] << 4) | (s[12] >> 4);
+        int channels = ((s[12] >> 1) & 0x07) + 1;
+        long total = ((long)(s[13] & 0x0F) << 32) | ((long)s[14] << 24) |
+                     ((long)s[15] << 16) | ((long)s[16] << 8) | s[17];
+        return new AudioInfo
+        {
+            Channels = channels,
+            SampleRate = sampleRate <= 0 ? 44100 : sampleRate,
+            FrameCount = total,
+            RootKey = -1,
+            LoopStartFrame = -1,
+            LoopEndFrame = -1,
+        };
+    }
+
     public DecodedAudio Decode(byte[] data)
     {
         if (data.Length < 4 || data[0] != 'f' || data[1] != 'L' || data[2] != 'a' || data[3] != 'C')

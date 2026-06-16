@@ -114,6 +114,34 @@ public sealed class DecoderTests : IDisposable
     }
 
     [Fact]
+    public void Peek_matches_decode_for_all_formats()
+    {
+        if (!CodecFixtures.FfmpegAvailable) return;
+        foreach (var (ext, args) in new[]
+        {
+            ("wav", "-c:a pcm_s16le"),
+            ("flac", "-c:a flac"),
+            ("aiff", "-c:a pcm_s16be"),
+            ("ogg", "-c:a libvorbis -q:a 6"),
+        })
+        {
+            var f = Path.Combine(_dir, "peek." + ext);
+            if (!CodecFixtures.Transcode(_wav, f, args)) continue;
+
+            var dec = AudioCodecs.Decode(f);
+            var info = AudioCodecs.Peek(f);
+
+            Assert.Equal(dec.Channels, info.Channels);
+            Assert.Equal(dec.SampleRate, info.SampleRate);
+            if (ext == "ogg")   // Vorbis adds encoder delay/padding; frame counts are close, not exact
+                Assert.True(Math.Abs(info.FrameCount - dec.FrameCount) < dec.FrameCount * 0.2 + 2048,
+                    $"ogg frames peek={info.FrameCount} dec={dec.FrameCount}");
+            else
+                Assert.Equal(dec.FrameCount, info.FrameCount);
+        }
+    }
+
+    [Fact]
     public void Dispatch_picks_decoder_by_magic_bytes()
     {
         if (!CodecFixtures.FfmpegAvailable) return;

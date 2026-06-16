@@ -20,6 +20,14 @@ public interface IAudioDecoder
 
     /// <summary>Decode the complete file. Throws <see cref="AudioDecodeException"/> on malformed input.</summary>
     DecodedAudio Decode(byte[] data);
+
+    /// <summary>
+    /// Read metadata (frame count, sample rate, channels, and loop/root where present) from the
+    /// header without decoding the audio. <paramref name="data"/> may be only a prefix of the file;
+    /// return <see cref="AudioInfo.None"/> (FrameCount 0) when it's too short to determine the length,
+    /// so the caller can retry with the full file.
+    /// </summary>
+    AudioInfo Peek(ReadOnlySpan<byte> data);
 }
 
 /// <summary>Raised when a recognized format is structurally malformed.</summary>

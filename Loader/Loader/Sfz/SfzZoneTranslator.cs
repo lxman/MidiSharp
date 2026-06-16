@@ -15,7 +15,7 @@ internal static class SfzZoneTranslator
     /// <summary>SFZ default pitch_keycenter when neither it nor <c>key</c> is given.</summary>
     private const int DefaultKeyCenter = 60;
 
-    public static PatchZone Build(SfzRegion r, SfzControl control, int sampleId, DecodedAudio wav)
+    public static PatchZone Build(SfzRegion r, SfzControl control, int sampleId, AudioInfo wav)
     {
         // ── Key / velocity activation ────────────────────────────────
         int? keyAll = r.GetKey("key", control);
@@ -292,7 +292,7 @@ internal static class SfzZoneTranslator
         };
     }
 
-    private static (LoopMode Mode, long? Start, long? End) ResolveLoop(SfzRegion r, DecodedAudio wav)
+    private static (LoopMode Mode, long? Start, long? End) ResolveLoop(SfzRegion r, AudioInfo wav)
     {
         string? mode = r.Get("loop_mode") ?? r.Get("loopmode");
         LoopMode loopMode = mode?.ToLowerInvariant() switch

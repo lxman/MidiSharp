@@ -23,7 +23,7 @@ internal static class SfzBankLoader
     {
         var acc = new Accumulator();
         acc.AddFile(path, bank: 0);
-        return acc.Build(Path.GetFileNameWithoutExtension(path));
+        return acc.Build(Path.GetFileNameWithoutExtension(path), options.DecodedSampleCacheBytes);
     }
 
     public static SoundBank Load(Stream stream, string? basePath, SoundBankLoadOptions options)
@@ -37,7 +37,7 @@ internal static class SfzBankLoader
 
         var acc = new Accumulator();
         acc.AddText(text, baseDir, bank: 0);
-        return acc.Build(name);
+        return acc.Build(name, options.DecodedSampleCacheBytes);
     }
 
     /// <summary>
@@ -53,7 +53,7 @@ internal static class SfzBankLoader
         var acc = new Accumulator();
         foreach (var (path, bank) in files)
             acc.AddFile(path, bank);
-        return acc.Build(Path.GetFileNameWithoutExtension(files[0].Path));
+        return acc.Build(Path.GetFileNameWithoutExtension(files[0].Path), options.DecodedSampleCacheBytes);
     }
 
     /// <summary>
@@ -63,7 +63,9 @@ internal static class SfzBankLoader
     /// </summary>
     private sealed class Accumulator
     {
-        private readonly List<(DecodedAudio Audio, string Name)> _samples = new();
+        private readonly List<string> _paths = new();
+        private readonly List<AudioInfo> _infos = new();
+        private readonly List<SampleMetadata> _metadatas = new();
         private readonly Dictionary<string, int> _idByPath = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<(int Bank, int Lo, int Hi, PatchZone Zone)> _placed = new();
         private int _missing;
@@ -89,22 +91,40 @@ internal static class SfzBankLoader
 
                 if (!_idByPath.TryGetValue(resolved, out int sampleId))
                 {
-                    DecodedAudio audio;
-                    try { audio = AudioCodecs.Decode(resolved); }
+                    // Peek the header only — the sample is decoded lazily on first play.
+                    AudioInfo info;
+                    try { info = AudioCodecs.Peek(resolved); }
                     catch { _missing++; continue; }
-                    sampleId = _samples.Count;
-                    _samples.Add((audio, Path.GetFileNameWithoutExtension(resolved)));
+                    if (info.FrameCount <= 0) { _missing++; continue; }   // unreadable / empty header
+                    sampleId = _paths.Count;
+                    _paths.Add(resolved);
+                    _infos.Add(info);
+                    _metadatas.Add(BuildMetadata(info, Path.GetFileNameWithoutExtension(resolved)));
                     _idByPath[resolved] = sampleId;
                 }
 
                 int lo = Math.Clamp(region.GetInt("loprog", 0), 0, 127);
                 int hi = Math.Clamp(region.GetInt("hiprog", 127), 0, 127);
                 _placed.Add((bank, lo, hi,
-                    SfzZoneTranslator.Build(region, instrument.Control, sampleId, _samples[sampleId].Audio)));
+                    SfzZoneTranslator.Build(region, instrument.Control, sampleId, _infos[sampleId])));
             }
         }
 
-        public SoundBank Build(string name)
+        // Sample metadata from a header peek — root key and loop fields fall back to SFZ opcodes
+        // (filled by the zone translator) when the file header doesn't carry them.
+        private static SampleMetadata BuildMetadata(AudioInfo info, string name) => new()
+        {
+            Name = name,
+            SampleRate = info.SampleRate,
+            Channels = 1,                          // the source folds every file to mono
+            LengthFrames = info.FrameCount,
+            LoopStartFrames = info.HasLoop ? info.LoopStartFrame : 0,
+            LoopEndFrames = info.HasLoop ? info.LoopEndFrame : info.FrameCount,
+            RootKey = info.RootKey >= 0 ? info.RootKey : 60,
+            PitchCorrectionCents = info.FineTuneCents,
+        };
+
+        public SoundBank Build(string name, long cacheBudgetBytes)
         {
             if (_placed.Count == 0)
                 throw new SoundBankLoadException(
@@ -141,7 +161,7 @@ internal static class SfzBankLoader
                 Name = name,
                 SourceFormat = SoundBankFormat.Sfz,
                 Patches = patches,
-                Samples = new SfzSampleSource(_samples),
+                Samples = new SfzSampleSource(_paths, _metadatas, cacheBudgetBytes),
             };
         }
     }
