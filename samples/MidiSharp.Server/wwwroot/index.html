@@ -8,7 +8,7 @@
     :root { color-scheme: dark; }
     body { font-family: system-ui, sans-serif; background: #15171c; color: #e6e6e6;
            margin: 0; display: flex; justify-content: center; min-height: 100dvh; }
-    main { width: min(680px, 92vw); height: 100dvh; box-sizing: border-box;
+    main { width: min(1280px, 95vw); height: 100dvh; box-sizing: border-box;
            padding: 1.4rem 0 1rem; display: flex; flex-direction: column; }
     /* App-shell: pickers stay up top, the analysis results scroll in the middle,
        and the transport + status stay put at the bottom so they're never pushed off-screen. */
@@ -32,6 +32,11 @@
     #stop { background: #353b46; color: #e6e6e6; }
     #exit { background: #5a2330; color: #f0c4cc; margin-left: auto; }
     button:disabled { opacity: .45; cursor: default; }
+    #setupRow select { flex: 1 1 auto; width: auto; }
+    #setupRow button { padding: .55rem .8rem; }
+    #loadSetup, #delSetup { background: #353b46; color: #e6e6e6; }
+    #saveSetup { background: #2f5d3b; color: #cdebd6; margin-left: auto; }
+    #resetAll { background: #4a3320; color: #f0d4b0; margin-left: auto; padding: .55rem .8rem; }
     #status { margin-top: 1.6rem; padding: .9rem 1rem; background: #1a1d24; border-radius: 8px;
               border: 1px solid #2a2f3a; font-variant-numeric: tabular-nums; }
     .state { font-weight: 600; }
@@ -41,8 +46,10 @@
                max-height: 22vh; overflow-y: auto; }
     #error { margin-top: 1rem; color: #f0808a; font-size: .9rem; }
     #patchHint { margin: 0; }
-    #patches { margin-top: .6rem; }
-    .patch { padding: .55rem 0; border-bottom: 1px solid #23272f; }
+    /* Instrument overrides flow as a responsive grid of cards across the width. */
+    #tracks, #patches { margin-top: .6rem; display: grid; align-items: start; gap: .6rem;
+                        grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); }
+    .patch { padding: .6rem .7rem; border: 1px solid #23272f; border-radius: 8px; background: #181b21; }
     .patch .head { display: flex; gap: .5rem; align-items: baseline; }
     .patch .addr { color: #8b93a1; font-size: .78rem; font-variant-numeric: tabular-nums; min-width: 8.5rem; }
     .patch .name { font-size: .92rem; }
@@ -104,6 +111,14 @@
       <div class="row">
         <button id="analyze">Analyze</button>
         <span id="trackHint" class="sub"></span>
+        <button id="resetAll" title="Revert every instrument in this song to the base font">Reset all</button>
+      </div>
+
+      <div class="row" id="setupRow">
+        <select id="setupList"><option value="">— saved setups —</option></select>
+        <button id="loadSetup">Load</button>
+        <button id="delSetup">Delete</button>
+        <button id="saveSetup">💾 Save Setup</button>
       </div>
     </div>
 

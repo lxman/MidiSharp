@@ -12,6 +12,10 @@ let selectedSoundfont = null;   // { name, path }
 const overrides = new Map();      // "bank:program" -> patch override DTO
 const trackOverrides = new Map(); // trackIndex -> track override DTO
 const catalogCache = new Map();   // font path -> catalog
+// When a setup is being loaded, these hold its overrides so the pickers render pre-populated.
+let loadedOverrides = null;       // "bank:program" -> override DTO  (null when not loading a setup)
+let loadedTrackOverrides = null;  // trackIndex -> override DTO
+let lastSetupName = '';
 
 async function loadDevices() {
   const devices = await fetch('/api/devices').then(r => r.json());
@@ -184,7 +188,7 @@ async function analyze() {
 
 // Build the shared "Choose source font… → pick instrument" override control. onPick(srcPath, sb, sp)
 // is called when an instrument is chosen; onClear() when reset. Returns the .ov element.
-function buildPicker(onPick, onClear, resetTitle) {
+function buildPicker(onPick, onClear, resetTitle, initial) {
   const ov = document.createElement('div');
   ov.className = 'ov';
 
@@ -205,17 +209,19 @@ function buildPicker(onPick, onClear, resetTitle) {
   clear.textContent = 'reset';
   clear.title = resetTitle;
 
-  srcBtn.onclick = () => openBrowser('sf', async f => {
-    srcPath = f.path;
+  // Point the picker at a source font and fill its instrument list. Shared by the browse-pick
+  // flow and by pre-population from a loaded setup. Returns the catalog (or null on failure).
+  async function loadSource(path, name) {
+    srcPath = path;
     srcBtn.classList.remove('empty');
-    srcBtn.textContent = f.name;
+    srcBtn.textContent = name;
     onClear();
     tag.textContent = '';
     inst.disabled = true;
     inst.innerHTML = '<option>loading…</option>';
     let cat;
-    try { cat = await getCatalog(f.path); }
-    catch { inst.innerHTML = '<option>(failed to load)</option>'; return; }
+    try { cat = await getCatalog(path); }
+    catch { inst.innerHTML = '<option>(failed to load)</option>'; return null; }
     inst.innerHTML = '<option value="">— pick instrument —</option>';
     for (const c of cat.patches) {
       const o = document.createElement('option');
@@ -224,7 +230,10 @@ function buildPicker(onPick, onClear, resetTitle) {
       inst.appendChild(o);
     }
     inst.disabled = false;
-  });
+    return cat;
+  }
+
+  srcBtn.onclick = () => openBrowser('sf', f => loadSource(f.path, f.name));
 
   inst.onchange = () => {
     if (!inst.value || !srcPath) { onClear(); tag.textContent = ''; return; }
@@ -244,6 +253,19 @@ function buildPicker(onPick, onClear, resetTitle) {
   };
 
   ov.append(srcBtn, inst, tag, clear);
+
+  // Pre-populate from a loaded setup: select the saved source font + instrument and apply it.
+  if (initial && initial.sourcePath) {
+    loadSource(initial.sourcePath, initial.sourcePath.split('/').pop()).then(cat => {
+      if (!cat) return;
+      inst.value = `${initial.sourceBank}:${initial.sourceProgram}`;
+      if (inst.value) {
+        onPick(initial.sourcePath, initial.sourceBank, initial.sourceProgram);
+        tag.textContent = '→ overridden';
+      }
+    });
+  }
+
   return ov;
 }
 
@@ -280,7 +302,8 @@ function renderTracks(tracks) {
           sourcePath: srcPath, sourceBank: sb, sourceProgram: sp,
         }),
         () => trackOverrides.delete(t.trackIndex),
-        'revert this instrument to the base font'));
+        'revert this instrument to the base font',
+        loadedTrackOverrides && loadedTrackOverrides.get(t.trackIndex)));
     }
     box.appendChild(row);
   }
@@ -309,7 +332,8 @@ function renderPatches(used) {
         sourcePath: srcPath, sourceBank: sb, sourceProgram: sp,
       }),
       () => overrides.delete(key),
-      'revert this patch to the base font'));
+      'revert this patch to the base font',
+      loadedOverrides && loadedOverrides.get(key)));
     box.appendChild(row);
   }
 }
@@ -340,8 +364,74 @@ async function play() {
     $('defects').textContent = 'Repaired this file:\n  ' + res.defects.join('\n  ');
 }
 
+// ---------------- setups ----------------
+async function refreshSetups() {
+  const list = $('setupList');
+  if (!selectedMidi) { list.innerHTML = '<option value="">— saved setups —</option>'; return; }
+  let items = [];
+  try { items = await fetch(`/api/setups?midiPath=${encodeURIComponent(selectedMidi.path)}`).then(r => r.json()); } catch {}
+  list.innerHTML = '<option value="">— saved setups —</option>'
+    + (items || []).map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+}
+
+async function saveSetup() {
+  if (!selectedMidi || !selectedSoundfont) {
+    $('error').textContent = 'Choose a MIDI file and a base SoundFont first.'; return;
+  }
+  const name = prompt('Save setup as:', lastSetupName || selectedMidi.name.replace(/\.midi?$/i, ''));
+  if (!name) return;
+  const body = {
+    name, midiPath: selectedMidi.path, midiName: selectedMidi.name,
+    soundfontPath: selectedSoundfont.path, soundfontName: selectedSoundfont.name,
+    overrides: [...overrides.values()], trackOverrides: [...trackOverrides.values()],
+  };
+  let res;
+  try {
+    res = await fetch('/api/setups', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    }).then(r => r.json());
+  } catch (e) { $('error').textContent = 'Save failed: ' + e; return; }
+  lastSetupName = name;
+  await refreshSetups();
+  if (res && res.id) $('setupList').value = res.id;
+}
+
+async function loadSetup(id) {
+  let setup;
+  try { setup = await fetch(`/api/setups/${id}`).then(r => r.json()); }
+  catch (e) { $('error').textContent = 'Load failed: ' + e; return; }
+  if (!setup || setup.error || !setup.soundfontPath) { $('error').textContent = 'Could not load that setup.'; return; }
+
+  selectedSoundfont = { name: setup.soundfontName || setup.soundfontPath.split('/').pop(), path: setup.soundfontPath };
+  $('sfPick').classList.remove('empty'); $('sfPick').textContent = selectedSoundfont.name;
+  // Stash the saved overrides so the pickers render pre-selected, then analyze rebuilds the UI.
+  loadedOverrides = new Map((setup.overrides || []).map(o => [`${o.logicalBank}:${o.logicalProgram}`, o]));
+  loadedTrackOverrides = new Map((setup.trackOverrides || []).map(o => [o.trackIndex, o]));
+  lastSetupName = setup.name || lastSetupName;
+  await analyze();
+  loadedOverrides = null; loadedTrackOverrides = null;
+}
+
+async function deleteSetup() {
+  const id = $('setupList').value;
+  if (!id || !confirm('Delete this setup?')) return;
+  try { await fetch(`/api/setups/${id}`, { method: 'DELETE' }); } catch {}
+  await refreshSetups();
+}
+
+// Revert every instrument in the song to the base font.
+function resetAll() {
+  if (!selectedMidi || !selectedSoundfont) return;
+  overrides.clear();
+  trackOverrides.clear();
+  loadedOverrides = null; loadedTrackOverrides = null;
+  analyze();
+}
+
+// ---------------- wiring ----------------
 $('midiPick').onclick = () => openBrowser('midi', f => {
-  selectedMidi = f; $('midiPick').classList.remove('empty'); $('midiPick').textContent = f.name; resetAnalysis();
+  selectedMidi = f; $('midiPick').classList.remove('empty'); $('midiPick').textContent = f.name;
+  resetAnalysis(); refreshSetups();
 });
 $('sfPick').onclick = () => openBrowser('sf', f => {
   selectedSoundfont = f; $('sfPick').classList.remove('empty'); $('sfPick').textContent = f.name; resetAnalysis();
@@ -350,6 +440,10 @@ $('analyze').onclick = analyze;
 $('play').onclick = play;
 $('stop').onclick = () => fetch('/api/stop', { method: 'POST' });
 $('exit').onclick = () => fetch('/api/exit', { method: 'POST' });
+$('saveSetup').onclick = saveSetup;
+$('loadSetup').onclick = () => { const id = $('setupList').value; if (id) loadSetup(id); };
+$('delSetup').onclick = deleteSetup;
+$('resetAll').onclick = resetAll;
 $('bwClose').onclick = closeBrowser;
 $('browseBackdrop').onclick = e => { if (e.target === $('browseBackdrop')) closeBrowser(); };
 $('bwFilter').oninput = renderBrowse;

@@ -4,17 +4,22 @@ using System.Text.Json;
 using MidiSharp.Server;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddSingleton<PlayerService>();
 builder.WebHost.UseUrls(builder.Configuration["urls"] ?? "http://localhost:5005");
-
-var app = builder.Build();
 
 // File-browse roots (override with --midi-root / --sf-root). MIDI → ~/soundfonts;
 // SoundFont → ~/soundfonts/deduped/sf2 (the deduplicated library). Navigable anywhere.
+// Saved setups live in a hidden config dir (override with --setups-root).
 var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 string Expand(string p) => p.StartsWith('~') ? home + p[1..] : p;
 var midiRoot = Expand(builder.Configuration["midi-root"] ?? Path.Combine(home, "soundfonts"));
 var sfRoot = Expand(builder.Configuration["sf-root"] ?? Path.Combine(home, "soundfonts", "deduped", "sf2"));
+var setupsRoot = Expand(builder.Configuration["setups-root"] ?? Path.Combine(home, ".config", "midisharp", "setups"));
+
+builder.Services.AddSingleton<PlayerService>();
+builder.Services.AddSingleton(new SetupStore(setupsRoot));
+
+var app = builder.Build();
+var setups = app.Services.GetRequiredService<SetupStore>();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
@@ -55,6 +60,17 @@ app.MapPost("/api/stop", () => { player.Stop(); return Results.Ok(); });
 app.MapGet("/api/status", () => Results.Json(player.Status()));
 app.MapPost("/api/exit", () => { player.RequestExit(); return Results.Ok(); });
 
+// Saved setups (per-MIDI instrument-substitution configurations). The browser holds the working
+// copy; these persist it. Save with an existing name for the same song overwrites it.
+app.MapGet("/api/setups", (string midiPath) => Results.Json(setups.ListForMidi(midiPath)));
+app.MapPost("/api/setups", (SetupDto setup) => Results.Json(new { id = setups.Save(setup) }));
+app.MapGet("/api/setups/{id}", (string id) =>
+{
+    var s = setups.Load(id);
+    return s is null ? Results.NotFound() : Results.Json(s);
+});
+app.MapDelete("/api/setups/{id}", (string id) => setups.Delete(id) ? Results.Ok() : Results.NotFound());
+
 // One-directional status push so the UI sees the playhead and the completion event live.
 app.Map("/ws", async context =>
 {
@@ -72,6 +88,7 @@ app.Map("/ws", async context =>
 Console.WriteLine($"MidiSharp web player → {string.Join(", ", app.Urls.DefaultIfEmpty("http://localhost:5005"))}");
 Console.WriteLine($"  MIDI root:      {midiRoot}");
 Console.WriteLine($"  SoundFont root: {sfRoot}");
+Console.WriteLine($"  Setups root:    {setupsRoot}");
 app.Run();
 
 // List a single directory level for the file browser: visible sub-folders and files matching
