@@ -154,6 +154,27 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Trigger_release_is_parsed_and_distinguished_from_attack()
+    {
+        WriteWav("hit.wav");
+        WriteWav("rel.wav");
+        var path = WriteSfz("""
+            <region> sample=hit.wav key=60
+            <region> sample=rel.wav key=60 trigger=release rt_decay=2
+            """);
+
+        using var bank = SoundBankLoader.Load(path);
+        var patch = bank.FindPatch(0, 0)!;
+        Assert.Equal(2, patch.Zones.Count);
+
+        // The attack region defaults to Attack; the release region carries Trigger=Release + rt_decay,
+        // so NoteOn (which skips Release zones) plays only the attack one.
+        var rel = Assert.Single(patch.Zones, z => z.Trigger == ZoneTrigger.Release);
+        Assert.Equal(2.0, rel.RtDecay);
+        Assert.Single(patch.Zones, z => z.Trigger == ZoneTrigger.Attack);
+    }
+
+    [Fact]
     public void Positional_default_path_applies_per_region()
     {
         WriteWav("A/x.wav");

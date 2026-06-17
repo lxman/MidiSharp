@@ -274,6 +274,10 @@ public sealed class Synthesizer
         {
             if (!zone.Keys.Contains(key)) continue;
             if (!zone.Velocities.Contains(velocity)) continue;
+            // Release zones fire on NoteOff (the damper/string-release samples), not here. Skipping
+            // them is what stops SFZ release samples from layering onto every key-down; they're spawned
+            // from NoteOff instead. (First/Legato are NoteOn triggers, so they still sound here.)
+            if (zone.Trigger == ZoneTrigger.Release) continue;
             // CC-gated zones (SFZ; empty for SF2/SF3/DLS).
             if (zone.CCGates.Count > 0 && !PassesCCGates(zone.CCGates, channelState)) continue;
 

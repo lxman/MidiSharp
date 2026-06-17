@@ -36,6 +36,21 @@ public sealed class PatchZone
     /// <summary>SF2 ExclusiveClass / SFZ group= + off_by=. Null = no grouping.</summary>
     public int? ExclusiveGroup { get; init; }
 
+    /// <summary>
+    /// SFZ trigger= mode: when this zone fires relative to the note. Attack (the default for every
+    /// format) plays on NoteOn; Release plays on NoteOff — the damper/string-release samples a piano
+    /// uses. First/Legato are NoteOn variants gated on whether another note is already sounding.
+    /// SF2/SF3/DLS are always Attack.
+    /// </summary>
+    public ZoneTrigger Trigger { get; init; } = ZoneTrigger.Attack;
+
+    /// <summary>
+    /// SFZ rt_decay (dB per second the note was held). A release-triggered sample is attenuated by
+    /// this much × the held duration, modelling a string that has already decayed while the key was
+    /// down. 0 = no decay. Only meaningful when <see cref="Trigger"/> is <see cref="ZoneTrigger.Release"/>.
+    /// </summary>
+    public double RtDecay { get; init; }
+
     // ─── Sample reference ───────────────────────────────────────────
 
     public SampleRef Sample { get; init; } = new();
@@ -76,4 +91,20 @@ public sealed class PatchZone
     /// without a custom curve, which use the velocity modulation route instead).
     /// </summary>
     public double[]? AmpVelCurve { get; init; }
+}
+
+/// <summary>SFZ <c>trigger=</c> mode — when a zone fires relative to the note event.</summary>
+public enum ZoneTrigger
+{
+    /// <summary>Fire on NoteOn (the default for every source format).</summary>
+    Attack,
+
+    /// <summary>Fire on NoteOff — damper / string-release samples.</summary>
+    Release,
+
+    /// <summary>Fire on NoteOn only if no other note is already sounding on the channel.</summary>
+    First,
+
+    /// <summary>Fire on NoteOn only if another note is already sounding on the channel (legato).</summary>
+    Legato,
 }

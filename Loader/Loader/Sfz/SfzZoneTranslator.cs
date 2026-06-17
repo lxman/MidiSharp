@@ -142,6 +142,13 @@ internal static class SfzZoneTranslator
         else if (r.Has("off_by")) exclusive = r.GetInt("off_by", 0);
         if (exclusive is 0) exclusive = null;
 
+        // ── Trigger mode + rt_decay ──────────────────────────────────
+        // trigger= decides whether a zone fires on NoteOn (attack, the default) or NoteOff (release —
+        // damper/string-release samples). rt_decay attenuates a release sample by N dB per second the
+        // note was held (a string that already decayed under the key).
+        ZoneTrigger trigger = ParseTrigger(r.Get("trigger"));
+        double rtDecay = r.GetDouble("rt_decay", 0);
+
         return new PatchZone
         {
             Keys = new KeyRange((byte)Math.Clamp(lokey, 0, 127), (byte)Math.Clamp(hikey, 0, 127)),
@@ -151,6 +158,8 @@ internal static class SfzZoneTranslator
             Random = random,
             KeySwitch = keySwitch,
             ExclusiveGroup = exclusive,
+            Trigger = trigger,
+            RtDecay = rtDecay,
 
             Sample = sampleRef,
             Pitch = new PitchSettings { ModulationEnvelopeDepthCents = pitchModEnvCents },
@@ -169,6 +178,19 @@ internal static class SfzZoneTranslator
             AmpVelCurve = ampVelCurve,
         };
     }
+
+    /// <summary>
+    /// Maps the SFZ <c>trigger=</c> value to a <see cref="ZoneTrigger"/>. ARIA's <c>release_key</c>
+    /// (release that ignores the sustain pedal) folds into Release for now; anything unrecognised —
+    /// including a missing opcode or the literal <c>attack</c> — is the default Attack.
+    /// </summary>
+    private static ZoneTrigger ParseTrigger(string? value) => value?.Trim().ToLowerInvariant() switch
+    {
+        "release" or "release_key" => ZoneTrigger.Release,
+        "first" => ZoneTrigger.First,
+        "legato" => ZoneTrigger.Legato,
+        _ => ZoneTrigger.Attack,
+    };
 
     /// <summary>
     /// Builds a 128-entry velocity→gain table from <c>amp_velcurve_N</c> points, or null
