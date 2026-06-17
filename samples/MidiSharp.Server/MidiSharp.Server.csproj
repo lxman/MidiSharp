@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Loader\Loader\Loader.csproj" />
+    <ProjectReference Include="..\..\Loader\Loader.csproj" />
     <ProjectReference Include="..\..\src\MidiSharp.Core\MidiSharp.Core.csproj" />
     <ProjectReference Include="..\..\src\MidiSharp.PatchMap\MidiSharp.PatchMap.csproj" />
     <ProjectReference Include="..\..\src\MidiSharp.Synth\MidiSharp.Synth.csproj" />
