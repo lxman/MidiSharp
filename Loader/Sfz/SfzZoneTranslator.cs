@@ -454,8 +454,8 @@ internal static class SfzZoneTranslator
             {
                 // pan_oncc: 0.1%-style ±100 span → normalized pan, linear.
                 "pan" => Route(source, ModDestination.PanNormalized, value / 100.0, ModTransform.Linear),
-                // volume_oncc: dB, linear (CC up = louder = less attenuation).
-                "volume" => Route(source, ModDestination.AttenuationDb, -value, ModTransform.Linear),
+                // volume_oncc (gain_cc is sfizz's alias for it): dB, linear (CC up = louder = less attenuation).
+                "volume" or "gain" => Route(source, ModDestination.AttenuationDb, -value, ModTransform.Linear),
                 // amplitude_oncc: percentage gain → concave attenuation, like a volume CC.
                 "amplitude" => Route(source, ModDestination.AttenuationDb, 96.0 * value / 100.0, ModTransform.ConcaveUnipolarNegative),
                 "cutoff" => Route(source, ModDestination.FilterCutoffCents, value, ModTransform.Linear),

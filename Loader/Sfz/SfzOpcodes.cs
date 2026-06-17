@@ -64,7 +64,7 @@ internal static class SfzOpcodes
     // The "{param}_oncc{N}" / "{param}_cc{N}" modulation params actually routed.
     private static readonly HashSet<string> ModParams = new(StringComparer.Ordinal)
     {
-        "pan", "volume", "amplitude", "cutoff", "pitchlfo_depth", "amp_veltrack",
+        "pan", "volume", "gain", "amplitude", "cutoff", "pitchlfo_depth", "amp_veltrack",
     };
 
     private static readonly Regex Digits = new(@"\d+", RegexOptions.Compiled);

@@ -185,6 +185,19 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Gain_cc_aliases_volume_cc()
+    {
+        WriteWav("a.wav");
+        var path = WriteSfz("<region> sample=a.wav key=60 gain_cc7=6");
+        var z = SoundBankLoader.Load(path).FindPatch(0, 0)!.Zones[0];
+        // gain_cc is sfizz's alias for volume_oncc: +6 dB at CC7 max → an AttenuationDb route of -6.
+        var route = z.Routes.Single(r => r.Dest == ModDestination.AttenuationDb
+            && r.Source is ModSource.ChannelController c && c.Number == 7);
+        Assert.Equal(-6.0, route.Amount, 3);
+        Assert.Equal(ModTransform.Linear, route.Transform);
+    }
+
+    [Fact]
     public void Voice_off_opcodes_parse_and_off_time_implies_time_mode()
     {
         WriteWav("a.wav");
