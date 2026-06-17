@@ -41,4 +41,26 @@ public sealed class EnvelopeSettings
     /// per key away from middle C (key 60). 0 = no scaling.
     /// </summary>
     public double KeynumToDecayCentsPerKey { get; init; }
+
+    // ── Velocity modulation (SFZ ampeg_vel2*; 0 = none) ──────────────
+    // Each adds (velocity/127) × this to the corresponding stage at NoteOn: times in seconds,
+    // sustain as a 0..1 level offset. Matches sfizz (stage = base + velocityNorm × vel2stage).
+
+    /// <summary>Velocity → delay time, seconds.</summary>
+    public double VelToDelaySeconds { get; init; }
+
+    /// <summary>Velocity → attack time, seconds (typically negative: harder = snappier).</summary>
+    public double VelToAttackSeconds { get; init; }
+
+    /// <summary>Velocity → hold time, seconds.</summary>
+    public double VelToHoldSeconds { get; init; }
+
+    /// <summary>Velocity → decay time, seconds.</summary>
+    public double VelToDecaySeconds { get; init; }
+
+    /// <summary>Velocity → release time, seconds.</summary>
+    public double VelToReleaseSeconds { get; init; }
+
+    /// <summary>Velocity → sustain level, as a 0..1 offset.</summary>
+    public double VelToSustainLevel { get; init; }
 }

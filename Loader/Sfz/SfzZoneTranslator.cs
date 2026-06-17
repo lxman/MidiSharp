@@ -55,6 +55,13 @@ internal static class SfzZoneTranslator
             SustainLevel = Math.Clamp(r.GetDouble("ampeg_sustain", 100.0) / 100.0, 0, 1),
             // Floor the release so a NoteOff mid-sample fades instead of clicking.
             ReleaseSeconds = Math.Max(r.GetDouble("ampeg_release", 0), 0.003),
+            // Velocity → envelope (ampeg_vel2*): times in seconds, sustain as a 0..1 offset.
+            VelToDelaySeconds = r.GetDouble("ampeg_vel2delay", 0),
+            VelToAttackSeconds = r.GetDouble("ampeg_vel2attack", 0),
+            VelToHoldSeconds = r.GetDouble("ampeg_vel2hold", 0),
+            VelToDecaySeconds = r.GetDouble("ampeg_vel2decay", 0),
+            VelToReleaseSeconds = r.GetDouble("ampeg_vel2release", 0),
+            VelToSustainLevel = r.GetDouble("ampeg_vel2sustain", 0) / 100.0,
         };
 
         // ── Filter ───────────────────────────────────────────────────

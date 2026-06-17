@@ -185,6 +185,17 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Ampeg_vel2_envelope_modulation_parses()
+    {
+        WriteWav("a.wav");
+        var path = WriteSfz("<region> sample=a.wav key=60 ampeg_attack=0.5 ampeg_vel2attack=-0.4 ampeg_vel2decay=0.2 ampeg_vel2sustain=-50");
+        var ve = SoundBankLoader.Load(path).FindPatch(0, 0)!.Zones[0].VolumeEnvelope;
+        Assert.Equal(-0.4, ve.VelToAttackSeconds, 3);
+        Assert.Equal(0.2, ve.VelToDecaySeconds, 3);
+        Assert.Equal(-0.5, ve.VelToSustainLevel, 3);   // -50% → -0.5 level offset
+    }
+
+    [Fact]
     public void Velocity_crossfade_shapes_the_gain_curve()
     {
         WriteWav("a.wav");

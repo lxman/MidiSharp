@@ -27,6 +27,9 @@ internal static class SfzOpcodes
         "volume", "global_volume", "master_volume", "group_volume", "pan",
         // amp envelope
         "ampeg_delay", "ampeg_attack", "ampeg_hold", "ampeg_decay", "ampeg_sustain", "ampeg_release",
+        // amp envelope velocity modulation (ampeg_vel2*)
+        "ampeg_vel2delay", "ampeg_vel2attack", "ampeg_vel2hold", "ampeg_vel2decay",
+        "ampeg_vel2release", "ampeg_vel2sustain",
         // filter
         "cutoff", "fil_type", "resonance", "fil_keytrack", "fil_keycenter", "fil_veltrack",
         // filter envelope

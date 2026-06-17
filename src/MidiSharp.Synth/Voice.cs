@@ -316,15 +316,18 @@ public sealed class Voice
         _reverbSend = zone.ReverbSend;
         _chorusSend = zone.ChorusSend;
 
-        // Volume envelope (always present).
+        // Volume envelope (always present). SFZ ampeg_vel2* adds (velocity/127)×amount to each stage;
+        // those amounts are 0 for SF2/SF3/DLS and SFZ without them, so the values below are unchanged
+        // (and bit-identical) there.
         var ve = zone.VolumeEnvelope;
+        double velNorm = velocity / 127.0;
         _volumeEnvelope.SetParameters(
-            delaySeconds: ve.DelaySeconds,
-            attackSeconds: ve.AttackSeconds,
-            holdSeconds: ve.HoldSeconds,
-            decaySeconds: ve.DecaySeconds,
-            sustainLevel: ve.SustainLevel,
-            releaseSeconds: ve.ReleaseSeconds,
+            delaySeconds: Math.Max(0.0, ve.DelaySeconds + velNorm * ve.VelToDelaySeconds),
+            attackSeconds: Math.Max(0.0, ve.AttackSeconds + velNorm * ve.VelToAttackSeconds),
+            holdSeconds: Math.Max(0.0, ve.HoldSeconds + velNorm * ve.VelToHoldSeconds),
+            decaySeconds: Math.Max(0.0, ve.DecaySeconds + velNorm * ve.VelToDecaySeconds),
+            sustainLevel: Math.Clamp(ve.SustainLevel + velNorm * ve.VelToSustainLevel, 0.0, 1.0),
+            releaseSeconds: Math.Max(0.0, ve.ReleaseSeconds + velNorm * ve.VelToReleaseSeconds),
             keynumToHoldCentsPerKey: ve.KeynumToHoldCentsPerKey,
             keynumToDecayCentsPerKey: ve.KeynumToDecayCentsPerKey);
 
