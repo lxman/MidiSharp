@@ -46,6 +46,8 @@ internal static class SfzOpcodes
         "seq_length", "seq_position", "lorand", "hirand",
         // velocity crossfade (folded into the velocity→gain curve)
         "xfin_lovel", "xfin_hivel", "xfout_lovel", "xfout_hivel", "xf_velcurve",
+        // key crossfade (folded into a per-note key→gain table)
+        "xfin_lokey", "xfin_hikey", "xfout_lokey", "xfout_hikey", "xf_keycurve",
         "sw_last", "sw_down", "sw_lokey", "sw_hikey", "sw_default",
         // grouping, effects, velocity, program routing
         "group", "off_by", "effect1", "effect2", "amp_veltrack", "loprog", "hiprog",
@@ -155,10 +157,6 @@ internal static class SfzOpcodes
         ["delay_random"] = "random per-note start delay",
         ["fil2_type"] = "second filter (not modeled)",
         ["cutoff2"] = "second filter cutoff (not modeled)",
-        ["xfin_lokey"] = "key crossfade-in (not modeled)",
-        ["xfin_hikey"] = "key crossfade-in (not modeled)",
-        ["xfout_lokey"] = "key crossfade-out (not modeled)",
-        ["xfout_hikey"] = "key crossfade-out (not modeled)",
         ["xfin_lovel"] = "velocity crossfade-in (not modeled)",
         ["xfin_hivel"] = "velocity crossfade-in (not modeled)",
         ["xfout_lovel"] = "velocity crossfade-out (not modeled)",

@@ -129,6 +129,14 @@ public sealed class PatchZone
     /// without a custom curve, which use the velocity modulation route instead).
     /// </summary>
     public double[]? AmpVelCurve { get; init; }
+
+    /// <summary>
+    /// SFZ keyboard crossfade (xfin/xfout_lokey/hikey): a 128-entry key→gain table
+    /// (index = note number 0..127, value = linear gain 0..1) applied as a static per-note
+    /// factor at NoteOn, alongside <see cref="AmpVelCurve"/>. Null when the zone sets no key
+    /// crossfade (the common case).
+    /// </summary>
+    public double[]? AmpKeyCurve { get; init; }
 }
 
 /// <summary>SFZ <c>trigger=</c> mode — when a zone fires relative to the note event.</summary>

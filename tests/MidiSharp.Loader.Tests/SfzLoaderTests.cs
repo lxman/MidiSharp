@@ -249,6 +249,20 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Key_crossfade_builds_a_per_note_gain_table()
+    {
+        WriteWav("a.wav");
+        // A mid keyboard layer: fades in 36→60, out 60→96 — silent at the extremes, ~unity at C4 (60).
+        var path = WriteSfz("<region> sample=a.wav lokey=0 hikey=127 pitch_keycenter=60 " +
+            "xfin_lokey=36 xfin_hikey=60 xfout_lokey=60 xfout_hikey=96");
+        var c = SoundBankLoader.Load(path).FindPatch(0, 0)!.Zones[0].AmpKeyCurve;
+        Assert.NotNull(c);
+        Assert.Equal(0.0, c![24], 2);   // below the fade-in range → silent
+        Assert.True(c[60] > 0.9);       // ~peak at the crossover
+        Assert.Equal(0.0, c[110], 2);   // above the fade-out range → silent
+    }
+
+    [Fact]
     public void Eq_bands_parse_and_skip_zero_gain()
     {
         WriteWav("a.wav");

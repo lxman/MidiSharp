@@ -218,6 +218,7 @@ internal static class SfzZoneTranslator
 
             Routes = routes,
             AmpVelCurve = ampVelCurve,
+            AmpKeyCurve = BuildKeyCrossfade(r, control),
         };
     }
 
@@ -521,6 +522,33 @@ internal static class SfzZoneTranslator
             double x = v / 127.0;
             velGain[v] *= CrossfadeIn(inLo, inHi, x, power) * CrossfadeOut(outLo, outHi, x, power);
         }
+    }
+
+    /// <summary>
+    /// Builds a 128-entry key→gain crossfade table (xfin_lokey/hikey + xfout_lokey/hikey), or null
+    /// when the region sets none. The note's key is fixed at NoteOn — like velocity — so this is a
+    /// static per-note factor, not a live route. Thresholds parse through GetKey (note names +
+    /// octave/note offsets). Shape follows xf_keycurve (default "power" = equal-power sqrt; "gain" =
+    /// linear), matching the velocity crossfade including its 1/127 gap offset.
+    /// </summary>
+    private static double[]? BuildKeyCrossfade(SfzRegion r, SfzControl control)
+    {
+        if (!r.Has("xfin_lokey") && !r.Has("xfin_hikey") && !r.Has("xfout_lokey") && !r.Has("xfout_hikey"))
+            return null;
+
+        double inLo = (r.GetKey("xfin_lokey", control) ?? 0) / 127.0;
+        double inHi = (r.GetKey("xfin_hikey", control) ?? 0) / 127.0;
+        double outLo = (r.GetKey("xfout_lokey", control) ?? 127) / 127.0;
+        double outHi = (r.GetKey("xfout_hikey", control) ?? 127) / 127.0;
+        bool power = !string.Equals(r.Get("xf_keycurve")?.Trim(), "gain", StringComparison.OrdinalIgnoreCase);
+
+        var keyGain = new double[128];
+        for (int k = 0; k < 128; k++)
+        {
+            double x = k / 127.0;
+            keyGain[k] = CrossfadeIn(inLo, inHi, x, power) * CrossfadeOut(outLo, outHi, x, power);
+        }
+        return keyGain;
     }
 
     private const double XfadeGap = 1.0 / 127.0;

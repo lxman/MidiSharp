@@ -275,9 +275,12 @@ public sealed class Voice
 
         // SFZ amp_velcurve_N: look up this note's gain once (velocity is fixed per note).
         // Replaces the default velocity→attenuation route (the translator drops it).
+        // The key crossfade (xfin/xfout_lokey/hikey) is likewise fixed per note, so fold it in here.
         _ampVelCurveFactor = zone.AmpVelCurve is { } velCurve
             ? velCurve[Math.Clamp(velocity, 0, 127)]
             : 1.0;
+        if (zone.AmpKeyCurve is { } keyCurve)
+            _ampVelCurveFactor *= keyCurve[Math.Clamp(keyNumber, 0, 127)];
 
         // Sample addressing — IR fields are sample-relative frames. The metadata's
         // base length/loop points are overridable by the zone's optional offset
