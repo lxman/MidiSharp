@@ -12,6 +12,8 @@ public sealed class LowFrequencyOscillator
     private double _phaseIncrement;
     private int _delaySamples;
     private int _delayCounter;
+    private int _fadeSamples;
+    private int _fadeElapsed;
     private readonly int _sampleRate;
     private double _frequency;
 
@@ -41,6 +43,7 @@ public sealed class LowFrequencyOscillator
     {
         _phase = 0;
         _delayCounter = _delaySamples;
+        _fadeElapsed = 0;
         Value = 0;
     }
 
@@ -65,12 +68,15 @@ public sealed class LowFrequencyOscillator
     /// </summary>
     /// <param name="delaySeconds">Delay before oscillation starts. 0 = no delay.</param>
     /// <param name="frequencyHz">Oscillation frequency in Hz.</param>
-    public void SetParameters(double delaySeconds, double frequencyHz)
+    /// <param name="fadeSeconds">Linear depth fade-in after the delay. 0 = full depth at once.</param>
+    public void SetParameters(double delaySeconds, double frequencyHz, double fadeSeconds = 0)
     {
         _delaySamples = delaySeconds <= 0 ? 0 : (int)(delaySeconds * _sampleRate);
+        _fadeSamples = fadeSeconds <= 0 ? 0 : (int)(fadeSeconds * _sampleRate);
         _frequency = frequencyHz;
         _phaseIncrement = 2.0 * Math.PI * frequencyHz / _sampleRate;
         _delayCounter = _delaySamples;
+        _fadeElapsed = 0;
     }
 
     private static double TimecentsToSeconds(short timecents)
@@ -110,6 +116,7 @@ public sealed class LowFrequencyOscillator
     {
         _phase = 0;
         _delayCounter = _delaySamples;
+        _fadeElapsed = 0;
         Value = 0;
     }
 
@@ -129,6 +136,13 @@ public sealed class LowFrequencyOscillator
         // Convert sine phase to triangle: 4 * |((phase/2π + 0.25) % 1) - 0.5| - 1
         var normalizedPhase = (_phase / (2.0 * Math.PI) + 0.25) % 1.0;
         Value = 4.0 * Math.Abs(normalizedPhase - 0.5) - 1.0;
+
+        // Fade-in: ramp depth 0→1 linearly over the fade window after the delay (SFZ *_fade).
+        if (_fadeSamples > 0 && _fadeElapsed < _fadeSamples)
+        {
+            Value *= (double)_fadeElapsed / _fadeSamples;
+            _fadeElapsed++;
+        }
 
         // Advance phase
         _phase += _phaseIncrement;

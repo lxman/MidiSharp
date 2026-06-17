@@ -15,6 +15,13 @@ public sealed class LFOSettings
     /// <summary>Delay before the LFO starts oscillating, in seconds.</summary>
     public double DelaySeconds { get; init; }
 
+    /// <summary>
+    /// Fade-in time in seconds: after the delay, the LFO depth ramps linearly from 0 to full
+    /// over this span (SFZ <c>amplfo_fade</c> / <c>pitchlfo_fade</c> / <c>fillfo_fade</c>).
+    /// 0 = full depth immediately. SF2 has no equivalent and leaves this 0.
+    /// </summary>
+    public double FadeSeconds { get; init; }
+
     /// <summary>Oscillation frequency in Hz (typically 0.1-20).</summary>
     public double FrequencyHz { get; init; }
 

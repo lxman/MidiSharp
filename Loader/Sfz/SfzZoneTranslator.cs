@@ -405,6 +405,7 @@ internal static class SfzZoneTranslator
         return new LFOSettings
         {
             DelaySeconds = r.GetDouble("pitchlfo_delay", 0),
+            FadeSeconds = r.GetDouble("pitchlfo_fade", 0),
             FrequencyHz = r.GetDouble("pitchlfo_freq", 0),
             PitchDepthCents = r.GetDouble("pitchlfo_depth", 0),
         };
@@ -420,9 +421,11 @@ internal static class SfzZoneTranslator
         // frequency/delay is specified (amp first).
         double freq = hasAmp ? r.GetDouble("amplfo_freq", 0) : r.GetDouble("fillfo_freq", 0);
         double delay = hasAmp ? r.GetDouble("amplfo_delay", 0) : r.GetDouble("fillfo_delay", 0);
+        double fade = hasAmp ? r.GetDouble("amplfo_fade", 0) : r.GetDouble("fillfo_fade", 0);
         return new LFOSettings
         {
             DelaySeconds = delay,
+            FadeSeconds = fade,
             FrequencyHz = freq,
             VolumeDepthDb = r.GetDouble("amplfo_depth", 0),
             FilterDepthCents = r.GetDouble("fillfo_depth", 0),

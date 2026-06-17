@@ -36,10 +36,10 @@ internal static class SfzOpcodes
         "fileg_depth", "fileg_delay", "fileg_attack", "fileg_hold", "fileg_decay", "fileg_sustain", "fileg_release",
         // pitch envelope
         "pitcheg_depth", "pitcheg_delay", "pitcheg_attack", "pitcheg_hold", "pitcheg_decay", "pitcheg_sustain", "pitcheg_release",
-        // LFOs
-        "pitchlfo_freq", "pitchlfo_depth", "pitchlfo_delay",
-        "amplfo_freq", "amplfo_depth", "amplfo_delay",
-        "fillfo_freq", "fillfo_depth", "fillfo_delay",
+        // LFOs (delay/fade-in/freq/depth)
+        "pitchlfo_freq", "pitchlfo_depth", "pitchlfo_delay", "pitchlfo_fade",
+        "amplfo_freq", "amplfo_depth", "amplfo_delay", "amplfo_fade",
+        "fillfo_freq", "fillfo_depth", "fillfo_delay", "fillfo_fade",
         // sample addressing + loop
         "sample", "offset", "end", "loop_mode", "loopmode", "loop_start", "loop_end",
         // round-robin (sequence + random) and keyswitch

@@ -358,7 +358,7 @@ public sealed class Voice
             _vibLfoDelaySeconds = vlfo.DelaySeconds;
             _vibLfoFrequencyHz = vlfo.FrequencyHz;
             _vibLfoPitchDepthCents = vlfo.PitchDepthCents;
-            _vibratoLfo.SetParameters(_vibLfoDelaySeconds, _vibLfoFrequencyHz);
+            _vibratoLfo.SetParameters(_vibLfoDelaySeconds, _vibLfoFrequencyHz, vlfo.FadeSeconds);
         }
         else
         {
@@ -375,7 +375,7 @@ public sealed class Voice
         // Modulation LFO (optional).
         if (zone.ModulationLFO is { } mlfo)
         {
-            _modulationLfo.SetParameters(mlfo.DelaySeconds, mlfo.FrequencyHz);
+            _modulationLfo.SetParameters(mlfo.DelaySeconds, mlfo.FrequencyHz, mlfo.FadeSeconds);
             _modLfoPitchDepthCents = mlfo.PitchDepthCents;
             _modLfoVolumeDepthDb = mlfo.VolumeDepthDb;
             _modLfoFilterDepthCents = mlfo.FilterDepthCents;

@@ -212,6 +212,18 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Lfo_fade_in_time_parses_for_pitch_and_amp()
+    {
+        WriteWav("a.wav");
+        var path = WriteSfz("<region> sample=a.wav key=60 " +
+            "pitchlfo_freq=5 pitchlfo_depth=50 pitchlfo_fade=0.8 " +
+            "amplfo_freq=4 amplfo_depth=3 amplfo_fade=1.2");
+        var zone = SoundBankLoader.Load(path).FindPatch(0, 0)!.Zones[0];
+        Assert.Equal(0.8, zone.VibratoLFO!.FadeSeconds, 3);
+        Assert.Equal(1.2, zone.ModulationLFO!.FadeSeconds, 3);
+    }
+
+    [Fact]
     public void Ampeg_vel2_envelope_modulation_parses()
     {
         WriteWav("a.wav");
