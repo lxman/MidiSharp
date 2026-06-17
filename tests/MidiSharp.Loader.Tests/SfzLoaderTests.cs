@@ -154,6 +154,21 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Amp_veltrack_oncc_curve_reduces_velocity_tracking()
+    {
+        WriteWav("a.wav");
+        var path = WriteSfz("""
+            <control> set_hdcc99=0.73
+            <region> sample=a.wav key=60 amp_veltrack_oncc99=-100 amp_veltrack_curvecc99=2
+            """);
+        var zone = SoundBankLoader.Load(path).FindPatch(0, 0)!.Zones[0];
+        var vel = zone.Routes.Single(r => r.Source is ModSource.Velocity && r.Dest == ModDestination.AttenuationDb);
+        // base 100 + curve2(0.73)*(-100) = 100 - 26.8 = 73.2 → amount = 73.2/100*40 ≈ 29.3 dB
+        // (un-modulated would be the full 40 dB — the CC curve pulls it down).
+        Assert.InRange(vel.Amount, 28.5, 30.0);
+    }
+
+    [Fact]
     public void Set_cc_and_set_hdcc_seed_initial_controllers()
     {
         WriteWav("a.wav");

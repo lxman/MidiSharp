@@ -109,7 +109,7 @@ internal static class SfzZoneTranslator
         double[]? ampVelCurve = BuildVelocityCurve(r);
 
         // ── Routes: _oncc modulations + suppressed defaults + velocity ─
-        var routes = BuildRoutes(r, suppressVelocityRoute: ampVelCurve != null);
+        var routes = BuildRoutes(r, control.InitialControllers, suppressVelocityRoute: ampVelCurve != null);
 
         // ── Round-robin (seq_length / seq_position) ──────────────────
         RoundRobin? roundRobin = null;
@@ -213,6 +213,27 @@ internal static class SfzZoneTranslator
         "legato" => ZoneTrigger.Legato,
         _ => ZoneTrigger.Attack,
     };
+
+    /// <summary>
+    /// Evaluates an ARIA built-in CC curve at normalised input x∈[0,1] (matches sfizz's predefined
+    /// curves 0–6). Curves are linear ramps (0–3) and quadratic/sqrt shapes (4–6); unknown → linear.
+    /// Custom &lt;curve&gt; definitions aren't modelled yet — they fall back to linear here.
+    /// </summary>
+    private static double EvalBuiltinCurve(int index, double x)
+    {
+        x = Math.Clamp(x, 0.0, 1.0);
+        return index switch
+        {
+            0 => x,                  // 0 → 1
+            1 => 2 * x - 1,          // -1 → +1
+            2 => 1 - x,              // 1 → 0
+            3 => 1 - 2 * x,          // +1 → -1
+            4 => x * x,              // concave (slow rise)
+            5 => Math.Sqrt(x),       // convex (fast rise)
+            6 => Math.Sqrt(1 - x),   // 1 → 0 convex
+            _ => x,
+        };
+    }
 
     /// <summary>
     /// Maps SFZ <c>off_mode=</c> to <see cref="ZoneOffMode"/>. When unspecified, the presence of an
@@ -375,7 +396,8 @@ internal static class SfzZoneTranslator
     /// first, then the GM-default controller routes for any (CC, destination) the
     /// bank didn't already wire, then the velocity→amplitude route.
     /// </summary>
-    private static List<ModulationRoute> BuildRoutes(SfzRegion r, bool suppressVelocityRoute = false)
+    private static List<ModulationRoute> BuildRoutes(
+        SfzRegion r, IReadOnlyDictionary<int, int> initialCc, bool suppressVelocityRoute = false)
     {
         var routes = new List<ModulationRoute>();
         var handled = new HashSet<(int Cc, ModDestination Dest)>();
@@ -418,13 +440,23 @@ internal static class SfzZoneTranslator
         // too would double-count the dynamics.
         if (suppressVelocityRoute) return routes;
 
-        // amp_veltrack defaults to 100; if a bank zeroes the base but drives it from a
-        // CC (amp_veltrack_oncc118, CC defaulting high), use that depth so dynamics aren't lost.
+        // amp_veltrack defaults to 100 (full velocity tracking). amp_veltrack_oncc{N} modulates it:
+        // the depth is shaped by amp_veltrack_curvecc{N} (an ARIA curve) evaluated at CC N. When N has
+        // a known initial value (set_ccN/set_hdccN), fold its contribution in — matching sfizz, e.g.
+        // Salamander: 100 + curve2(0.73)*(-100) = 73, not the un-modulated 100 we used before.
         double veltrack = r.GetDouble("amp_veltrack", 100.0);
+        foreach (var (param, cc, value) in r.EnumerateModulations())
+        {
+            if (param != "amp_veltrack" || !initialCc.TryGetValue(cc, out int ccVal)) continue;
+            int curveIdx = r.GetInt("amp_veltrack_curvecc" + cc, 0);
+            veltrack += EvalBuiltinCurve(curveIdx, ccVal / 127.0) * value;
+        }
+        // Legacy fallback: base zeroed and driven only by an UNSEEDED CC (CC assumed active) — keep
+        // the depth so dynamics aren't lost for banks that relied on it.
         if (veltrack == 0)
         {
-            foreach (var (param, _, value) in r.EnumerateModulations())
-                if (param == "amp_veltrack") { veltrack = value; break; }
+            foreach (var (param, cc, value) in r.EnumerateModulations())
+                if (param == "amp_veltrack" && !initialCc.ContainsKey(cc)) { veltrack = value; break; }
         }
         if (veltrack != 0)
         {
