@@ -109,6 +109,9 @@ public sealed class PatchZone
 
     public FilterSettings? Filter { get; init; }
 
+    /// <summary>SFZ peaking-EQ bands (eqN_freq/bw/gain). Empty for SF2/SF3/DLS and SFZ without EQ.</summary>
+    public IReadOnlyList<EqBand> EqBands { get; init; } = Array.Empty<EqBand>();
+
     // ─── Sends (0..1) ───────────────────────────────────────────────
 
     public double ReverbSend { get; init; }

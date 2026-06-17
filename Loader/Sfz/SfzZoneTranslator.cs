@@ -59,6 +59,7 @@ internal static class SfzZoneTranslator
 
         // ── Filter ───────────────────────────────────────────────────
         FilterSettings? filter = BuildFilter(r, out double fileDepthCents);
+        var eqBands = BuildEqBands(r);
 
         // ── Modulation envelope (filter and/or pitch EG) ─────────────
         double pitchEgDepth = r.GetDouble("pitcheg_depth", 0);
@@ -196,6 +197,7 @@ internal static class SfzZoneTranslator
             VibratoLFO = vibratoLfo,
             ModulationLFO = modLfo,
             Filter = filter,
+            EqBands = eqBands,
 
             ReverbSend = Math.Clamp(r.GetDouble("effect1", 0) / 100.0, 0, 1),
             ChorusSend = Math.Clamp(r.GetDouble("effect2", 0) / 100.0, 0, 1),
@@ -314,6 +316,30 @@ internal static class SfzZoneTranslator
             gates.Add(new CCGate((byte)cc, (byte)Math.Clamp(lo, 0, 127), (byte)Math.Clamp(hi, 0, 127)));
         }
         return gates;
+    }
+
+    /// <summary>
+    /// Collects SFZ peaking-EQ bands (eqN_freq/bw/gain). A band with 0 dB gain or no positive
+    /// frequency is inactive and skipped. Probes N=1..8 (banks rarely use more than 3).
+    /// </summary>
+    private static IReadOnlyList<EqBand> BuildEqBands(SfzRegion r)
+    {
+        List<EqBand>? bands = null;
+        for (int n = 1; n <= 8; n++)
+        {
+            double gain = r.GetDouble("eq" + n + "_gain", 0);
+            if (gain == 0) continue;
+            double freq = r.GetDouble("eq" + n + "_freq", 0);
+            if (freq <= 0) continue;
+            double bw = r.GetDouble("eq" + n + "_bw", 1.0);
+            (bands ??= new List<EqBand>()).Add(new EqBand
+            {
+                FrequencyHz = freq,
+                BandwidthOctaves = bw,
+                GainDb = gain,
+            });
+        }
+        return bands ?? (IReadOnlyList<EqBand>)Array.Empty<EqBand>();
     }
 
     private static FilterSettings? BuildFilter(SfzRegion r, out double envDepthCents)

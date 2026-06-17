@@ -69,6 +69,12 @@ internal static class SfzOpcodes
 
     private static readonly Regex Digits = new(@"\d+", RegexOptions.Compiled);
 
+    // Opcode families (digits collapsed to "N") handled where the number sits mid-name, e.g. eq2_freq.
+    private static readonly HashSet<string> HandledFamilies = new(StringComparer.Ordinal)
+    {
+        "eqN_freq", "eqN_bw", "eqN_gain",
+    };
+
     /// <summary>True when the loader actually acts on <paramref name="opcode"/> (lowercase).</summary>
     public static bool IsHandled(string opcode)
     {
@@ -80,6 +86,9 @@ internal static class SfzOpcodes
                 return true;
 
         if (TryGetModParam(opcode, out string param) && ModParams.Contains(param))
+            return true;
+
+        if (opcode.StartsWith("eq", StringComparison.Ordinal) && HandledFamilies.Contains(Family(opcode)))
             return true;
 
         return false;

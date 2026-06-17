@@ -57,3 +57,19 @@ public sealed class FilterSettings
     /// <summary>Modulation LFO → cutoff depth, in cents.</summary>
     public double LfoDepthCents { get; init; }
 }
+
+/// <summary>
+/// One peaking (bell) EQ band — SFZ <c>eqN_freq</c>/<c>eqN_bw</c>/<c>eqN_gain</c>. A zone carries a
+/// list of these (<see cref="PatchZone.EqBands"/>); the synth runs each as a biquad on the voice signal.
+/// </summary>
+public readonly struct EqBand
+{
+    /// <summary>Centre frequency in Hz.</summary>
+    public double FrequencyHz { get; init; }
+
+    /// <summary>Bandwidth in octaves (SFZ default 1.0).</summary>
+    public double BandwidthOctaves { get; init; }
+
+    /// <summary>Peak gain in dB (positive boosts, negative cuts; 0 = inactive).</summary>
+    public double GainDb { get; init; }
+}

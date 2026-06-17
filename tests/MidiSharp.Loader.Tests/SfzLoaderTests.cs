@@ -185,6 +185,26 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Eq_bands_parse_and_skip_zero_gain()
+    {
+        WriteWav("a.wav");
+        var path = WriteSfz("""
+            <region> sample=a.wav key=60
+                eq1_freq=120 eq1_bw=2 eq1_gain=6
+                eq2_freq=3000 eq2_gain=0
+                eq3_freq=8000 eq3_bw=0.5 eq3_gain=-4
+            """);
+        var z = SoundBankLoader.Load(path).FindPatch(0, 0)!.Zones[0];
+        // eq2 has 0 dB gain → inactive → skipped; eq1 + eq3 kept in order.
+        Assert.Equal(2, z.EqBands.Count);
+        Assert.Equal(120.0, z.EqBands[0].FrequencyHz, 3);
+        Assert.Equal(2.0, z.EqBands[0].BandwidthOctaves, 3);
+        Assert.Equal(6.0, z.EqBands[0].GainDb, 3);
+        Assert.Equal(8000.0, z.EqBands[1].FrequencyHz, 3);
+        Assert.Equal(-4.0, z.EqBands[1].GainDb, 3);
+    }
+
+    [Fact]
     public void Filter_keytrack_keycenter_and_veltrack_are_applied()
     {
         WriteWav("a.wav");

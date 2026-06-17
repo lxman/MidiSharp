@@ -38,6 +38,13 @@ public sealed class Voice
     private readonly LowPassFilter _filter;
     private readonly LowPassFilter _filterRight;   // right channel's filter state (stereo samples only)
 
+    // SFZ peaking-EQ bands (eqN_*). Pre-allocated and reused; _eqBandCount of them are active this note.
+    // _eqRight mirrors them for the right channel of a stereo sample.
+    private const int MaxEqBands = 4;
+    private readonly PeakingEqFilter[] _eq;
+    private readonly PeakingEqFilter[] _eqRight;
+    private int _eqBandCount;
+
     // ── Sample addressing ─────────────────────────────────────────────
 
     private ISampleSource? _sampleSource;
@@ -186,6 +193,13 @@ public sealed class Voice
         _modulationLfo = new LowFrequencyOscillator(sampleRate);
         _filter = new LowPassFilter(sampleRate);
         _filterRight = new LowPassFilter(sampleRate);
+        _eq = new PeakingEqFilter[MaxEqBands];
+        _eqRight = new PeakingEqFilter[MaxEqBands];
+        for (int i = 0; i < MaxEqBands; i++)
+        {
+            _eq[i] = new PeakingEqFilter(sampleRate);
+            _eqRight[i] = new PeakingEqFilter(sampleRate);
+        }
         _state = VoiceState.Free;
         _scaleTuningCentsPerKey = 100.0;
     }
@@ -215,6 +229,8 @@ public sealed class Voice
         _modulationLfo.Reset();
         _filter.Reset();
         _filterRight.Reset();
+        for (int i = 0; i < MaxEqBands; i++) { _eq[i].Reset(); _eqRight[i].Reset(); }
+        _eqBandCount = 0;
     }
 
     // ── Configure ─────────────────────────────────────────────────────
@@ -393,6 +409,16 @@ public sealed class Voice
         {
             _hasFilter = false;
             _modEnvFilterDepthCents = 0;
+        }
+
+        // SFZ peaking EQ (eqN_*). Empty for SF2/SF3/DLS, so _eqBandCount stays 0 and the per-sample
+        // loop skips it entirely (bit-identical there).
+        _eqBandCount = Math.Min(zone.EqBands.Count, MaxEqBands);
+        for (int i = 0; i < _eqBandCount; i++)
+        {
+            var band = zone.EqBands[i];
+            _eq[i].SetParameters(band.FrequencyHz, band.BandwidthOctaves, band.GainDb);
+            if (_channels == 2) _eqRight[i].SetParameters(band.FrequencyHz, band.BandwidthOctaves, band.GainDb);
         }
 
         // Stash routes (could be the zone-authored list or empty).
@@ -712,9 +738,10 @@ public sealed class Voice
 
             if (_channels == 1)
             {
-                // Mono path — arithmetically identical to the original.
+                // Mono path — arithmetically identical to the original when no filter/EQ.
                 double sample = GetInterpolatedSample(0);
                 if (_hasFilter) sample = _filter.Process(sample);
+                for (int e = 0; e < _eqBandCount; e++) sample = _eq[e].Process(sample);
                 float outputSample = (float)(sample * gain);
                 leftBuffer[i] += outputSample * (float)leftGain;
                 rightBuffer[i] += outputSample * (float)rightGain;
@@ -732,6 +759,11 @@ public sealed class Voice
                 {
                     sampleL = _filter.Process(sampleL);
                     sampleR = _filterRight.Process(sampleR);
+                }
+                for (int e = 0; e < _eqBandCount; e++)
+                {
+                    sampleL = _eq[e].Process(sampleL);
+                    sampleR = _eqRight[e].Process(sampleR);
                 }
                 float outL = (float)(sampleL * gain);
                 float outR = (float)(sampleR * gain);
