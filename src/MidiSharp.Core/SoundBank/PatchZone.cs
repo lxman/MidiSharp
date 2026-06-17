@@ -51,6 +51,26 @@ public sealed class PatchZone
     /// </summary>
     public double RtDecay { get; init; }
 
+    // ─── Humanization (SFZ; 0 = disabled, the SF2/SF3/DLS default) ──
+
+    /// <summary>SFZ amp_random: per-note random gain, dB. A value in [0, this] (sfizz convention) is
+    /// added to the note's volume at NoteOn.</summary>
+    public double AmpRandomDb { get; init; }
+
+    /// <summary>SFZ pitch_random: per-note random detune, cents. A value in [0, this] is added.</summary>
+    public double PitchRandomCents { get; init; }
+
+    /// <summary>SFZ delay: fixed time (seconds) the note is held silent before it sounds.</summary>
+    public double DelaySeconds { get; init; }
+
+    /// <summary>SFZ delay_random: per-note random extra onset delay, seconds. A value in [0, this] adds
+    /// to <see cref="DelaySeconds"/>.</summary>
+    public double DelayRandomSeconds { get; init; }
+
+    /// <summary>SFZ offset_random: per-note random extra sample-start offset, frames. A value in
+    /// [0, this] adds to the region's fixed start offset.</summary>
+    public long OffsetRandomFrames { get; init; }
+
     // ─── Sample reference ───────────────────────────────────────────
 
     public SampleRef Sample { get; init; } = new();

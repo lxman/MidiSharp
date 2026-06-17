@@ -149,6 +149,13 @@ internal static class SfzZoneTranslator
         ZoneTrigger trigger = ParseTrigger(r.Get("trigger"));
         double rtDecay = r.GetDouble("rt_decay", 0);
 
+        // ── Humanization (amp/pitch/delay/offset random + fixed delay) ─
+        double ampRandomDb = r.GetDouble("amp_random", 0);
+        double pitchRandomCents = r.GetDouble("pitch_random", 0);
+        double delaySeconds = r.GetDouble("delay", 0);
+        double delayRandomSeconds = r.GetDouble("delay_random", 0);
+        long offsetRandomFrames = r.Has("offset_random") ? r.GetInt("offset_random", 0) : 0;
+
         return new PatchZone
         {
             Keys = new KeyRange((byte)Math.Clamp(lokey, 0, 127), (byte)Math.Clamp(hikey, 0, 127)),
@@ -160,6 +167,11 @@ internal static class SfzZoneTranslator
             ExclusiveGroup = exclusive,
             Trigger = trigger,
             RtDecay = rtDecay,
+            AmpRandomDb = ampRandomDb,
+            PitchRandomCents = pitchRandomCents,
+            DelaySeconds = delaySeconds,
+            DelayRandomSeconds = delayRandomSeconds,
+            OffsetRandomFrames = offsetRandomFrames,
 
             Sample = sampleRef,
             Pitch = new PitchSettings { ModulationEnvelopeDepthCents = pitchModEnvCents },

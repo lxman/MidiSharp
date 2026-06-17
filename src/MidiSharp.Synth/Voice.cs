@@ -57,6 +57,9 @@ public sealed class Voice
     // Playback position is in source frames, sample-relative, fractional.
     private double _position;
 
+    // SFZ delay / delay_random: samples of silence to emit before the voice sounds (counts down).
+    private int _delayRemaining;
+
     // Scratch buffer for ISampleSource reads. The interpolator needs index-3
     // through index+3 (7-tap sinc); we batch-read ScratchSize frames around the
     // current position and refill when we approach an edge. One ReadFrames
@@ -186,6 +189,7 @@ public sealed class Voice
         _sampleSource = null;
         _position = 0;
         _channels = 1;
+        _delayRemaining = 0;
         _scratchFramesAvailable = 0;
         _scratchBaseFrame = 0;
         _sostenutoHeld = false;
@@ -416,6 +420,26 @@ public sealed class Voice
     }
 
     /// <summary>
+    /// Applies SFZ humanization rolled at NoteOn (the synth owns the RNG so renders stay reproducible):
+    /// an extra gain (dB, from amp_random — louder), a detune (cents, pitch_random), an onset delay
+    /// (seconds, delay + delay_random) and a sample-start offset (frames, offset_random). All are
+    /// constant for the note, so they fold into the base values the per-sample loop already reads.
+    /// </summary>
+    public void ApplyHumanization(double extraGainDb, double detuneCents, double delaySeconds, long offsetFrames)
+    {
+        _attenuationDb -= extraGainDb;     // +volume ⇒ −attenuation
+        _fineTuneCents += detuneCents;
+        if (delaySeconds > 0)
+            _delayRemaining = (int)(delaySeconds * _sampleRate);
+        if (offsetFrames > 0)
+        {
+            _sampleStart += offsetFrames;
+            if (_sampleStart >= _sampleEnd) _sampleStart = Math.Max(0, _sampleEnd - 1);
+            _position = _sampleStart;
+        }
+    }
+
+    /// <summary>
     /// Applies GM2 sound-controller adjustments to the vibrato LFO. Both deltas
     /// are domain-typed: <paramref name="freqOctavesDelta"/> in octaves
     /// (positive = faster) and <paramref name="delaySecondsDelta"/> as a time
@@ -573,6 +597,9 @@ public sealed class Voice
 
         for (int i = 0; i < leftBuffer.Length; i++)
         {
+            // SFZ delay/delay_random: stay silent (envelopes and position frozen) until the onset.
+            if (_delayRemaining > 0) { _delayRemaining--; continue; }
+
             double volEnv = _volumeEnvelope.Process();
             double modEnv = _hasModulationEnvelope ? _modulationEnvelope.Process() : 0.0;
             double vibLfo = _vibratoLfo.Process();

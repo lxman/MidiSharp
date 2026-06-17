@@ -154,6 +154,24 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Humanization_opcodes_are_parsed_onto_the_zone()
+    {
+        WriteWav("a.wav");
+        var path = WriteSfz("""
+            <region> sample=a.wav key=60
+                amp_random=3 pitch_random=20 delay=0.01 delay_random=0.02 offset_random=500
+            """);
+
+        using var bank = SoundBankLoader.Load(path);
+        var zone = bank.FindPatch(0, 0)!.Zones[0];
+        Assert.Equal(3.0, zone.AmpRandomDb);
+        Assert.Equal(20.0, zone.PitchRandomCents);
+        Assert.Equal(0.01, zone.DelaySeconds);
+        Assert.Equal(0.02, zone.DelayRandomSeconds);
+        Assert.Equal(500L, zone.OffsetRandomFrames);
+    }
+
+    [Fact]
     public void Trigger_release_is_parsed_and_distinguished_from_attack()
     {
         WriteWav("hit.wav");

@@ -330,6 +330,21 @@ public sealed class Synthesizer
             if (channelState.DrumOverrides != null &&
                 channelState.DrumOverrides.TryGetValue(key, out var drumOv))
                 voice.ApplyDrumOverride(drumOv);
+
+            // SFZ humanization (amp/pitch/delay/offset random + fixed delay). Rolled from the synth's
+            // seeded RNG so each note varies but renders stay reproducible. Only touch the RNG when the
+            // zone actually asks for variation, so banks without it keep the exact RNG stream (and the
+            // byte-identical renders) they have today. Each draw is uniform [0, value] (sfizz's law).
+            if (zone.AmpRandomDb != 0 || zone.PitchRandomCents != 0 ||
+                zone.DelaySeconds != 0 || zone.DelayRandomSeconds != 0 || zone.OffsetRandomFrames != 0)
+            {
+                double gainDb = zone.AmpRandomDb != 0 ? _rng.NextDouble() * zone.AmpRandomDb : 0.0;
+                double detune = zone.PitchRandomCents != 0 ? _rng.NextDouble() * zone.PitchRandomCents : 0.0;
+                double delaySec = zone.DelaySeconds
+                                + (zone.DelayRandomSeconds != 0 ? _rng.NextDouble() * zone.DelayRandomSeconds : 0.0);
+                long offFrames = zone.OffsetRandomFrames != 0 ? (long)(_rng.NextDouble() * zone.OffsetRandomFrames) : 0;
+                voice.ApplyHumanization(gainDb, detune, delaySec, offFrames);
+            }
         }
     }
 
