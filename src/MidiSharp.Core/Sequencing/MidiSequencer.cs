@@ -145,6 +145,7 @@ public sealed class MidiSequencer
     private List<ScheduledEvent> BuildTimeline()
     {
         var allEvents = new List<ScheduledEvent>();
+        long sequenceIndex = 0;
 
         for (var trackIndex = 0; trackIndex < _file.Tracks.Count; trackIndex++)
         {
@@ -153,7 +154,7 @@ public sealed class MidiSequencer
             foreach (var evt in track.Events)
             {
                 var time = _tempoMap.TickToTime(evt.AbsoluteTicks);
-                allEvents.Add(new ScheduledEvent(evt.AbsoluteTicks, time, evt, trackIndex));
+                allEvents.Add(new ScheduledEvent(evt.AbsoluteTicks, time, evt, trackIndex, sequenceIndex++));
             }
         }
 
