@@ -248,6 +248,18 @@ internal static class SfzZoneTranslator
             int curveIdx = r.GetInt(stageParam + "_curvecc" + cc, 0);
             sum += value * EvalBuiltinCurve(curveIdx, ccVal / 127.0);
         }
+
+        // v1/ARIA short form ampeg_{stage}cc{N} (no underscore) — an alias of ampeg_{stage}_oncc{N}
+        // that EnumerateModulations doesn't surface (it only matches the _oncc/_cc spellings). The
+        // "{stage}cc" prefix can't collide with "{stage}_oncc" or "{stage}_curvecc", so fold it in here.
+        foreach (var (cc, raw) in r.EnumerateCc(stageParam + "cc"))
+        {
+            if (!initialCc.TryGetValue(cc, out int ccVal)) continue;
+            if (!double.TryParse(raw.Trim(), System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out double value)) continue;
+            int curveIdx = r.GetInt(stageParam + "_curvecc" + cc, 0);
+            sum += value * EvalBuiltinCurve(curveIdx, ccVal / 127.0);
+        }
         return sum;
     }
 

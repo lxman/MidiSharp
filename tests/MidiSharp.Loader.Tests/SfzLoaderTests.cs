@@ -198,6 +198,20 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Ampeg_attack_bare_cc_alias_bakes_like_oncc()
+    {
+        WriteWav("a.wav");
+        // v1/ARIA short form: ampeg_attackcc72 (no underscore) is an alias of ampeg_attack_oncc72.
+        // cc72 seeded to 0.5 (≈64), linear curve → +2×0.5 ≈ 1 s on top of the 0.1 s base attack.
+        var path = WriteSfz("""
+            <control> set_hdcc72=0.5
+            <region> sample=a.wav key=60 ampeg_attack=0.1 ampeg_attackcc72=2
+            """);
+        var ve = SoundBankLoader.Load(path).FindPatch(0, 0)!.Zones[0].VolumeEnvelope;
+        Assert.InRange(ve.AttackSeconds, 1.05, 1.15);
+    }
+
+    [Fact]
     public void Ampeg_vel2_envelope_modulation_parses()
     {
         WriteWav("a.wav");

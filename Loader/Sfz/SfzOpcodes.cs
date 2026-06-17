@@ -87,6 +87,9 @@ internal static class SfzOpcodes
         "amplitude_curveccN", "amp_veltrack_curveccN",
         "ampeg_delay_curveccN", "ampeg_attack_curveccN", "ampeg_hold_curveccN",
         "ampeg_decay_curveccN", "ampeg_release_curveccN", "ampeg_sustain_curveccN",
+        // v1/ARIA bare-cc envelope aliases (ampeg_{stage}cc{N} ≡ ampeg_{stage}_oncc{N}), baked in EnvCcOffset
+        "ampeg_delayccN", "ampeg_attackccN", "ampeg_holdccN",
+        "ampeg_decayccN", "ampeg_sustainccN", "ampeg_releaseccN",
     };
 
     /// <summary>True when the loader actually acts on <paramref name="opcode"/> (lowercase).</summary>
