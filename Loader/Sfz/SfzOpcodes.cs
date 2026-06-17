@@ -83,8 +83,8 @@ internal static class SfzOpcodes
     {
         "eqN_freq", "eqN_bw", "eqN_gain",
         "label_ccN",   // display-only CC label — no audio effect
-        // curve tables we consume when evaluating the corresponding _oncc at the seeded CC
-        "amp_veltrack_curveccN",
+        // curve tables we consume when evaluating the corresponding _oncc
+        "amplitude_curveccN", "amp_veltrack_curveccN",
         "ampeg_delay_curveccN", "ampeg_attack_curveccN", "ampeg_hold_curveccN",
         "ampeg_decay_curveccN", "ampeg_release_curveccN", "ampeg_sustain_curveccN",
     };

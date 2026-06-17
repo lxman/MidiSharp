@@ -258,6 +258,18 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Amplitude_oncc_uses_the_aria_curve()
+    {
+        WriteWav("a.wav");
+        var path = WriteSfz("<region> sample=a.wav key=60 amplitude_oncc7=100 amplitude_curvecc7=4");
+        var z = SoundBankLoader.Load(path).FindPatch(0, 0)!.Zones[0];
+        var route = z.Routes.Single(r => r.Transform == ModTransform.AmplitudeCurve);
+        Assert.Equal(4, route.CurveIndex);          // curve 4 (cc²), not the implicit linear
+        Assert.Equal(1.0, route.Amount, 3);          // depth 100% → gain 1.0 at full curve
+        Assert.IsType<ModSource.ChannelController>(route.Source);
+    }
+
+    [Fact]
     public void Gain_cc_aliases_volume_cc()
     {
         WriteWav("a.wav");

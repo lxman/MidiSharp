@@ -110,6 +110,13 @@ public enum ModTransform
     /// (high velocity = no attenuation; low velocity = much attenuation).
     /// </summary>
     ConcaveUnipolarNegative,
+
+    /// <summary>
+    /// SFZ amplitude_oncc: the source maps to a LINEAR gain via the route's ARIA curve
+    /// (<see cref="ModulationRoute.CurveIndex"/>), scaled by Amount (depth fraction), then converted to
+    /// the AttenuationDb destination as −20·log10(gain). Lets amplitude_curvecc shape the response.
+    /// </summary>
+    AmplitudeCurve,
 }
 
 /// <summary>
@@ -127,6 +134,9 @@ public sealed class ModulationRoute
     public double Amount { get; init; }
 
     public ModTransform Transform { get; init; } = ModTransform.Linear;
+
+    /// <summary>ARIA curve index for <see cref="ModTransform.AmplitudeCurve"/> (SFZ amplitude_curvecc). 0 = linear.</summary>
+    public int CurveIndex { get; init; }
 
     /// <summary>
     /// Optional secondary source whose normalized value scales

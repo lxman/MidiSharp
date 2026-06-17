@@ -63,6 +63,18 @@ internal static class RouteEvaluator
             var route = routes[i];
 
             double srcRaw = EvaluateSource(route.Source, velocity, keyNumber, polyPressure, channelState);
+
+            // SFZ amplitude_oncc: source → linear gain via the ARIA curve, scaled by depth (Amount),
+            // then to attenuation dB. Kept separate from the generic transform×amount path because the
+            // gain→dB conversion is nonlinear.
+            if (route.Transform == ModTransform.AmplitudeCurve)
+            {
+                double gain = route.Amount * AriaCurve.Eval(route.CurveIndex, srcRaw);
+                double att = -20.0 * Math.Log10(Math.Clamp(gain, 1e-5, 1e5));
+                contributions.AttenuationDb += att;
+                continue;
+            }
+
             double transformed = ApplyTransform(srcRaw, route.Transform);
             double amount = route.Amount;
 

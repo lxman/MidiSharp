@@ -256,21 +256,7 @@ internal static class SfzZoneTranslator
     /// curves 0–6). Curves are linear ramps (0–3) and quadratic/sqrt shapes (4–6); unknown → linear.
     /// Custom &lt;curve&gt; definitions aren't modelled yet — they fall back to linear here.
     /// </summary>
-    private static double EvalBuiltinCurve(int index, double x)
-    {
-        x = Math.Clamp(x, 0.0, 1.0);
-        return index switch
-        {
-            0 => x,                  // 0 → 1
-            1 => 2 * x - 1,          // -1 → +1
-            2 => 1 - x,              // 1 → 0
-            3 => 1 - 2 * x,          // +1 → -1
-            4 => x * x,              // concave (slow rise)
-            5 => Math.Sqrt(x),       // convex (fast rise)
-            6 => Math.Sqrt(1 - x),   // 1 → 0 convex
-            _ => x,
-        };
-    }
+    private static double EvalBuiltinCurve(int index, double x) => AriaCurve.Eval(index, x);
 
     /// <summary>
     /// Maps SFZ <c>off_mode=</c> to <see cref="ZoneOffMode"/>. When unspecified, the presence of an
@@ -562,8 +548,16 @@ internal static class SfzZoneTranslator
                 "pan" => Route(source, ModDestination.PanNormalized, value / 100.0, ModTransform.Linear),
                 // volume_oncc (gain_cc is sfizz's alias for it): dB, linear (CC up = louder = less attenuation).
                 "volume" or "gain" => Route(source, ModDestination.AttenuationDb, -value, ModTransform.Linear),
-                // amplitude_oncc: percentage gain → concave attenuation, like a volume CC.
-                "amplitude" => Route(source, ModDestination.AttenuationDb, 96.0 * value / 100.0, ModTransform.ConcaveUnipolarNegative),
+                // amplitude_oncc: CC → linear gain via the ARIA curve (amplitude_curvecc, default linear),
+                // converted to attenuation in the route evaluator. depth/100 is the gain at full curve.
+                "amplitude" => new ModulationRoute
+                {
+                    Source = source,
+                    Dest = ModDestination.AttenuationDb,
+                    Amount = value / 100.0,
+                    Transform = ModTransform.AmplitudeCurve,
+                    CurveIndex = r.GetInt("amplitude_curvecc" + cc, 0),
+                },
                 "cutoff" => Route(source, ModDestination.FilterCutoffCents, value, ModTransform.Linear),
                 "pitchlfo_depth" => Route(source, ModDestination.VibratoLfoPitchDepthCents, value, ModTransform.Linear),
                 _ => null,
