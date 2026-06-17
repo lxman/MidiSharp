@@ -263,6 +263,21 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Cc_crossfade_builds_a_live_gain_table_per_controller()
+    {
+        WriteWav("a.wav");
+        // Mod wheel (CC1) fades this layer in over 0→64; default xf_cccurve = power.
+        var path = WriteSfz("<region> sample=a.wav key=60 xfin_locc1=0 xfin_hicc1=64");
+        var zone = SoundBankLoader.Load(path).FindPatch(0, 0)!.Zones[0];
+        Assert.NotNull(zone.CcCrossfades);
+        var cf = Assert.Single(zone.CcCrossfades!);
+        Assert.Equal(1, cf.Cc);
+        Assert.Equal(0.0, cf.Gain[0], 2);    // CC1=0 → silent
+        Assert.True(cf.Gain[64] > 0.9);      // CC1=64 → full
+        Assert.True(cf.Gain[127] > 0.9);     // above hi → stays full
+    }
+
+    [Fact]
     public void Eq_bands_parse_and_skip_zero_gain()
     {
         WriteWav("a.wav");

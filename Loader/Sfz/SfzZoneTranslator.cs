@@ -219,6 +219,7 @@ internal static class SfzZoneTranslator
             Routes = routes,
             AmpVelCurve = ampVelCurve,
             AmpKeyCurve = BuildKeyCrossfade(r, control),
+            CcCrossfades = BuildCcCrossfades(r),
         };
     }
 
@@ -549,6 +550,41 @@ internal static class SfzZoneTranslator
             keyGain[k] = CrossfadeIn(inLo, inHi, x, power) * CrossfadeOut(outLo, outHi, x, power);
         }
         return keyGain;
+    }
+
+    /// <summary>
+    /// Builds the live CC crossfades (xfin/xfout_locc{N}/hicc{N}), or null when the region sets none.
+    /// Unlike velocity/key crossfades, the controller value changes during play, so each crossfade is
+    /// kept as a 128-entry gain table the voice indexes by the live CC value every block (mod-wheel
+    /// layer morphing). Shape follows xf_cccurve (default "power" = equal-power sqrt; "gain" = linear).
+    /// </summary>
+    private static CcCrossfade[]? BuildCcCrossfades(SfzRegion r)
+    {
+        SortedSet<int>? ccs = null;
+        foreach (var prefix in new[] { "xfin_locc", "xfin_hicc", "xfout_locc", "xfout_hicc" })
+            foreach (var (cc, _) in r.EnumerateCc(prefix))
+                (ccs ??= new SortedSet<int>()).Add(cc);
+        if (ccs == null) return null;
+
+        bool power = !string.Equals(r.Get("xf_cccurve")?.Trim(), "gain", StringComparison.OrdinalIgnoreCase);
+        var result = new CcCrossfade[ccs.Count];
+        int idx = 0;
+        foreach (int cc in ccs)
+        {
+            double inLo = r.GetInt("xfin_locc" + cc, 0) / 127.0;
+            double inHi = r.GetInt("xfin_hicc" + cc, 0) / 127.0;
+            double outLo = r.GetInt("xfout_locc" + cc, 127) / 127.0;
+            double outHi = r.GetInt("xfout_hicc" + cc, 127) / 127.0;
+
+            var gain = new double[128];
+            for (int v = 0; v < 128; v++)
+            {
+                double x = v / 127.0;
+                gain[v] = CrossfadeIn(inLo, inHi, x, power) * CrossfadeOut(outLo, outHi, x, power);
+            }
+            result[idx++] = new CcCrossfade(cc, gain);
+        }
+        return result;
     }
 
     private const double XfadeGap = 1.0 / 127.0;

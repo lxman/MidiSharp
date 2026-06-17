@@ -48,6 +48,8 @@ internal static class SfzOpcodes
         "xfin_lovel", "xfin_hivel", "xfout_lovel", "xfout_hivel", "xf_velcurve",
         // key crossfade (folded into a per-note key→gain table)
         "xfin_lokey", "xfin_hikey", "xfout_lokey", "xfout_hikey", "xf_keycurve",
+        // CC crossfade curve selector (xfin/xfout_locc{N}/hicc{N} are numbered, below)
+        "xf_cccurve",
         "sw_last", "sw_down", "sw_lokey", "sw_hikey", "sw_default",
         // grouping, effects, velocity, program routing
         "group", "off_by", "effect1", "effect2", "amp_veltrack", "loprog", "hiprog",
@@ -67,6 +69,7 @@ internal static class SfzOpcodes
     private static readonly string[] NumberedPrefixes =
     {
         "locc", "hicc", "on_locc", "on_hicc", "amp_velcurve_",
+        "xfin_locc", "xfin_hicc", "xfout_locc", "xfout_hicc",   // live CC crossfades
         "set_hdcc", "set_cc",   // initial controller seeds (set_hdcc before set_cc — longer prefix first)
     };
 

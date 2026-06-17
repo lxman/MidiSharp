@@ -98,6 +98,8 @@ public sealed class Voice
     private int _velocity;
     // SFZ amp_velcurve_N gain for this note's velocity (1.0 = no custom curve).
     private double _ampVelCurveFactor = 1.0;
+    // SFZ live CC crossfades (xfin/xfout_locc) — re-read from channel state every block. Null = none.
+    private CcCrossfade[]? _ccCrossfades;
     private double _pitchCorrectionCents;
     private double _coarseTuneSemitones;
     private double _fineTuneCents;
@@ -281,6 +283,10 @@ public sealed class Voice
             : 1.0;
         if (zone.AmpKeyCurve is { } keyCurve)
             _ampVelCurveFactor *= keyCurve[Math.Clamp(keyNumber, 0, 127)];
+
+        // SFZ CC crossfades are live (the controller can move during the note), so keep the tables
+        // and re-evaluate them per block in Process rather than baking a single factor here.
+        _ccCrossfades = zone.CcCrossfades;
 
         // Sample addressing — IR fields are sample-relative frames. The metadata's
         // base length/loop points are overridable by the zone's optional offset
@@ -623,6 +629,13 @@ public sealed class Voice
         RouteEvaluator.Evaluate(_routes, _velocity, _keyNumber, _polyPressure,
                                 channelState, out var contrib);
 
+        // SFZ live CC crossfades (xfin/xfout_locc): a per-block gain from each controller's current
+        // value, so sweeping the CC morphs this layer in/out. Constant within the block.
+        double ccCrossfadeGain = 1.0;
+        if (_ccCrossfades is { } xfades)
+            for (int x = 0; x < xfades.Length; x++)
+                ccCrossfadeGain *= xfades[x].Gain[channelState.GetCC(xfades[x].Cc) & 0x7F];
+
         // Effective per-block values: zone base + route contribution.
         double effectiveAttenuationDb = _attenuationDb + contrib.AttenuationDb + extraAttenuationDb;
         double effectivePan = Math.Clamp(_panNormalized + contrib.PanNormalized, -1.0, 1.0);
@@ -740,7 +753,7 @@ public sealed class Voice
                 _cachedAttenuationDb = totalAttenuationDb;
                 _cachedLinearGain = Math.Pow(10.0, -totalAttenuationDb / 20.0);
             }
-            double gain = _cachedLinearGain * volEnv * _ampVelCurveFactor;
+            double gain = _cachedLinearGain * volEnv * _ampVelCurveFactor * ccCrossfadeGain;
 
             if (_channels == 1)
             {

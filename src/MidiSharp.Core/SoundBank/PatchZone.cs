@@ -137,6 +137,33 @@ public sealed class PatchZone
     /// crossfade (the common case).
     /// </summary>
     public double[]? AmpKeyCurve { get; init; }
+
+    /// <summary>
+    /// SFZ live CC crossfades (xfin/xfout_locc{N}/hicc{N}): each entry morphs the zone's gain
+    /// by the current value of its controller, re-read every block — this is the mod-wheel layer
+    /// fade. Null when the zone sets no CC crossfade.
+    /// </summary>
+    public CcCrossfade[]? CcCrossfades { get; init; }
+}
+
+/// <summary>
+/// One live CC crossfade: the zone's gain is multiplied by <see cref="Gain"/>[controller value]
+/// each block, so sweeping controller <see cref="Cc"/> fades the layer in/out. The 128-entry table
+/// is precomputed by the loader from the xfin/xfout thresholds and xf_cccurve shape.
+/// </summary>
+public readonly struct CcCrossfade
+{
+    public CcCrossfade(int cc, double[] gain)
+    {
+        Cc = cc;
+        Gain = gain;
+    }
+
+    /// <summary>The MIDI controller number driving this crossfade.</summary>
+    public int Cc { get; }
+
+    /// <summary>128-entry linear-gain table indexed by the controller's current value (0..127).</summary>
+    public double[] Gain { get; }
 }
 
 /// <summary>SFZ <c>trigger=</c> mode — when a zone fires relative to the note event.</summary>
