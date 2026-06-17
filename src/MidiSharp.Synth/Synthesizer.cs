@@ -156,6 +156,14 @@ public sealed class Synthesizer
 
         AllSoundOff();
         _soundBank = soundBank;
+
+        // Seed the instrument's expected initial controller values (SFZ set_ccN/set_hdccN) onto every
+        // channel so CC-driven routes and locc/hicc gates start where the bank expects. Routed through
+        // ControlChange so known CCs hit their fields and the rest land in the generic store.
+        if (soundBank.InitialControllers.Count > 0)
+            for (int ch = 0; ch < _channels.Length; ch++)
+                foreach (var kv in soundBank.InitialControllers)
+                    ControlChange(ch, kv.Key, kv.Value);
     }
 
     /// <summary>
@@ -631,6 +639,12 @@ public sealed class Synthesizer
             case 126: // Mono On
             case 127: // Poly On
                 ReleaseAllVoices(channel);
+                break;
+
+            default:
+                // Any controller without dedicated handling (e.g. SFZ-modulated CC20/22/99) is stored
+                // generically so locc/hicc gates and CC routes can read it.
+                channelState.SetGenericCc(controller, (byte)Math.Clamp(value, 0, 127));
                 break;
         }
     }

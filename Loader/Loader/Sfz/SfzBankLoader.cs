@@ -68,6 +68,7 @@ internal static class SfzBankLoader
         private readonly List<SampleMetadata> _metadatas = new();
         private readonly Dictionary<string, int> _idByPath = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<(int Bank, int Lo, int Hi, PatchZone Zone, string? Label)> _placed = new();
+        private readonly Dictionary<int, int> _initialControllers = new();   // set_ccN/set_hdccN, CC# → 0..127
         private int _missing;
 
         public void AddFile(string path, int bank)
@@ -80,6 +81,10 @@ internal static class SfzBankLoader
         public void AddText(string text, string baseDir, int bank)
         {
             var instrument = SfzParser.Parse(text, inc => ReadInclude(baseDir, inc));
+
+            // Carry the <control> set_cc/set_hdcc seeds (later files win on conflict).
+            foreach (var kv in instrument.Control.InitialControllers)
+                _initialControllers[kv.Key] = kv.Value;
 
             foreach (var region in instrument.Regions)
             {
@@ -206,6 +211,7 @@ internal static class SfzBankLoader
                 SourceFormat = SoundBankFormat.Sfz,
                 Patches = patches,
                 Samples = new SfzSampleSource(_paths, _metadatas, cacheBudgetBytes, blockingDecode),
+                InitialControllers = _initialControllers,
             };
         }
     }

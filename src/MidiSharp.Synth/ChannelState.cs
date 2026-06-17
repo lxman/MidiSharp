@@ -381,6 +381,7 @@ public sealed class ChannelState
         VibratoDelayCc = 64;
         SelectedKeyswitch = -1;
         _roundRobinCounters = null;
+        for (int i = 0; i < _genericCc.Length; i++) _genericCc[i] = 0;
         // Per GS spec, "Reset All Controllers" does NOT clear drum NRPN overrides.
         // Only a full GM/GS Reset (handled by Synthesizer.Reset) clears DrumOverrides.
     }
@@ -405,6 +406,17 @@ public sealed class ChannelState
     /// booleans (sustain/sostenuto/portamento on/off) return 127 when on, 0 when
     /// off; unknown / unstored controllers return 0.
     /// </summary>
+    // Generic 0..127 store for controllers without a dedicated field (e.g. SFZ-modulated CC20/22/99).
+    // Known controllers keep their own fields; GetCC falls back here for the rest so routes and
+    // locc/hicc gates can read CCs seeded by set_ccN/set_hdccN or sent live.
+    private readonly byte[] _genericCc = new byte[128];
+
+    /// <summary>Stores a controller value in the generic table (controllers without a dedicated field).</summary>
+    public void SetGenericCc(int controller, byte value)
+    {
+        if ((uint)controller < 128) _genericCc[controller] = value;
+    }
+
     public byte GetCC(int controller)
     {
         switch (controller)
@@ -438,7 +450,7 @@ public sealed class ChannelState
             case 93: return ChorusSendCc;
             case 94: return DetuneDepth;
             case 95: return PhaserDepth;
-            default: return 0;
+            default: return (uint)controller < 128 ? _genericCc[controller] : (byte)0;
         }
     }
 }

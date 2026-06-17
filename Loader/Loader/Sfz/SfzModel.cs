@@ -21,6 +21,13 @@ internal sealed class SfzControl
 
     /// <summary>Total semitone offset applied to lokey/hikey/pitch_keycenter/sw_*.</summary>
     public int KeyOffset => OctaveOffset * 12 + NoteOffset;
+
+    /// <summary>
+    /// Initial controller values from <c>set_ccN</c> (0..127) / <c>set_hdccN</c> (0..1 → 0..127),
+    /// keyed by CC number. Seeded into the synth's channel state when the bank loads so CC-driven
+    /// routes and locc/hicc gates start where the instrument expects.
+    /// </summary>
+    public Dictionary<int, int> InitialControllers { get; } = new();
 }
 
 /// <summary>

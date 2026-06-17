@@ -246,6 +246,24 @@ internal static class SfzParser
     /// <summary>Apply a <c>&lt;control&gt;</c> opcode. Returns false if it's not one we act on.</summary>
     private static bool ApplyControl(SfzControl control, string key, string value)
     {
+        // set_ccN (0..127) / set_hdccN (0..1 → 0..127): initial value for controller N.
+        if (key.StartsWith("set_hdcc", StringComparison.Ordinal) &&
+            int.TryParse(key.AsSpan(8), NumberStyles.Integer, CultureInfo.InvariantCulture, out int hcc) &&
+            hcc is >= 0 and <= 127)
+        {
+            if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double hv))
+                control.InitialControllers[hcc] = Math.Clamp((int)Math.Round(hv * 127.0), 0, 127);
+            return true;
+        }
+        if (key.StartsWith("set_cc", StringComparison.Ordinal) &&
+            int.TryParse(key.AsSpan(6), NumberStyles.Integer, CultureInfo.InvariantCulture, out int cc) &&
+            cc is >= 0 and <= 127)
+        {
+            if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int v))
+                control.InitialControllers[cc] = Math.Clamp(v, 0, 127);
+            return true;
+        }
+
         switch (key)
         {
             // default_path is handled positionally in BuildRegions (it can change mid-file), not here.

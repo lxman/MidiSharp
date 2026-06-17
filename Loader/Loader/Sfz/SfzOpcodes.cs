@@ -44,6 +44,12 @@ internal static class SfzOpcodes
         "sw_last", "sw_down", "sw_lokey", "sw_hikey", "sw_default",
         // grouping, effects, velocity, program routing
         "group", "off_by", "effect1", "effect2", "amp_veltrack", "loprog", "hiprog",
+        // trigger / release
+        "trigger", "rt_decay",
+        // voice-off (note_polyphony / off_mode / off_time)
+        "note_polyphony", "off_mode", "off_time",
+        // humanization
+        "amp_random", "pitch_random", "delay", "delay_random", "offset_random",
         // <control> settings
         "default_path", "octave_offset", "note_offset",
     };
@@ -52,6 +58,7 @@ internal static class SfzOpcodes
     private static readonly string[] NumberedPrefixes =
     {
         "locc", "hicc", "on_locc", "on_hicc", "amp_velcurve_",
+        "set_hdcc", "set_cc",   // initial controller seeds (set_hdcc before set_cc — longer prefix first)
     };
 
     // The "{param}_oncc{N}" / "{param}_cc{N}" modulation params actually routed.

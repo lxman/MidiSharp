@@ -154,6 +154,19 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Set_cc_and_set_hdcc_seed_initial_controllers()
+    {
+        WriteWav("a.wav");
+        var path = WriteSfz("""
+            <control> set_cc7=100 set_hdcc99=0.73
+            <region> sample=a.wav key=60
+            """);
+        using var bank = SoundBankLoader.Load(path);
+        Assert.Equal(100, bank.InitialControllers[7]);
+        Assert.Equal(93, bank.InitialControllers[99]);   // 0.73 × 127 = 92.71 → 93
+    }
+
+    [Fact]
     public void Voice_off_opcodes_parse_and_off_time_implies_time_mode()
     {
         WriteWav("a.wav");
@@ -584,7 +597,7 @@ public sealed class SfzLoaderTests : IDisposable
         var path = WriteSfz("""
             <control> set_cc7=100 default_path=samples/
             <curve> curve_index=1 v000=0 v127=1
-            <region> sample=a.wav volume=-3 lorand=0.0 hirand=0.5 off_mode=fast direction=reverse width_oncc20=50
+            <region> sample=a.wav volume=-3 lorand=0.0 hirand=0.5 off_mode=fast amp_random=3 direction=reverse width_oncc20=50
             """);
 
         var report = SfzDiagnostics.Scan(path);
@@ -592,16 +605,17 @@ public sealed class SfzLoaderTests : IDisposable
         Assert.Equal(1, report.RegionCount);
         var ops = report.UnsupportedOpcodes.Select(o => o.Opcode).ToList();
         // Genuinely-dropped opcodes are reported (numbered ones aggregated to a family).
-        Assert.Contains("off_mode", ops);
         Assert.Contains("direction", ops);
         Assert.Contains("width_onccN", ops);
-        Assert.Contains("set_ccN", ops);                 // <control>-scope opcode, also surfaced
-        // Handled opcodes — including the two just implemented — are NOT reported.
+        // Handled opcodes — including ones implemented this session — are NOT reported.
         Assert.DoesNotContain("volume", ops);
         Assert.DoesNotContain("lorand", ops);
         Assert.DoesNotContain("hirand", ops);
         Assert.DoesNotContain("sample", ops);
         Assert.DoesNotContain("default_path", ops);
+        Assert.DoesNotContain("off_mode", ops);     // Tier B
+        Assert.DoesNotContain("amp_random", ops);    // Tier A
+        Assert.DoesNotContain("set_ccN", ops);       // set_cc/set_hdcc seeds
         // The skipped <curve> header is recorded.
         Assert.Contains(report.IgnoredHeaders, h => h.Header == "curve");
         // A known ARIA opcode carries an explanatory note.

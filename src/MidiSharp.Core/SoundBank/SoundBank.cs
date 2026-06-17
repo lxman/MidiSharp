@@ -37,6 +37,14 @@ public sealed class SoundBank : IDisposable
     public ISampleSource Samples { get; init; } = EmptySampleSource.Instance;
 
     /// <summary>
+    /// Initial MIDI controller values the instrument expects (SFZ set_ccN/set_hdccN), CC number → 0..127.
+    /// The synth seeds channel state with these when the bank is loaded. Empty for SF2/SF3/DLS and SFZ
+    /// without set_cc opcodes.
+    /// </summary>
+    public IReadOnlyDictionary<int, int> InitialControllers { get; init; }
+        = new Dictionary<int, int>();
+
+    /// <summary>
     /// Look up a patch by (bank, program). Returns null if no match exists.
     /// O(1) — backed by a dictionary built lazily on first call.
     /// </summary>
