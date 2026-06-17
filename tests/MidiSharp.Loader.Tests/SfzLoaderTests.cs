@@ -154,6 +154,24 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Voice_off_opcodes_parse_and_off_time_implies_time_mode()
+    {
+        WriteWav("a.wav");
+        var path = WriteSfz("""
+            <region> sample=a.wav key=60 note_polyphony=1 off_time=0.5
+            """);
+        var zone = SoundBankLoader.Load(path).FindPatch(0, 0)!.Zones[0];
+        Assert.True(zone.SmoothVoiceOff);
+        Assert.Equal(ZoneOffMode.Time, zone.OffMode);   // off_time present, off_mode absent → Time
+        Assert.Equal(0.5, zone.OffTimeSeconds);
+
+        // A plain region keeps the hard-kill default.
+        WriteWav("b.wav");
+        var plain = SoundBankLoader.Load(WriteNamed("plain.sfz", "<region> sample=b.wav key=60")).FindPatch(0, 0)!.Zones[0];
+        Assert.False(plain.SmoothVoiceOff);
+    }
+
+    [Fact]
     public void Humanization_opcodes_are_parsed_onto_the_zone()
     {
         WriteWav("a.wav");

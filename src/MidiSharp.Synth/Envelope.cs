@@ -159,6 +159,12 @@ public sealed class Envelope
     }
 
     /// <summary>
+    /// Overrides just the release time (current → 0). Used for SFZ off_mode/off_time, where a voice
+    /// turned off by a retrigger or off_by group fades over a specific time rather than its own release.
+    /// </summary>
+    public void SetReleaseTime(double seconds) => _releaseSamples = SecondsToSamples(seconds);
+
+    /// <summary>
     /// Scales the attack, decay, and release stage times in place by powers
     /// of two (octaves). Used by Synthesizer for GM2 sound-controller CCs
     /// 72/73/75 which adjust per-channel envelope times. Hold and delay

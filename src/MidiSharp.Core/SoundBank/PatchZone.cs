@@ -37,6 +37,21 @@ public sealed class PatchZone
     public int? ExclusiveGroup { get; init; }
 
     /// <summary>
+    /// SFZ note_polyphony / off_mode / off_time: when set, a voice turned off by a retrigger or an
+    /// exclusive group fades out (per <see cref="OffMode"/>/<see cref="OffTimeSeconds"/>) instead of
+    /// being hard-cut. False for SF2/SF3/DLS and SFZ zones that don't ask for it — those keep the
+    /// abrupt kill (and byte-identical output).
+    /// </summary>
+    public bool SmoothVoiceOff { get; init; }
+
+    /// <summary>SFZ off_mode: how a turned-off voice releases. Fast ≈ 6 ms; Time uses
+    /// <see cref="OffTimeSeconds"/>; Normal keeps the zone's ampeg release.</summary>
+    public ZoneOffMode OffMode { get; init; } = ZoneOffMode.Fast;
+
+    /// <summary>SFZ off_time (seconds) — the fade time used when <see cref="OffMode"/> is Time.</summary>
+    public double OffTimeSeconds { get; init; } = 0.006;
+
+    /// <summary>
     /// SFZ trigger= mode: when this zone fires relative to the note. Attack (the default for every
     /// format) plays on NoteOn; Release plays on NoteOff — the damper/string-release samples a piano
     /// uses. First/Legato are NoteOn variants gated on whether another note is already sounding.
@@ -127,4 +142,17 @@ public enum ZoneTrigger
 
     /// <summary>Fire on NoteOn only if another note is already sounding on the channel (legato).</summary>
     Legato,
+}
+
+/// <summary>SFZ <c>off_mode=</c> — how a voice releases when turned off by a retrigger or off_by group.</summary>
+public enum ZoneOffMode
+{
+    /// <summary>Quick ~6 ms fade (the SFZ default).</summary>
+    Fast,
+
+    /// <summary>Use the zone's normal ampeg release time.</summary>
+    Normal,
+
+    /// <summary>Fade over the zone's <c>off_time</c> seconds.</summary>
+    Time,
 }

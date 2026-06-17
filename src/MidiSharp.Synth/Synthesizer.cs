@@ -1382,7 +1382,11 @@ public sealed class Synthesizer
                 voice.Channel == channel &&
                 voice.KeyNumber == key)
             {
-                voice.Kill();
+                // SFZ note_polyphony/off_mode: fade the previous strike (so a trill overlaps naturally)
+                // rather than hard-cutting it. Plain SF2/SFZ voices keep the abrupt kill. TurnOff only
+                // affects a Playing voice, so earlier fading retriggers ring on undisturbed.
+                if (voice.SmoothOff) voice.TurnOff();
+                else voice.Kill();
             }
         }
     }
@@ -1395,7 +1399,8 @@ public sealed class Synthesizer
                 voice.Channel == channel &&
                 voice.ExclusiveGroup == exclusiveGroup)
             {
-                voice.Kill();
+                if (voice.SmoothOff) voice.TurnOff();
+                else voice.Kill();
             }
         }
     }

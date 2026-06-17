@@ -149,6 +149,13 @@ internal static class SfzZoneTranslator
         ZoneTrigger trigger = ParseTrigger(r.Get("trigger"));
         double rtDecay = r.GetDouble("rt_decay", 0);
 
+        // ── Voice-off (note_polyphony / off_mode / off_time) ─────────
+        // Any of these opts the zone into smooth voice-off (fade on retrigger / group-kill). off_time
+        // implies off_mode=time when off_mode isn't given (sfizz's rule); off_time defaults to 6 ms.
+        bool smoothOff = r.Has("note_polyphony") || r.Has("off_mode") || r.Has("off_time");
+        ZoneOffMode offMode = ParseOffMode(r.Get("off_mode"), r.Has("off_time"));
+        double offTime = r.GetDouble("off_time", 0.006);
+
         // ── Humanization (amp/pitch/delay/offset random + fixed delay) ─
         double ampRandomDb = r.GetDouble("amp_random", 0);
         double pitchRandomCents = r.GetDouble("pitch_random", 0);
@@ -167,6 +174,9 @@ internal static class SfzZoneTranslator
             ExclusiveGroup = exclusive,
             Trigger = trigger,
             RtDecay = rtDecay,
+            SmoothVoiceOff = smoothOff,
+            OffMode = offMode,
+            OffTimeSeconds = offTime,
             AmpRandomDb = ampRandomDb,
             PitchRandomCents = pitchRandomCents,
             DelaySeconds = delaySeconds,
@@ -202,6 +212,18 @@ internal static class SfzZoneTranslator
         "first" => ZoneTrigger.First,
         "legato" => ZoneTrigger.Legato,
         _ => ZoneTrigger.Attack,
+    };
+
+    /// <summary>
+    /// Maps SFZ <c>off_mode=</c> to <see cref="ZoneOffMode"/>. When unspecified, the presence of an
+    /// <c>off_time</c> implies Time (sfizz's behaviour); otherwise the default is Fast.
+    /// </summary>
+    private static ZoneOffMode ParseOffMode(string? value, bool hasOffTime) => value?.Trim().ToLowerInvariant() switch
+    {
+        "time" => ZoneOffMode.Time,
+        "normal" => ZoneOffMode.Normal,
+        "fast" => ZoneOffMode.Fast,
+        _ => hasOffTime ? ZoneOffMode.Time : ZoneOffMode.Fast,
     };
 
     /// <summary>

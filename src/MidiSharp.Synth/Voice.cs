@@ -140,6 +140,11 @@ public sealed class Voice
     private VoiceState _state;
     private int _channel;
     private int _exclusiveGroup;
+    // SFZ voice-off: when true, a retrigger / off_by group fades this voice (per _offMode/_offTime)
+    // instead of hard-killing it. False for SF2/SF3/DLS and plain SFZ → the original abrupt kill.
+    private bool _smoothOff;
+    private ZoneOffMode _offMode;
+    private double _offTimeSeconds;
     private int _generationId;
     private byte _polyPressure;
 
@@ -158,6 +163,8 @@ public sealed class Voice
     public int KeyNumber => _keyNumber;
     public int ExclusiveGroup => _exclusiveGroup;
     public int GenerationId => _generationId;
+    /// <summary>True when this voice should fade (not hard-cut) if turned off by a retrigger/off_by.</summary>
+    public bool SmoothOff => _smoothOff;
     public bool IsFinished => _state == VoiceState.Free || _volumeEnvelope.IsFinished;
 
     public bool SostenutoHeld { get => _sostenutoHeld; set => _sostenutoHeld = value; }
@@ -246,6 +253,9 @@ public sealed class Voice
         _generationId = generationId;
         _state = VoiceState.Playing;
         _exclusiveGroup = zone.ExclusiveGroup ?? 0;
+        _smoothOff = zone.SmoothVoiceOff;
+        _offMode = zone.OffMode;
+        _offTimeSeconds = zone.OffTimeSeconds;
 
         // SFZ amp_velcurve_N: look up this note's gain once (velocity is fixed per note).
         // Replaces the default velocity→attenuation route (the translator drops it).
@@ -505,6 +515,37 @@ public sealed class Voice
     }
 
     public void Kill() => _state = VoiceState.Free;
+
+    /// <summary>
+    /// Turns the voice off smoothly (SFZ off_mode/off_time): fade to 0 over ~6 ms (Fast), the zone's
+    /// off_time (Time), or its normal ampeg release (Normal) — instead of the abrupt <see cref="Kill"/>.
+    /// Matches sfizz's note_polyphony behaviour: a voice that is ALREADY releasing (e.g. a high note
+    /// ringing out its long ampeg release when the same key is retriggered) is re-faded from its
+    /// current level over off_time, so a trill's previous strikes don't pile up and read as mechanical.
+    /// </summary>
+    public void TurnOff()
+    {
+        if (_state == VoiceState.Free) return;
+
+        double releaseSeconds = _offMode switch
+        {
+            ZoneOffMode.Fast => 0.006,
+            ZoneOffMode.Time => _offTimeSeconds,
+            _ => -1.0,   // Normal: keep the existing release time
+        };
+        if (releaseSeconds >= 0) _volumeEnvelope.SetReleaseTime(releaseSeconds);
+
+        if (_state == VoiceState.Playing)
+        {
+            Release();
+        }
+        else if (releaseSeconds >= 0)
+        {
+            // Already releasing — re-fade from the current level over the (shorter) off time.
+            _volumeEnvelope.Release();
+            if (_hasModulationEnvelope) _modulationEnvelope.Release();
+        }
+    }
 
     // ── Render ────────────────────────────────────────────────────────
 
