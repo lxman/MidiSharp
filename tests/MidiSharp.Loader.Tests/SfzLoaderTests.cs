@@ -212,6 +212,20 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Delay_cc_offsets_region_start_delay_at_seeded_cc()
+    {
+        WriteWav("a.wav");
+        // cc20 seeded to 64 (≈0.5); delay_cc20=2 with the default linear curve → +2×0.5 ≈ 1 s,
+        // on top of the 0.1 s base delay.
+        var path = WriteSfz("""
+            <control> set_cc20=64
+            <region> sample=a.wav key=60 delay=0.1 delay_cc20=2
+            """);
+        var z = SoundBankLoader.Load(path).FindPatch(0, 0)!.Zones[0];
+        Assert.InRange(z.DelaySeconds, 1.05, 1.15);
+    }
+
+    [Fact]
     public void Lfo_fade_in_time_parses_for_pitch_and_amp()
     {
         WriteWav("a.wav");

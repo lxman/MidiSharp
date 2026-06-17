@@ -178,7 +178,9 @@ internal static class SfzZoneTranslator
         // ── Humanization (amp/pitch/delay/offset random + fixed delay) ─
         double ampRandomDb = r.GetDouble("amp_random", 0);
         double pitchRandomCents = r.GetDouble("pitch_random", 0);
-        double delaySeconds = r.GetDouble("delay", 0);
+        // delay_cc{N} / delay_oncc{N} shift the start delay by a CC, evaluated once at the seeded CC
+        // (the delay is fixed at note onset). Negative offsets can cancel a base delay → clamp at 0.
+        double delaySeconds = Math.Max(0, r.GetDouble("delay", 0) + EnvCcOffset(r, ic, "delay"));
         double delayRandomSeconds = r.GetDouble("delay_random", 0);
         long offsetRandomFrames = r.Has("offset_random") ? r.GetInt("offset_random", 0) : 0;
 
@@ -237,9 +239,11 @@ internal static class SfzZoneTranslator
     };
 
     /// <summary>
-    /// Sums an amp-envelope stage's CC modulation (ampeg_{stage}_oncc{N}) evaluated at the seeded
-    /// initial CC through its curve (ampeg_{stage}_curvecc{N}), matching sfizz. Returns the additive
-    /// offset in the stage's units (seconds for times, percent for sustain); 0 when no CC is seeded.
+    /// Sums a parameter's CC modulation ({param}_oncc{N} / {param}_cc{N}, plus the v1 bare-cc
+    /// {param}cc{N} alias) evaluated at the seeded initial CC through its curve ({param}_curvecc{N}),
+    /// matching sfizz. Used for amp-envelope stages (ampeg_{stage}) and the region start delay
+    /// (delay), both fixed at note onset. Returns the additive offset in the param's units (seconds,
+    /// or percent for sustain); 0 when no CC is seeded.
     /// </summary>
     private static double EnvCcOffset(SfzRegion r, IReadOnlyDictionary<int, int> initialCc, string stageParam)
     {

@@ -77,6 +77,7 @@ internal static class SfzOpcodes
     private static readonly HashSet<string> ModParams = new(StringComparer.Ordinal)
     {
         "pan", "volume", "gain", "amplitude", "cutoff", "pitchlfo_depth", "amp_veltrack",
+        "delay",   // delay_cc{N}/delay_oncc{N}: CC-modulated region start delay, baked at the seeded CC
         // CC→amp-envelope (ampeg_{stage}_oncc) — baked into the envelope at load, not routed
         "ampeg_delay", "ampeg_attack", "ampeg_hold", "ampeg_decay", "ampeg_release", "ampeg_sustain",
     };
@@ -92,6 +93,7 @@ internal static class SfzOpcodes
         "amplitude_curveccN", "amp_veltrack_curveccN",
         "ampeg_delay_curveccN", "ampeg_attack_curveccN", "ampeg_hold_curveccN",
         "ampeg_decay_curveccN", "ampeg_release_curveccN", "ampeg_sustain_curveccN",
+        "delay_curveccN",   // curve for delay_cc{N}
         // v1/ARIA bare-cc envelope aliases (ampeg_{stage}cc{N} ≡ ampeg_{stage}_oncc{N}), baked in EnvCcOffset
         "ampeg_delayccN", "ampeg_attackccN", "ampeg_holdccN",
         "ampeg_decayccN", "ampeg_sustainccN", "ampeg_releaseccN",
