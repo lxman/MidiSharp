@@ -95,12 +95,14 @@ internal static class Sf2DefaultModulators
             Transform = ModTransform.ConcaveUnipolarNegative,
         }),
 
-        // #6: CC10 (Pan) → Pan position, ±0.5 (SF2 raw 500 = ±50%), linear bipolar.
+        // #6: CC10 (Pan) → Pan position, full ±1.0. The SF2 default-modulator amount is 1000 (= ±100%),
+        // and GM/RP-015 puts CC10=0 hard left / 127 hard right — so the pan must span the full image,
+        // not the half (±0.5) it used to. Linear bipolar.
         new DefaultModulator(0x028A, DestPan, 0x0000, 0, new ModulationRoute
         {
             Source = new ModSource.ChannelController(10),
             Dest = ModDestination.PanNormalized,
-            Amount = 0.5,
+            Amount = 1.0,
             Transform = ModTransform.LinearBipolar,
         }),
 
