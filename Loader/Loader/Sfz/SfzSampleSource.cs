@@ -95,7 +95,8 @@ internal sealed class SfzSampleSource : ISampleSource
         }
     }
 
-    // Must hold _cacheLock. SFZ samples are folded to mono, so a frame is one float.
+    // Must hold _cacheLock. node.Length is the total float count; a frame is `channels` floats, so we
+    // translate the frame-relative offset and the float-sized dest span through the channel count.
     private int CopyFromNode(CacheNode node, int sampleId, long frameOffset, Span<float> dest, bool refreshLru)
     {
         if (refreshLru && node.LruNode != null)
@@ -103,10 +104,12 @@ internal sealed class SfzSampleSource : ISampleSource
             _lru.Remove(node.LruNode);
             node.LruNode = _lru.AddLast(sampleId);
         }
-        if (frameOffset < 0 || frameOffset >= node.Length) return 0;
-        int n = (int)Math.Min(node.Length - frameOffset, dest.Length);
-        node.Data.AsSpan((int)frameOffset, n).CopyTo(dest);
-        return n;
+        int ch = _metadata[sampleId].Channels;
+        long frameCount = node.Length / ch;
+        if (frameOffset < 0 || frameOffset >= frameCount) return 0;
+        int framesToCopy = (int)Math.Min(frameCount - frameOffset, dest.Length / ch);
+        node.Data.AsSpan((int)(frameOffset * ch), framesToCopy * ch).CopyTo(dest);
+        return framesToCopy;
     }
 
     // Called on the audio thread at NoteOn — start the decode early (off-thread) so the sample is
@@ -177,20 +180,45 @@ internal sealed class SfzSampleSource : ISampleSource
         int frames = (int)Math.Min(audio.FrameCount, int.MaxValue);
         if (frames <= 0) return (Array.Empty<float>(), 0, false);
 
-        var buf = ArrayPool<float>.Shared.Rent(frames);
-        if (audio.Channels <= 1)
+        int srcCh = audio.Channels;
+        var src = audio.Samples;
+        // Output channel count was decided at load from the header (1 or 2). `length` is the TOTAL
+        // float count (frames × outCh) so the LRU budget — bytes = length × 4 — is correct for stereo.
+        int outCh = _metadata[sampleId].Channels;
+
+        if (outCh == 2)
         {
-            audio.Samples.AsSpan(0, frames).CopyTo(buf);
+            // Keep L/R interleaved. Source is normally exactly stereo; if it has more channels, take
+            // the first two; if it somehow decoded to mono, duplicate it to both sides.
+            var buf2 = ArrayPool<float>.Shared.Rent(frames * 2);
+            if (srcCh == 2)
+            {
+                src.AsSpan(0, frames * 2).CopyTo(buf2);
+            }
+            else if (srcCh > 2)
+            {
+                for (int f = 0; f < frames; f++) { int b = f * srcCh; buf2[f * 2] = src[b]; buf2[f * 2 + 1] = src[b + 1]; }
+            }
+            else
+            {
+                for (int f = 0; f < frames; f++) { buf2[f * 2] = src[f]; buf2[f * 2 + 1] = src[f]; }
+            }
+            return (buf2, frames * 2, true);
+        }
+
+        // Mono target: copy a mono source straight through, or fold a multi-channel one down.
+        var buf = ArrayPool<float>.Shared.Rent(frames);
+        if (srcCh <= 1)
+        {
+            src.AsSpan(0, frames).CopyTo(buf);
         }
         else
         {
-            int ch = audio.Channels;
-            float inv = 1f / ch;
-            var src = audio.Samples;
+            float inv = 1f / srcCh;
             for (int f = 0; f < frames; f++)
             {
-                float sum = 0f; int b = f * ch;
-                for (int c = 0; c < ch; c++) sum += src[b + c];
+                float sum = 0f; int b = f * srcCh;
+                for (int c = 0; c < srcCh; c++) sum += src[b + c];
                 buf[f] = sum * inv;
             }
         }

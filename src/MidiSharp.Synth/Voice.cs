@@ -36,6 +36,7 @@ public sealed class Voice
     private readonly LowFrequencyOscillator _vibratoLfo;
     private readonly LowFrequencyOscillator _modulationLfo;
     private readonly LowPassFilter _filter;
+    private readonly LowPassFilter _filterRight;   // right channel's filter state (stereo samples only)
 
     // ── Sample addressing ─────────────────────────────────────────────
 
@@ -48,6 +49,11 @@ public sealed class Voice
     private int _baseSampleRate;
     private IRLoopMode _loopMode;
 
+    // Channel count of the sample this voice plays: 1 = mono (every SF2/SF3 and, pre-stereo-SFZ, SFZ);
+    // 2 = interleaved stereo (a frame is L,R in the scratch buffer). The mono path is the original
+    // code; the stereo path interpolates each channel and applies pan as a balance trim.
+    private int _channels = 1;
+
     // Playback position is in source frames, sample-relative, fractional.
     private double _position;
 
@@ -57,7 +63,9 @@ public sealed class Voice
     // virtual call per ~250 sample advances instead of per sample.
     private const int ScratchSize = 256;
     private const int InterpolatorHalfWidth = 3;
-    private readonly float[] _scratch = new float[ScratchSize];
+    // Sized for up to 2 channels interleaved (ScratchSize frames). Mono fills the first ScratchSize
+    // slots exactly as before; stereo fills 2*ScratchSize as L,R pairs.
+    private readonly float[] _scratch = new float[ScratchSize * 2];
     private long _scratchBaseFrame;
     private int _scratchFramesAvailable;
 
@@ -167,6 +175,7 @@ public sealed class Voice
         _vibratoLfo = new LowFrequencyOscillator(sampleRate);
         _modulationLfo = new LowFrequencyOscillator(sampleRate);
         _filter = new LowPassFilter(sampleRate);
+        _filterRight = new LowPassFilter(sampleRate);
         _state = VoiceState.Free;
         _scaleTuningCentsPerKey = 100.0;
     }
@@ -176,6 +185,7 @@ public sealed class Voice
         _state = VoiceState.Free;
         _sampleSource = null;
         _position = 0;
+        _channels = 1;
         _scratchFramesAvailable = 0;
         _scratchBaseFrame = 0;
         _sostenutoHeld = false;
@@ -193,6 +203,7 @@ public sealed class Voice
         _vibratoLfo.Reset();
         _modulationLfo.Reset();
         _filter.Reset();
+        _filterRight.Reset();
     }
 
     // ── Configure ─────────────────────────────────────────────────────
@@ -217,6 +228,7 @@ public sealed class Voice
 
         _sampleSource = sampleSource;
         _sampleId = sampleRef.SampleId;
+        _channels = Math.Clamp(metadata.Channels, 1, 2);   // 1 = mono (original path); 2 = interleaved stereo
 
         // Tell the source this sample is about to play. A memory-mapped source issues an async OS
         // prefetch (madvise WILLNEED / PrefetchVirtualMemory) so its pages are warm by the time
@@ -351,6 +363,7 @@ public sealed class Voice
             _filterBaseResonanceDb = f.ResonanceDb;
             _modEnvFilterDepthCents = f.EnvelopeDepthCents;
             _filter.SetParameters(_filterBaseCutoffHz, _filterBaseResonanceDb);
+            if (_channels == 2) _filterRight.SetParameters(_filterBaseCutoffHz, _filterBaseResonanceDb);
             _hasFilter = _filter.Enabled;
             // f.LfoDepthCents is folded into _modLfoFilterDepthCents above when
             // the zone has a mod LFO. If only the filter carries the depth, lift
@@ -437,6 +450,7 @@ public sealed class Voice
     {
         _filterBaseResonanceDb += db;
         _filter.SetParameters(_filterBaseCutoffHz, _filterBaseResonanceDb);
+        if (_channels == 2) _filterRight.SetParameters(_filterBaseCutoffHz, _filterBaseResonanceDb);
         _hasFilter = _filter.Enabled;
     }
 
@@ -524,9 +538,21 @@ public sealed class Voice
         float reverbSendScale = Math.Max(globalReverbFloor, (float)effectiveReverbSend);
         float chorusSendScale = Math.Max(globalChorusFloor, (float)effectiveChorusSend);
 
-        // Equal-power pan + CC 8 balance.
-        var leftGain = Math.Sqrt(0.5 * (1.0 - effectivePan)) * balanceLeft;
-        var rightGain = Math.Sqrt(0.5 * (1.0 + effectivePan)) * balanceRight;
+        // Pan + CC 8 balance. A mono sample is positioned with an equal-power pan (the original law).
+        // A stereo sample already carries its own image, so pan acts as a balance TRIM (attenuate the
+        // opposite side, unity at centre) — this keeps a centred stereo sample full-width, matching
+        // sfizz's default; an equal-power re-pan would collapse it toward the centre by ~3 dB.
+        double leftGain, rightGain;
+        if (_channels == 1)
+        {
+            leftGain = Math.Sqrt(0.5 * (1.0 - effectivePan)) * balanceLeft;
+            rightGain = Math.Sqrt(0.5 * (1.0 + effectivePan)) * balanceRight;
+        }
+        else
+        {
+            leftGain = (effectivePan <= 0 ? 1.0 : 1.0 - effectivePan) * balanceLeft;
+            rightGain = (effectivePan >= 0 ? 1.0 : 1.0 + effectivePan) * balanceRight;
+        }
 
         // Base pitch in cents (not including bend or modulation — those add per sample).
         double baseStaticPitchCents =
@@ -540,7 +566,10 @@ public sealed class Voice
         // Filter resonance can be modulated per block; cutoff changes per sample.
         double filterResonanceDb = _filterBaseResonanceDb + contrib.FilterResonanceDb;
         if (_hasFilter && contrib.FilterResonanceDb != 0)
+        {
             _filter.SetParameters(_filterBaseCutoffHz, filterResonanceDb);
+            if (_channels == 2) _filterRight.SetParameters(_filterBaseCutoffHz, filterResonanceDb);
+        }
 
         for (int i = 0; i < leftBuffer.Length; i++)
         {
@@ -583,8 +612,7 @@ public sealed class Voice
             }
             double increment = _cachedIncrement;
 
-            double sample = GetInterpolatedSample();
-
+            // Filter cutoff modulation (per-sample), shared by both channels of a stereo sample.
             if (_hasFilter)
             {
                 double filterCents = modEnv * effectiveModEnvFilterDepthCents
@@ -594,8 +622,8 @@ public sealed class Voice
                 {
                     _cachedFilterCents = filterCents;
                     _filter.ModulateCutoff(filterCents);
+                    if (_channels == 2) _filterRight.ModulateCutoff(filterCents);
                 }
-                sample = _filter.Process(sample);
             }
 
             // Gain: zone attenuation + route contribution + envelope + LFO volume mod,
@@ -610,12 +638,37 @@ public sealed class Voice
             }
             double gain = _cachedLinearGain * volEnv * _ampVelCurveFactor;
 
-            float outputSample = (float)(sample * gain);
-            leftBuffer[i] += outputSample * (float)leftGain;
-            rightBuffer[i] += outputSample * (float)rightGain;
-
-            if (reverbSendScale > 0f) reverbSendBuffer[i] += outputSample * reverbSendScale;
-            if (chorusSendScale > 0f) chorusSendBuffer[i] += outputSample * chorusSendScale;
+            if (_channels == 1)
+            {
+                // Mono path — arithmetically identical to the original.
+                double sample = GetInterpolatedSample(0);
+                if (_hasFilter) sample = _filter.Process(sample);
+                float outputSample = (float)(sample * gain);
+                leftBuffer[i] += outputSample * (float)leftGain;
+                rightBuffer[i] += outputSample * (float)rightGain;
+                if (reverbSendScale > 0f) reverbSendBuffer[i] += outputSample * reverbSendScale;
+                if (chorusSendScale > 0f) chorusSendBuffer[i] += outputSample * chorusSendScale;
+            }
+            else
+            {
+                // Stereo path — interpolate each channel at the same fractional position; pan/balance
+                // is the trim computed above. Sends are mono (the two channels averaged) so a centred
+                // stereo sample sends the same energy a mono one would.
+                double sampleL = GetInterpolatedSample(0);
+                double sampleR = GetInterpolatedSample(1);
+                if (_hasFilter)
+                {
+                    sampleL = _filter.Process(sampleL);
+                    sampleR = _filterRight.Process(sampleR);
+                }
+                float outL = (float)(sampleL * gain);
+                float outR = (float)(sampleR * gain);
+                leftBuffer[i] += outL * (float)leftGain;
+                rightBuffer[i] += outR * (float)rightGain;
+                float send = (outL + outR) * 0.5f;
+                if (reverbSendScale > 0f) reverbSendBuffer[i] += send * reverbSendScale;
+                if (chorusSendScale > 0f) chorusSendBuffer[i] += send * chorusSendScale;
+            }
 
             _position += increment;
 
@@ -653,7 +706,7 @@ public sealed class Voice
     /// scratch from <see cref="ISampleSource"/> when the interpolation window
     /// straddles its edge.
     /// </summary>
-    private double GetInterpolatedSample()
+    private double GetInterpolatedSample(int channel)
     {
         int idx = (int)_position;
         double frac = _position - idx;
@@ -663,13 +716,13 @@ public sealed class Voice
         var coeffs = SincInterpolator.Coefficients;
         int baseOff = fIdx * SincInterpolator.Width;
 
-        return coeffs[baseOff + 0] * ReadSampleAt(idx - 3)
-             + coeffs[baseOff + 1] * ReadSampleAt(idx - 2)
-             + coeffs[baseOff + 2] * ReadSampleAt(idx - 1)
-             + coeffs[baseOff + 3] * ReadSampleAt(idx + 0)
-             + coeffs[baseOff + 4] * ReadSampleAt(idx + 1)
-             + coeffs[baseOff + 5] * ReadSampleAt(idx + 2)
-             + coeffs[baseOff + 6] * ReadSampleAt(idx + 3);
+        return coeffs[baseOff + 0] * ReadSampleAt(idx - 3, channel)
+             + coeffs[baseOff + 1] * ReadSampleAt(idx - 2, channel)
+             + coeffs[baseOff + 2] * ReadSampleAt(idx - 1, channel)
+             + coeffs[baseOff + 3] * ReadSampleAt(idx + 0, channel)
+             + coeffs[baseOff + 4] * ReadSampleAt(idx + 1, channel)
+             + coeffs[baseOff + 5] * ReadSampleAt(idx + 2, channel)
+             + coeffs[baseOff + 6] * ReadSampleAt(idx + 3, channel);
     }
 
     /// <summary>
@@ -677,12 +730,12 @@ public sealed class Voice
     /// scratch buffer for cache hits and refilling when needed. Honors loop
     /// boundaries; returns 0 before the buffer start.
     /// </summary>
-    private double ReadSampleAt(int idx)
+    private double ReadSampleAt(int idx, int channel)
     {
         if (idx < 0)
         {
             // Before the first valid frame — clamp to frame 0 (interpolator left edge).
-            return ReadFrameDirect(_sampleStart);
+            return ReadFrameDirect(_sampleStart, channel);
         }
 
         bool looping = _loopMode != IRLoopMode.None;
@@ -696,7 +749,7 @@ public sealed class Voice
         else if (looping)
         {
             long loopLen = _loopEnd - _loopStart;
-            if (loopLen <= 0) return ReadFrameDirect(_loopStart);
+            if (loopLen <= 0) return ReadFrameDirect(_loopStart, channel);
             long offset = (idx - _loopEnd) % loopLen;
             absoluteFrame = _loopStart + offset;
         }
@@ -706,7 +759,7 @@ public sealed class Voice
             absoluteFrame = Math.Min((long)idx, _sampleEnd - 1);
         }
 
-        return ReadFrameDirect(absoluteFrame);
+        return ReadFrameDirect(absoluteFrame, channel);
     }
 
     /// <summary>
@@ -714,7 +767,7 @@ public sealed class Voice
     /// buffer. Refills the scratch around <paramref name="frame"/> if it falls
     /// outside the currently-cached range.
     /// </summary>
-    private double ReadFrameDirect(long frame)
+    private double ReadFrameDirect(long frame, int channel)
     {
         long local = frame - _scratchBaseFrame;
         if (local < 0 || local >= _scratchFramesAvailable)
@@ -723,7 +776,8 @@ public sealed class Voice
             local = frame - _scratchBaseFrame;
             if (local < 0 || local >= _scratchFramesAvailable) return 0.0;
         }
-        return _scratch[(int)local];
+        // Mono: _channels==1, channel==0 → _scratch[local] (identical to before). Stereo: interleaved.
+        return _scratch[(int)local * _channels + channel];
     }
 
     /// <summary>
@@ -735,6 +789,10 @@ public sealed class Voice
     {
         long fillStart = Math.Max(0, frame - ScratchSize / 4);
         _scratchBaseFrame = fillStart;
-        _scratchFramesAvailable = _sampleSource!.ReadFrames(_sampleId, fillStart, _scratch.AsSpan());
+        // Read up to ScratchSize frames. A frame is _channels floats, so the destination span is
+        // ScratchSize*_channels wide; ReadFrames returns the frame count. For mono this is the exact
+        // 256-float span the original used.
+        _scratchFramesAvailable = _sampleSource!.ReadFrames(
+            _sampleId, fillStart, _scratch.AsSpan(0, ScratchSize * _channels));
     }
 }

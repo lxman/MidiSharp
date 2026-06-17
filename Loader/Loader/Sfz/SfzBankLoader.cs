@@ -155,7 +155,9 @@ internal static class SfzBankLoader
         {
             Name = name,
             SampleRate = info.SampleRate,
-            Channels = 1,                          // the source folds every file to mono
+            // Stereo files are kept interleaved (2); mono and anything else fold to 1. The decoder
+            // and the voice both read this to know how many floats make up a frame.
+            Channels = info.Channels == 2 ? 2 : 1,
             LengthFrames = info.FrameCount,
             LoopStartFrames = info.HasLoop ? info.LoopStartFrame : 0,
             LoopEndFrames = info.HasLoop ? info.LoopEndFrame : info.FrameCount,
