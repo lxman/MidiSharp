@@ -18,7 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Loader\Loader\Loader.csproj" />
+    <ProjectReference Include="..\..\Loader\Loader.csproj" />
     <ProjectReference Include="..\..\src\MidiSharp.Core\MidiSharp.Core.csproj" />
   </ItemGroup>
 

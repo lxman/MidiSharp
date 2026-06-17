@@ -2,8 +2,9 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text;
+using Loader;
+using Loader.Sfz;
 using MidiSharp.SoundBank;
-using MidiSharp.SoundBank.Sfz;
 using Xunit;
 using IRBank = MidiSharp.SoundBank.SoundBank;
 
@@ -162,10 +163,12 @@ public sealed class SfzLoaderTests : IDisposable
             <region> sample=a.wav key=60 amp_veltrack_oncc99=-100 amp_veltrack_curvecc99=2
             """);
         var zone = SoundBankLoader.Load(path).FindPatch(0, 0)!.Zones[0];
-        var vel = zone.Routes.Single(r => r.Source is ModSource.Velocity && r.Dest == ModDestination.AttenuationDb);
-        // base 100 + curve2(0.73)*(-100) = 100 - 26.8 = 73.2 → amount = 73.2/100*40 ≈ 29.3 dB
-        // (un-modulated would be the full 40 dB — the CC curve pulls it down).
-        Assert.InRange(vel.Amount, 28.5, 30.0);
+        // effective veltrack = 100 + curve2(0.73)*(-100) = 73.2. Synthesized velocity curve:
+        // vel 0 → 1 - 0.732 = 0.268, vel 127 → 1.0. (Full 100% veltrack would be 0 at vel 0 — the
+        // CC curve pulls low-velocity gain up, i.e. less aggressive tracking.)
+        Assert.NotNull(zone.AmpVelCurve);
+        Assert.InRange(zone.AmpVelCurve![0], 0.24, 0.30);
+        Assert.Equal(1.0, zone.AmpVelCurve[127], 3);
     }
 
     [Fact]
@@ -396,7 +399,7 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
-    public void AmpVeltrack_controls_velocity_route_emission()
+    public void AmpVeltrack_shapes_the_velocity_gain_curve()
     {
         WriteWav("a.wav");
         WriteWav("b.wav");
@@ -404,16 +407,21 @@ public sealed class SfzLoaderTests : IDisposable
         using (var bank = SoundBankLoader.Load(withTrack))
         {
             var z = ZonesOf(bank).Single();
-            Assert.Contains(z.Routes, r => r.Source is ModSource.Velocity && r.Dest == ModDestination.AttenuationDb);
+            // Full veltrack → sfizz vel² curve: silent at velocity 0, full at 127.
+            Assert.NotNull(z.AmpVelCurve);
+            Assert.Equal(0.0, z.AmpVelCurve![0], 3);
+            Assert.Equal(1.0, z.AmpVelCurve[127], 3);
         }
 
-        // amp_veltrack=0 → velocity has no amplitude effect → no velocity route.
+        // amp_veltrack=0 → velocity has no amplitude effect → flat unity curve.
         File.Delete(Path.Combine(_dir, "instrument.sfz"));
         var noTrack = WriteSfz("<region> sample=b.wav amp_veltrack=0");
         using (var bank = SoundBankLoader.Load(noTrack))
         {
             var z = ZonesOf(bank).Single();
-            Assert.DoesNotContain(z.Routes, r => r.Source is ModSource.Velocity);
+            Assert.NotNull(z.AmpVelCurve);
+            Assert.Equal(1.0, z.AmpVelCurve![0], 3);
+            Assert.Equal(1.0, z.AmpVelCurve[127], 3);
         }
     }
 
@@ -509,8 +517,10 @@ public sealed class SfzLoaderTests : IDisposable
         Assert.Single(panRoutes);                                   // default CC10 route suppressed, only _oncc remains
         Assert.Equal(2.0, panRoutes[0].Amount, 3);                  // 200% → ±2.0 span, linear
         Assert.Equal(ModTransform.Linear, panRoutes[0].Transform);
-        // amp_veltrack=0 but driven by CC118 → velocity route restored.
-        Assert.Contains(z.Routes, r => r.Source is ModSource.Velocity);
+        // amp_veltrack=0 but driven by (unseeded) CC118 → legacy fallback keeps the depth, so the
+        // synthesized velocity curve still tracks (gain < 1 at velocity 0).
+        Assert.NotNull(z.AmpVelCurve);
+        Assert.True(z.AmpVelCurve![0] < 0.9);
     }
 
     [Fact]

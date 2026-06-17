@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using Loader;
 using MidiSharp.SoundBank;
 using Xunit;
 
