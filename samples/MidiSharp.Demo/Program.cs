@@ -82,7 +82,11 @@ Console.WriteLine($"  Format: {midiFile.Header.Format}, Tracks: {midiFile.Tracks
                   $"Division: {midiFile.Header.Division.TicksPerQuarterNote} ticks/quarter");
 
 Console.WriteLine($"Loading SoundFont: {sf2Path}");
-var soundBank = LoadBank(sf2Path);
+// Offline render has no real-time deadline, so decode samples synchronously on first use — otherwise
+// fast first-hit notes out-run the lazy background decoder and lose their attack (non-deterministic
+// "dropped notes"). Live playback keeps the default lazy path (must never block the audio thread).
+var loadOptions = new SoundBankLoadOptions { BlockingSampleDecode = renderPath != null };
+var soundBank = LoadBank(sf2Path, loadOptions);
 Console.WriteLine($"  {soundBank.Name}: {soundBank.Patches.Count} patches, " +
                   $"{soundBank.Samples.Count} samples");
 
@@ -116,7 +120,7 @@ if (maps.Count > 0)
             if (!File.Exists(font)) { Console.WriteLine($"Override font not found: {font}"); session.Dispose(); return 1; }
             if (!srcByPath.TryGetValue(font, out var src))
             {
-                src = SoundBankLoader.Load(font);
+                src = SoundBankLoader.Load(font, loadOptions);
                 session.AddSource(src);
                 srcByPath[font] = src;
             }
@@ -212,14 +216,14 @@ static int RunSfzReport(string target)
     return 0;
 }
 
-static IRBank LoadBank(string spec)
+static IRBank LoadBank(string spec, SoundBankLoadOptions options)
 {
     if (spec.Contains('+'))
     {
         var parts = spec.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var files = new List<(string, int)>();
         for (int i = 0; i < parts.Length; i++) files.Add((parts[i], i == 0 ? 0 : 128));
-        return SoundBankLoader.LoadSfz(files);
+        return SoundBankLoader.LoadSfz(files, options);
     }
 
     if (spec.EndsWith(".sfz", StringComparison.OrdinalIgnoreCase) &&
@@ -230,11 +234,11 @@ static IRBank LoadBank(string spec)
         if (File.Exists(drums))
         {
             Console.WriteLine($"  (auto-pairing percussion: {Path.GetFileName(drums)} → bank 128)");
-            return SoundBankLoader.LoadSfz(new[] { (spec, 0), (drums, 128) });
+            return SoundBankLoader.LoadSfz(new[] { (spec, 0), (drums, 128) }, options);
         }
     }
 
-    return SoundBankLoader.Load(spec);
+    return SoundBankLoader.Load(spec, options);
 }
 
 // Parse a --map spec: "<prog>=<font>[:<srcProg>]" or "<bank>:<prog>=<font>[:<srcBank>:<srcProg>]".

@@ -24,6 +24,7 @@ internal sealed class SfzSampleSource : ISampleSource
     private readonly string[] _paths;
     private readonly SampleMetadata[] _metadata;
     private readonly long _cacheBudgetBytes;
+    private readonly bool _blockingDecode;   // offline render: decode synchronously so no note loses the race
 
     private readonly object _cacheLock = new();
     private readonly Dictionary<int, CacheNode> _cache = new();
@@ -43,10 +44,12 @@ internal sealed class SfzSampleSource : ISampleSource
     public int Count => _metadata.Length;
     public SampleMetadata Metadata(int sampleId) => _metadata[sampleId];
 
-    public SfzSampleSource(IReadOnlyList<string> paths, IReadOnlyList<SampleMetadata> metadata, long cacheBudgetBytes)
+    public SfzSampleSource(IReadOnlyList<string> paths, IReadOnlyList<SampleMetadata> metadata, long cacheBudgetBytes,
+        bool blockingDecode = false)
     {
         if (paths.Count != metadata.Count)
             throw new ArgumentException("paths and metadata must have the same count");
+        _blockingDecode = blockingDecode;
         _paths = new string[paths.Count];
         _metadata = new SampleMetadata[metadata.Count];
         for (int i = 0; i < paths.Count; i++) { _paths[i] = paths[i]; _metadata[i] = metadata[i]; }
@@ -62,11 +65,34 @@ internal sealed class SfzSampleSource : ISampleSource
             if (_cache.TryGetValue(sampleId, out var hit))
                 return CopyFromNode(hit, sampleId, frameOffset, dest, refreshLru: true);
 
-        // Not decoded yet: kick off a background decode (FLAC decode is ~tens of ms — far too long to
-        // run on the audio thread) and return silence for now. The voice keeps its position and the
-        // note becomes audible once the decode lands, clipping at most the first few ms of its attack.
-        EnsureDecoding(sampleId);
-        return 0;
+        if (!_blockingDecode)
+        {
+            // Real-time: kick off a background decode (FLAC decode is ~tens of ms — far too long to
+            // run on the audio thread) and return silence for now. The voice keeps its position and the
+            // note becomes audible once the decode lands, clipping at most the first few ms of its attack.
+            EnsureDecoding(sampleId);
+            return 0;
+        }
+
+        // Offline render: no real-time deadline, so decode inline. Returning silence here would let a
+        // note that out-runs the background decoder lose its attack (the per-run non-determinism that
+        // shows up as "dropped notes" in a fast passage). Decode happens outside the lock; insert and
+        // copy happen under it so the rented buffer can't be evicted/returned mid-copy.
+        var (data, length, pooled) = Decode(sampleId);
+        lock (_cacheLock)
+        {
+            if (_disposed) { if (pooled) ArrayPool<float>.Shared.Return(data); return 0; }
+            if (!_cache.TryGetValue(sampleId, out var node))
+            {
+                if (length <= 0) return 0;   // unreadable/corrupt at play time → silence
+                EvictUntilBudgetFits(length * 4L);
+                node = new CacheNode { Data = data, Length = length, Pooled = pooled, LruNode = _lru.AddLast(sampleId) };
+                _cache[sampleId] = node;
+                _cachedBytes += length * 4L;
+            }
+            else if (pooled) ArrayPool<float>.Shared.Return(data);   // another reader won the insert
+            return CopyFromNode(node, sampleId, frameOffset, dest, refreshLru: true);
+        }
     }
 
     // Must hold _cacheLock. SFZ samples are folded to mono, so a frame is one float.
@@ -84,8 +110,12 @@ internal sealed class SfzSampleSource : ISampleSource
     }
 
     // Called on the audio thread at NoteOn — start the decode early (off-thread) so the sample is
-    // more likely to be ready by the time the voice reads it.
-    public void PrepareSample(int sampleId) => EnsureDecoding(sampleId);
+    // more likely to be ready by the time the voice reads it. In blocking mode the first ReadFrames
+    // decodes synchronously, so there's nothing to pre-warm and no background task to spawn.
+    public void PrepareSample(int sampleId)
+    {
+        if (!_blockingDecode) EnsureDecoding(sampleId);
+    }
 
     private void EnsureDecoding(int sampleId)
     {

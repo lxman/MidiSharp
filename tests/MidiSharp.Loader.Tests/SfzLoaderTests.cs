@@ -131,6 +131,29 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void BlockingSampleDecode_returns_data_on_the_first_read()
+    {
+        WriteWav("samples/a.wav", frames: 256);
+        var path = WriteSfz("""
+            <control> default_path=samples/
+            <region> sample=a.wav lokey=0 hikey=127
+            """);
+
+        // Offline-render mode: the first ReadFrames must decode synchronously and return the sample
+        // data — no background race, no transient silence. (The lazy default returns 0 on the first
+        // call; see LazySample_decodes_in_background_then_reads_correct_data.) This guards the fix for
+        // fast first-hit notes losing their attack in a WAV export.
+        using var bank = SoundBankLoader.Load(path, new SoundBankLoadOptions { BlockingSampleDecode = true });
+
+        var buf = new float[256];
+        int n = bank.Samples.ReadFrames(0, 0, buf);   // single call, no polling
+
+        Assert.True(n > 0, "blocking decode should return data on the first read");
+        for (int i = 0; i < n; i++)
+            Assert.Equal((short)(i % 64 * 32) / 32768.0, buf[i], 5);
+    }
+
+    [Fact]
     public void Positional_default_path_applies_per_region()
     {
         WriteWav("A/x.wav");

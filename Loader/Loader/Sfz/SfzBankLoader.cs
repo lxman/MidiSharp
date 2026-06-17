@@ -23,7 +23,7 @@ internal static class SfzBankLoader
     {
         var acc = new Accumulator();
         acc.AddFile(path, bank: 0);
-        return acc.Build(Path.GetFileNameWithoutExtension(path), options.DecodedSampleCacheBytes);
+        return acc.Build(Path.GetFileNameWithoutExtension(path), options.DecodedSampleCacheBytes, options.BlockingSampleDecode);
     }
 
     public static SoundBank Load(Stream stream, string? basePath, SoundBankLoadOptions options)
@@ -37,7 +37,7 @@ internal static class SfzBankLoader
 
         var acc = new Accumulator();
         acc.AddText(text, baseDir, bank: 0);
-        return acc.Build(name, options.DecodedSampleCacheBytes);
+        return acc.Build(name, options.DecodedSampleCacheBytes, options.BlockingSampleDecode);
     }
 
     /// <summary>
@@ -53,7 +53,7 @@ internal static class SfzBankLoader
         var acc = new Accumulator();
         foreach (var (path, bank) in files)
             acc.AddFile(path, bank);
-        return acc.Build(Path.GetFileNameWithoutExtension(files[0].Path), options.DecodedSampleCacheBytes);
+        return acc.Build(Path.GetFileNameWithoutExtension(files[0].Path), options.DecodedSampleCacheBytes, options.BlockingSampleDecode);
     }
 
     /// <summary>
@@ -163,7 +163,7 @@ internal static class SfzBankLoader
             PitchCorrectionCents = info.FineTuneCents,
         };
 
-        public SoundBank Build(string name, long cacheBudgetBytes)
+        public SoundBank Build(string name, long cacheBudgetBytes, bool blockingDecode = false)
         {
             if (_placed.Count == 0)
                 throw new SoundBankLoadException(
@@ -203,7 +203,7 @@ internal static class SfzBankLoader
                 Name = name,
                 SourceFormat = SoundBankFormat.Sfz,
                 Patches = patches,
-                Samples = new SfzSampleSource(_paths, _metadatas, cacheBudgetBytes),
+                Samples = new SfzSampleSource(_paths, _metadatas, cacheBudgetBytes, blockingDecode),
             };
         }
     }

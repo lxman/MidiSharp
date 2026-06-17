@@ -46,6 +46,16 @@ public sealed class SoundBankLoadOptions
     /// page-fault audio glitches on flash storage. Default true.
     /// </summary>
     public bool PrefetchActiveSamples { get; init; } = true;
+
+    /// <summary>
+    /// Decode a referenced sample synchronously on its first use instead of returning silence while a
+    /// background decode runs. The lazy path exists so the real-time audio thread never blocks on a
+    /// (tens-of-ms) FLAC/Vorbis decode — but an offline render pulls blocks far faster than real time,
+    /// so first-hit notes lose the decode race and come out attack-clipped (non-deterministic per run).
+    /// Set this for WAV export / any non-real-time render so every note is present and the output is
+    /// reproducible. Default false (real-time playback). Currently honored by the SFZ sample source.
+    /// </summary>
+    public bool BlockingSampleDecode { get; init; }
 }
 
 /// <summary>
