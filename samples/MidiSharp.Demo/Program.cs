@@ -19,6 +19,7 @@ var positionals = new List<string>();
 var maps = new List<string>();
 var listPatches = false;
 string? sfzReportTarget = null;
+string? setupSpec = null;
 var sampleRate = 48000;   // default = PipeWire/JACK graph rate; --rate overrides (WAV export / live engine rate)
 for (var i = 0; i < args.Length; i++)
 {
@@ -33,6 +34,10 @@ for (var i = 0; i < args.Length; i++)
             if (i + 1 >= args.Length) { Console.WriteLine("--map needs a spec, e.g. --map 30=Other.sf2"); return 1; }
             maps.Add(args[++i]);
             break;
+        case "--setup":
+            if (i + 1 >= args.Length) { Console.WriteLine("--setup needs a setup name, id, or .json file"); return 1; }
+            setupSpec = args[++i];
+            break;
         case "--rate":
             if (i + 1 >= args.Length || !int.TryParse(args[++i], out sampleRate) || sampleRate is < 8000 or > 384000)
             { Console.WriteLine("--rate needs a sample rate in Hz (8000-384000), e.g. --rate 44100"); return 1; }
@@ -46,13 +51,17 @@ for (var i = 0; i < args.Length; i++)
 if (sfzReportTarget != null)
     return RunSfzReport(sfzReportTarget);
 
-if (positionals.Count < 2)
+if (positionals.Count < 2 && setupSpec == null)
 {
     Console.WriteLine("Usage:");
     Console.WriteLine("  Live playback:    MidiSharp.Demo <midi> <sf2>");
     Console.WriteLine("  Render to WAV:    MidiSharp.Demo <midi> <sf2> <out.wav> [--rate <hz>]   (default 48000; e.g. --rate 44100)");
     Console.WriteLine("  GM SFZ + drums:   pass \"melodic.sfz+drums.sfz\" as <sf2> (1st→bank 0, rest→bank 128),");
     Console.WriteLine("                    or just the \"... Melodic ....sfz\" file and its \"Drums\" sibling auto-pairs.");
+    Console.WriteLine();
+    Console.WriteLine("  Play a setup:     MidiSharp.Demo --setup <name|id|file.json> [out.wav] [--rate <hz>]");
+    Console.WriteLine("                      a saved web-player setup (MIDI + base font + instrument substitutions);");
+    Console.WriteLine($"                      resolved by name/id under {SetupSupport.DefaultRoot}, or a direct .json path.");
     Console.WriteLine();
     Console.WriteLine("  List patches:     MidiSharp.Demo --patches <midi> <sf2>");
     Console.WriteLine("  SFZ opcode report: MidiSharp.Demo --sfz-report <font.sfz | folder>   (which ARIA opcodes are dropped)");
@@ -63,9 +72,26 @@ if (positionals.Count < 2)
     return 1;
 }
 
-var midiPath = positionals[0];
-var sf2Path = positionals[1];
-var renderPath = positionals.Count >= 3 ? positionals[2] : null;
+// A setup supplies its own MIDI + base font; any positional left over is the render target (out.wav).
+SetupFile? setup = null;
+string midiPath, sf2Path;
+string? renderPath;
+if (setupSpec != null)
+{
+    setup = SetupSupport.Resolve(setupSpec, out var setupError);
+    if (setup == null) { Console.WriteLine(setupError); return 1; }
+    midiPath = setup.midiPath;
+    sf2Path = setup.soundfontPath;
+    renderPath = positionals.Count >= 1 ? positionals[0] : null;
+    Console.WriteLine($"Setup: {setup.name}  ({setup.overrides?.Length ?? 0} patch + " +
+                      $"{setup.trackOverrides?.Length ?? 0} track override(s))");
+}
+else
+{
+    midiPath = positionals[0];
+    sf2Path = positionals[1];
+    renderPath = positionals.Count >= 3 ? positionals[2] : null;
+}
 
 if (!File.Exists(midiPath)) { Console.WriteLine($"MIDI not found: {midiPath}"); return 1; }
 if (!sf2Path.Contains('+') && !File.Exists(sf2Path)) { Console.WriteLine($"SoundFont not found: {sf2Path}"); return 1; }
@@ -105,11 +131,35 @@ if (listPatches)
     return 0;
 }
 
-// --map: build a composite that substitutes chosen patches with instruments from other fonts.
-// The synth still consumes one bank — it can't tell the composite from a native font.
+// Build the bank the synth plays: a saved setup's overrides, or --map patch swaps, or the base font
+// as-is. The synth consumes one bank — it can't tell a composite from a native font. A setup may also
+// carry per-track routing, returned as a track→patch map handed to Synthesizer.SetTrackPatchMap.
 var playBank = soundBank;
 PatchMapSession? session = null;
-if (maps.Count > 0)
+IReadOnlyDictionary<int, (int Bank, int Program)>? trackPatchMap = null;
+if (setup != null && ((setup.overrides?.Length ?? 0) > 0 || (setup.trackOverrides?.Length ?? 0) > 0))
+{
+    try
+    {
+        session = SetupSupport.BuildSession(setup, soundBank, loadOptions);
+        var resolved = session.BuildResolved();
+        playBank = resolved.Bank;
+        trackPatchMap = resolved.TrackPatchMap;
+        foreach (var o in setup.overrides ?? [])
+            Console.WriteLine($"  override prog {o.logicalProgram} → {Path.GetFileName(o.sourcePath)} " +
+                              $"(bank {o.sourceBank}, prog {o.sourceProgram})");
+        foreach (var o in setup.trackOverrides ?? [])
+            Console.WriteLine($"  track {o.trackIndex} ({o.trackName ?? "?"}) → {Path.GetFileName(o.sourcePath)} " +
+                              $"(bank {o.sourceBank}, prog {o.sourceProgram})");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Setup error: {ex.Message}");
+        session?.Dispose();
+        return 1;
+    }
+}
+else if (maps.Count > 0)
 {
     try
     {
@@ -143,6 +193,7 @@ if (maps.Count > 0)
 // for WAV export any rate works (e.g. --rate 44100 for CD-rate files).
 var synth = new Synthesizer(sampleRate);
 synth.LoadSoundFont(playBank);
+if (trackPatchMap != null) synth.SetTrackPatchMap(trackPatchMap);
 
 // One player, two modes — the same RealtimePlayer drives both live audio and
 // offline rendering. The render path pulls blocks synchronously in a loop;
