@@ -57,6 +57,8 @@ internal static class SfzOpcodes
         "amp_random", "pitch_random", "delay", "delay_random", "offset_random",
         // <control> settings
         "default_path", "octave_offset", "note_offset",
+        // display-only labels — no audio effect, correctly dropped (so not a coverage gap)
+        "sw_label", "group_label", "region_label", "master_label", "global_label",
     };
 
     // Open-ended families of the shape "{prefix}{N}" the translator handles.
@@ -78,6 +80,7 @@ internal static class SfzOpcodes
     private static readonly HashSet<string> HandledFamilies = new(StringComparer.Ordinal)
     {
         "eqN_freq", "eqN_bw", "eqN_gain",
+        "label_ccN",   // display-only CC label — no audio effect
     };
 
     /// <summary>True when the loader actually acts on <paramref name="opcode"/> (lowercase).</summary>
@@ -93,7 +96,7 @@ internal static class SfzOpcodes
         if (TryGetModParam(opcode, out string param) && ModParams.Contains(param))
             return true;
 
-        if (opcode.StartsWith("eq", StringComparison.Ordinal) && HandledFamilies.Contains(Family(opcode)))
+        if (HandledFamilies.Contains(Family(opcode)))
             return true;
 
         return false;
