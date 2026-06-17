@@ -28,7 +28,7 @@ internal static class SfzOpcodes
         // amp envelope
         "ampeg_delay", "ampeg_attack", "ampeg_hold", "ampeg_decay", "ampeg_sustain", "ampeg_release",
         // filter
-        "cutoff", "fil_type", "resonance", "fil_keytrack",
+        "cutoff", "fil_type", "resonance", "fil_keytrack", "fil_keycenter", "fil_veltrack",
         // filter envelope
         "fileg_depth", "fileg_delay", "fileg_attack", "fileg_hold", "fileg_decay", "fileg_sustain", "fileg_release",
         // pitch envelope

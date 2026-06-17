@@ -338,6 +338,7 @@ internal static class SfzZoneTranslator
             CutoffHz = cutoff,
             ResonanceDb = r.GetDouble("resonance", 0),
             KeyTrackCentsPerKey = r.GetDouble("fil_keytrack", 0),
+            KeyTrackCenter = r.GetInt("fil_keycenter", 60),
             EnvelopeDepthCents = envDepthCents,
             LfoDepthCents = r.GetDouble("fillfo_depth", 0),
         };
@@ -478,7 +479,13 @@ internal static class SfzZoneTranslator
             routes.Add(d);
         }
 
-        // Velocity dynamics are handled by the synthesized amp_velcurve table (see Build), not a route.
+        // fil_veltrack: velocity raises/lowers the filter cutoff (cents at full velocity). Emit it as a
+        // velocity→cutoff route — linear in velocity, matching sfizz (cutoff += veltrack · vel).
+        double filVeltrack = r.GetDouble("fil_veltrack", 0);
+        if (filVeltrack != 0)
+            routes.Add(Route(new ModSource.Velocity(), ModDestination.FilterCutoffCents, filVeltrack, ModTransform.Linear));
+
+        // Amp velocity dynamics are handled by the synthesized amp_velcurve table (see Build), not a route.
         return routes;
     }
 

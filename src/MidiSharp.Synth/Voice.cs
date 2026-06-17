@@ -373,7 +373,11 @@ public sealed class Voice
         // Filter (optional).
         if (zone.Filter is { } f)
         {
-            _filterBaseCutoffHz = f.CutoffHz;
+            // SFZ fil_keytrack/fil_keycenter: shift the base cutoff by key distance from the center.
+            // KeyTrackCentsPerKey is 0 for SF2/SF3/DLS, so this is a no-op (and bit-identical) there.
+            _filterBaseCutoffHz = f.KeyTrackCentsPerKey != 0
+                ? f.CutoffHz * Math.Pow(2.0, f.KeyTrackCentsPerKey * (keyNumber - f.KeyTrackCenter) / 1200.0)
+                : f.CutoffHz;
             _filterBaseResonanceDb = f.ResonanceDb;
             _modEnvFilterDepthCents = f.EnvelopeDepthCents;
             _filter.SetParameters(_filterBaseCutoffHz, _filterBaseResonanceDb);

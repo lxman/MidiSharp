@@ -42,6 +42,12 @@ public sealed class FilterSettings
     /// </summary>
     public double KeyTrackCentsPerKey { get; init; }
 
+    /// <summary>
+    /// Reference key for <see cref="KeyTrackCentsPerKey"/> (SFZ fil_keycenter). The cutoff shift is
+    /// <c>KeyTrackCentsPerKey × (noteKey − KeyTrackCenter)</c>. Defaults to 60 (middle C).
+    /// </summary>
+    public int KeyTrackCenter { get; init; } = 60;
+
     /// <summary>SF2 default-modulator fast path. -2400 is the SF2 default.</summary>
     public double VelocityToCutoffCents { get; init; }
 

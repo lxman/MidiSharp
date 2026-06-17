@@ -185,6 +185,21 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Filter_keytrack_keycenter_and_veltrack_are_applied()
+    {
+        WriteWav("a.wav");
+        var path = WriteSfz("<region> sample=a.wav key=60 cutoff=1000 fil_keytrack=100 fil_keycenter=48 fil_veltrack=2400");
+        var z = SoundBankLoader.Load(path).FindPatch(0, 0)!.Zones[0];
+        Assert.NotNull(z.Filter);
+        Assert.Equal(100.0, z.Filter!.KeyTrackCentsPerKey, 3);
+        Assert.Equal(48, z.Filter.KeyTrackCenter);
+        // fil_veltrack → a linear velocity→cutoff route.
+        var velCut = z.Routes.Single(r => r.Source is ModSource.Velocity && r.Dest == ModDestination.FilterCutoffCents);
+        Assert.Equal(2400.0, velCut.Amount, 3);
+        Assert.Equal(ModTransform.Linear, velCut.Transform);
+    }
+
+    [Fact]
     public void Gain_cc_aliases_volume_cc()
     {
         WriteWav("a.wav");
