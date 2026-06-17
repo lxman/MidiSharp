@@ -578,6 +578,12 @@ internal static class SfzZoneTranslator
             routes.Add(d);
         }
 
+        // Pitch wheel → pitch, scaled by the region's bend_up (default 200 cents = ±2 semitones). SFZ
+        // uses bend_up/bend_down rather than the channel's RPN bend range. Symmetric bends (bend_down =
+        // -bend_up, the common case) map linearly; asymmetric ranges use bend_up's magnitude.
+        double bendUp = r.GetDouble("bend_up", 200.0);
+        routes.Add(Route(new ModSource.PitchBend(), ModDestination.PitchCents, bendUp, ModTransform.Linear));
+
         // fil_veltrack: velocity raises/lowers the filter cutoff (cents at full velocity). Emit it as a
         // velocity→cutoff route — linear in velocity, matching sfizz (cutoff += veltrack · vel).
         double filVeltrack = r.GetDouble("fil_veltrack", 0);

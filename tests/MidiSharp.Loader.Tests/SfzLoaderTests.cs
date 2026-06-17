@@ -258,6 +258,23 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Bend_up_sets_the_pitch_bend_route_range()
+    {
+        WriteWav("a.wav");
+        var z = SoundBankLoader.Load(WriteSfz("<region> sample=a.wav key=60 bend_up=400"))
+            .FindPatch(0, 0)!.Zones[0];
+        var pb = z.Routes.Single(r => r.Source is ModSource.PitchBend && r.Dest == ModDestination.PitchCents);
+        Assert.Equal(400.0, pb.Amount, 3);          // ±4 semitones
+        Assert.Null(pb.AmountModulator);             // not RPN-scaled — SFZ uses bend_up directly
+
+        WriteWav("b.wav");
+        var def = SoundBankLoader.Load(WriteNamed("def.sfz", "<region> sample=b.wav key=60"))
+            .FindPatch(0, 0)!.Zones[0];
+        var pbd = def.Routes.Single(r => r.Source is ModSource.PitchBend);
+        Assert.Equal(200.0, pbd.Amount, 3);          // default = ±2 semitones
+    }
+
+    [Fact]
     public void Amplitude_oncc_uses_the_aria_curve()
     {
         WriteWav("a.wav");

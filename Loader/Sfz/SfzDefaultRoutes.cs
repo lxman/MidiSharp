@@ -40,14 +40,7 @@ internal static class SfzDefaultRoutes
             Amount = 1.0,
             Transform = ModTransform.LinearBipolar,
         },
-        // Pitch wheel → pitch, scaled by the pitch-bend-range RPN (default 2 semi).
-        new ModulationRoute
-        {
-            Source = new ModSource.PitchBend(),
-            Dest = ModDestination.PitchCents,
-            Amount = 12700.0,
-            Transform = ModTransform.Linear,
-            AmountModulator = new ModSource.RpnValue(0, 0),
-        },
+        // Pitch wheel is NOT here — SFZ scales it by the region's bend_up/bend_down (not the channel
+        // RPN range), so SfzZoneTranslator emits a per-zone pitch-bend route instead.
     };
 }

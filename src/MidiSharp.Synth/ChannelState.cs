@@ -85,9 +85,9 @@ public sealed class ChannelState
     public ushort PitchBend { get; set; } = 8192;
 
     /// <summary>
-    /// Pitch bend range in semitones.
+    /// Pitch bend range in semitones. Defaults to the GM standard ±2 (a MIDI sets it via RPN 0,0).
     /// </summary>
-    public byte PitchBendRange { get; set; } = 12;
+    public byte PitchBendRange { get; set; } = 2;
 
     /// <summary>
     /// Modulation wheel (CC1, 0-127). Drives SF2 default modulator #4
@@ -341,7 +341,7 @@ public sealed class ChannelState
         Expression = 127;
         Pan = 64;
         PitchBend = 8192;
-        PitchBendRange = 12;
+        PitchBendRange = 2;
         PitchBendRangeCents = 0;
         RpnMsb = 0x7F;
         RpnLsb = 0x7F;

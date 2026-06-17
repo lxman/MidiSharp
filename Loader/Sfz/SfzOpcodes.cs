@@ -22,7 +22,7 @@ internal static class SfzOpcodes
         // activation
         "key", "lokey", "hikey", "pitch_keycenter", "lovel", "hivel",
         // tuning
-        "tune", "pitch", "transpose", "pitch_keytrack",
+        "tune", "pitch", "transpose", "pitch_keytrack", "bend_up", "bend_down",
         // level / pan
         "volume", "global_volume", "master_volume", "group_volume", "pan",
         // amp envelope
