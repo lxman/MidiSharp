@@ -41,6 +41,8 @@ internal static class SfzOpcodes
         "sample", "offset", "end", "loop_mode", "loopmode", "loop_start", "loop_end",
         // round-robin (sequence + random) and keyswitch
         "seq_length", "seq_position", "lorand", "hirand",
+        // velocity crossfade (folded into the velocity→gain curve)
+        "xfin_lovel", "xfin_hivel", "xfout_lovel", "xfout_hivel", "xf_velcurve",
         "sw_last", "sw_down", "sw_lokey", "sw_hikey", "sw_default",
         // grouping, effects, velocity, program routing
         "group", "off_by", "effect1", "effect2", "amp_veltrack", "loprog", "hiprog",

@@ -185,6 +185,20 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Velocity_crossfade_shapes_the_gain_curve()
+    {
+        WriteWav("a.wav");
+        // amp_veltrack=0 → flat velocity gain, so AmpVelCurve reflects only the crossfade. A mid layer:
+        // fades in 0→64, out 64→127, so it's silent at the extremes and ~unity at the crossover.
+        var path = WriteSfz("<region> sample=a.wav key=60 amp_veltrack=0 xfin_lovel=0 xfin_hivel=64 xfout_lovel=64 xfout_hivel=127");
+        var c = SoundBankLoader.Load(path).FindPatch(0, 0)!.Zones[0].AmpVelCurve;
+        Assert.NotNull(c);
+        Assert.Equal(0.0, c![0], 2);     // faded out at the bottom
+        Assert.True(c[64] > 0.9);        // ~peak at the crossover
+        Assert.Equal(0.0, c[127], 2);    // faded out at the top
+    }
+
+    [Fact]
     public void Eq_bands_parse_and_skip_zero_gain()
     {
         WriteWav("a.wav");

@@ -110,8 +110,11 @@ internal static class SfzZoneTranslator
         // from the effective amp_veltrack using sfizz's law (gain = 1 - |vt|·(1 - vel²)), so SFZ
         // dynamics match the reference instead of our older dB-attenuation route. Either way velocity
         // is a per-note linear factor applied in Voice — no separate velocity modulation route.
-        double[]? ampVelCurve = BuildVelocityCurve(r)
-                                ?? BuildVeltrackCurve(ComputeEffectiveVeltrack(r, control.InitialControllers));
+        double[] ampVelCurve = BuildVelocityCurve(r)
+                               ?? BuildVeltrackCurve(ComputeEffectiveVeltrack(r, control.InitialControllers));
+        // Velocity crossfade (xfin/xfout) folds in as an extra velocity→gain factor, so layers fade
+        // across their boundaries instead of switching abruptly.
+        ApplyVelocityCrossfade(r, ampVelCurve);
 
         // ── Routes: _oncc modulations + suppressed default-CC routes ──
         var routes = BuildRoutes(r, control.InitialControllers);
@@ -465,6 +468,54 @@ internal static class SfzZoneTranslator
             table[v] = Math.Clamp(vt < 0 ? g : 1.0 - g, 0.0, 1.0);
         }
         return table;
+    }
+
+    /// <summary>
+    /// Multiplies the SFZ velocity crossfade (xfin_lovel/hivel, xfout_lovel/hivel) into the velocity→
+    /// gain table in place. No-op (and untouched) unless the region sets one of those opcodes. The
+    /// fade shape follows xf_velcurve (default "power" = equal-power sqrt; "gain" = linear), matching
+    /// sfizz including its 1/127 gap offset.
+    /// </summary>
+    private static void ApplyVelocityCrossfade(SfzRegion r, double[] velGain)
+    {
+        if (!r.Has("xfin_lovel") && !r.Has("xfin_hivel") && !r.Has("xfout_lovel") && !r.Has("xfout_hivel"))
+            return;
+
+        double inLo = r.GetInt("xfin_lovel", 0) / 127.0;
+        double inHi = r.GetInt("xfin_hivel", 0) / 127.0;
+        double outLo = r.GetInt("xfout_lovel", 127) / 127.0;
+        double outHi = r.GetInt("xfout_hivel", 127) / 127.0;
+        bool power = !string.Equals(r.Get("xf_velcurve")?.Trim(), "gain", StringComparison.OrdinalIgnoreCase);
+
+        for (int v = 0; v < 128; v++)
+        {
+            double x = v / 127.0;
+            velGain[v] *= CrossfadeIn(inLo, inHi, x, power) * CrossfadeOut(outLo, outHi, x, power);
+        }
+    }
+
+    private const double XfadeGap = 1.0 / 127.0;
+
+    private static double CrossfadeIn(double lo, double hi, double x, bool power)
+    {
+        if (x < lo) return 0.0;
+        double length = (hi - lo) - XfadeGap;
+        if (length <= 0.0) return 1.0;
+        if (x < hi) { double pos = (x - lo) / length; return power ? Math.Sqrt(pos) : pos; }
+        return 1.0;
+    }
+
+    private static double CrossfadeOut(double lo, double hi, double x, bool power)
+    {
+        double length = (hi - lo) - XfadeGap;
+        if (length <= 0.0) return 1.0;
+        if (x > lo)
+        {
+            double pos = (x - lo) / length;
+            if (pos > 1.0) return 0.0;
+            return power ? Math.Sqrt(1.0 - pos) : (1.0 - pos);
+        }
+        return 1.0;
     }
 
     private static List<ModulationRoute> BuildRoutes(SfzRegion r, IReadOnlyDictionary<int, int> initialCc)
