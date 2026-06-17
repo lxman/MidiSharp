@@ -72,6 +72,8 @@ internal static class SfzOpcodes
     private static readonly HashSet<string> ModParams = new(StringComparer.Ordinal)
     {
         "pan", "volume", "gain", "amplitude", "cutoff", "pitchlfo_depth", "amp_veltrack",
+        // CC→amp-envelope (ampeg_{stage}_oncc) — baked into the envelope at load, not routed
+        "ampeg_delay", "ampeg_attack", "ampeg_hold", "ampeg_decay", "ampeg_release", "ampeg_sustain",
     };
 
     private static readonly Regex Digits = new(@"\d+", RegexOptions.Compiled);
@@ -81,6 +83,10 @@ internal static class SfzOpcodes
     {
         "eqN_freq", "eqN_bw", "eqN_gain",
         "label_ccN",   // display-only CC label — no audio effect
+        // curve tables we consume when evaluating the corresponding _oncc at the seeded CC
+        "amp_veltrack_curveccN",
+        "ampeg_delay_curveccN", "ampeg_attack_curveccN", "ampeg_hold_curveccN",
+        "ampeg_decay_curveccN", "ampeg_release_curveccN", "ampeg_sustain_curveccN",
     };
 
     /// <summary>True when the loader actually acts on <paramref name="opcode"/> (lowercase).</summary>

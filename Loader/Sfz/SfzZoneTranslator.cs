@@ -46,15 +46,19 @@ internal static class SfzZoneTranslator
         double pan = Math.Clamp(r.GetDouble("pan", 0) / 100.0, -1.0, 1.0);
 
         // ── Amp envelope (DAHDSR; sustain is percent) ────────────────
+        // ampeg_{stage}_oncc{N}: a CC shifts the stage (seconds, or percent for sustain), shaped by the
+        // curve and evaluated at the seeded initial CC — baked in here like amp_veltrack_oncc. This is
+        // what gives Salamander its ~1 s damper release (ampeg_release_oncc72=2, cc72 seeded to 0.5).
+        var ic = control.InitialControllers;
         var ampEnv = new EnvelopeSettings
         {
-            DelaySeconds = r.GetDouble("ampeg_delay", 0),
-            AttackSeconds = r.GetDouble("ampeg_attack", 0),
-            HoldSeconds = r.GetDouble("ampeg_hold", 0),
-            DecaySeconds = r.GetDouble("ampeg_decay", 0),
-            SustainLevel = Math.Clamp(r.GetDouble("ampeg_sustain", 100.0) / 100.0, 0, 1),
+            DelaySeconds = r.GetDouble("ampeg_delay", 0) + EnvCcOffset(r, ic, "ampeg_delay"),
+            AttackSeconds = r.GetDouble("ampeg_attack", 0) + EnvCcOffset(r, ic, "ampeg_attack"),
+            HoldSeconds = r.GetDouble("ampeg_hold", 0) + EnvCcOffset(r, ic, "ampeg_hold"),
+            DecaySeconds = r.GetDouble("ampeg_decay", 0) + EnvCcOffset(r, ic, "ampeg_decay"),
+            SustainLevel = Math.Clamp((r.GetDouble("ampeg_sustain", 100.0) + EnvCcOffset(r, ic, "ampeg_sustain")) / 100.0, 0, 1),
             // Floor the release so a NoteOff mid-sample fades instead of clicking.
-            ReleaseSeconds = Math.Max(r.GetDouble("ampeg_release", 0), 0.003),
+            ReleaseSeconds = Math.Max(r.GetDouble("ampeg_release", 0) + EnvCcOffset(r, ic, "ampeg_release"), 0.003),
             // Velocity → envelope (ampeg_vel2*): times in seconds, sustain as a 0..1 offset.
             VelToDelaySeconds = r.GetDouble("ampeg_vel2delay", 0),
             VelToAttackSeconds = r.GetDouble("ampeg_vel2attack", 0),
@@ -229,6 +233,23 @@ internal static class SfzZoneTranslator
         "legato" => ZoneTrigger.Legato,
         _ => ZoneTrigger.Attack,
     };
+
+    /// <summary>
+    /// Sums an amp-envelope stage's CC modulation (ampeg_{stage}_oncc{N}) evaluated at the seeded
+    /// initial CC through its curve (ampeg_{stage}_curvecc{N}), matching sfizz. Returns the additive
+    /// offset in the stage's units (seconds for times, percent for sustain); 0 when no CC is seeded.
+    /// </summary>
+    private static double EnvCcOffset(SfzRegion r, IReadOnlyDictionary<int, int> initialCc, string stageParam)
+    {
+        double sum = 0;
+        foreach (var (param, cc, value) in r.EnumerateModulations())
+        {
+            if (param != stageParam || !initialCc.TryGetValue(cc, out int ccVal)) continue;
+            int curveIdx = r.GetInt(stageParam + "_curvecc" + cc, 0);
+            sum += value * EvalBuiltinCurve(curveIdx, ccVal / 127.0);
+        }
+        return sum;
+    }
 
     /// <summary>
     /// Evaluates an ARIA built-in CC curve at normalised input x∈[0,1] (matches sfizz's predefined

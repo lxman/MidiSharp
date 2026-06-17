@@ -185,6 +185,19 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Ampeg_release_oncc_bakes_into_release_at_seeded_cc()
+    {
+        WriteWav("a.wav");
+        // cc72 seeded to 0.5 (≈64); ampeg_release_oncc72=2 with the default linear curve → +2×0.5 ≈ 1 s.
+        var path = WriteSfz("""
+            <control> set_hdcc72=0.5
+            <region> sample=a.wav key=60 ampeg_release_oncc72=2
+            """);
+        var ve = SoundBankLoader.Load(path).FindPatch(0, 0)!.Zones[0].VolumeEnvelope;
+        Assert.InRange(ve.ReleaseSeconds, 0.95, 1.05);
+    }
+
+    [Fact]
     public void Ampeg_vel2_envelope_modulation_parses()
     {
         WriteWav("a.wav");
