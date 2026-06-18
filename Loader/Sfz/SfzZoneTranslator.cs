@@ -502,7 +502,8 @@ internal static class SfzZoneTranslator
     {
         envDepthCents = r.GetDouble("fileg_depth", 0);
         bool hasCutoff = r.Has("cutoff");
-        if (!hasCutoff && envDepthCents == 0) return null;
+        // fil_gain (shelf/peak gain) also brings a filter into existence on its own.
+        if (!hasCutoff && envDepthCents == 0 && !r.Has("fil_gain")) return null;
 
         double cutoff = r.GetDouble("cutoff", 20000.0);
         return new FilterSettings
@@ -510,6 +511,7 @@ internal static class SfzZoneTranslator
             Type = ParseFilterType(r.Get("fil_type")),
             CutoffHz = cutoff,
             ResonanceDb = r.GetDouble("resonance", 0),
+            GainDb = r.GetDouble("fil_gain", 0),   // shelf/peak gain (lsh/hsh/peq); 0 for pass/notch
             KeyTrackCentsPerKey = r.GetDouble("fil_keytrack", 0),
             KeyTrackCenter = r.GetInt("fil_keycenter", 60),
             EnvelopeDepthCents = envDepthCents,
@@ -538,6 +540,7 @@ internal static class SfzZoneTranslator
             var s when s.StartsWith("brf") => FilterType.Notch,
             var s when s.StartsWith("lsh") => FilterType.LowShelf,
             var s when s.StartsWith("hsh") => FilterType.HighShelf,
+            var s when s.StartsWith("peq") || s.StartsWith("pkf") => FilterType.Peaking,
             _ => FilterType.LowPass,
         };
 
@@ -549,7 +552,7 @@ internal static class SfzZoneTranslator
     private static FilterSettings? BuildSecondFilter(SfzRegion r, out LfoCcDepth[]? cutoffCc)
     {
         cutoffCc = null;
-        if (!r.Has("cutoff2") && !r.Has("fil2_type")) return null;
+        if (!r.Has("cutoff2") && !r.Has("fil2_type") && !r.Has("fil2_gain")) return null;
 
         List<LfoCcDepth>? cc = null;
         foreach (var prefix in new[] { "cutoff2_oncc", "cutoff2_cc" })
@@ -564,6 +567,7 @@ internal static class SfzZoneTranslator
             Type = ParseFilterType(r.Get("fil2_type")),
             CutoffHz = r.GetDouble("cutoff2", 20000.0),
             ResonanceDb = r.GetDouble("resonance2", 0),
+            GainDb = r.GetDouble("fil2_gain", 0),   // shelf/peak gain for the second filter
         };
     }
 

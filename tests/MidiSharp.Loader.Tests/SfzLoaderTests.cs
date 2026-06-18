@@ -1171,6 +1171,37 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Shelf_and_peaking_filter_types_carry_fil_gain()
+    {
+        WriteWav("a.wav");
+        var lsh = SoundBankLoader.Load(WriteSfz("<region> sample=a.wav key=60 fil_type=lsh cutoff=200 fil_gain=6"))
+            .FindPatch(0, 0)!.Zones[0].Filter!;
+        Assert.Equal(FilterType.LowShelf, lsh.Type);
+        Assert.Equal(6.0, lsh.GainDb, 3);
+
+        var hsh = SoundBankLoader.Load(WriteSfz("<region> sample=a.wav key=60 fil_type=hsh cutoff=4000 fil_gain=-3"))
+            .FindPatch(0, 0)!.Zones[0].Filter!;
+        Assert.Equal(FilterType.HighShelf, hsh.Type);
+        Assert.Equal(-3.0, hsh.GainDb, 3);
+
+        var peq = SoundBankLoader.Load(WriteSfz("<region> sample=a.wav key=60 fil_type=peq cutoff=1000 fil_gain=9"))
+            .FindPatch(0, 0)!.Zones[0].Filter!;
+        Assert.Equal(FilterType.Peaking, peq.Type);
+        Assert.Equal(9.0, peq.GainDb, 3);
+
+        // Second filter honours fil2_gain too.
+        var f2 = SoundBankLoader.Load(WriteSfz("<region> sample=a.wav key=60 cutoff2=3000 fil2_type=hsh fil2_gain=4"))
+            .FindPatch(0, 0)!.Zones[0].Filter2!;
+        Assert.Equal(FilterType.HighShelf, f2.Type);
+        Assert.Equal(4.0, f2.GainDb, 3);
+
+        // A pass-type filter leaves gain at 0 (the default).
+        var lpf = SoundBankLoader.Load(WriteSfz("<region> sample=a.wav key=60 cutoff=800"))
+            .FindPatch(0, 0)!.Zones[0].Filter!;
+        Assert.Equal(0.0, lpf.GainDb, 3);
+    }
+
+    [Fact]
     public void Eq_oncc_builds_live_cc_modulation_on_a_band()
     {
         WriteWav("a.wav");

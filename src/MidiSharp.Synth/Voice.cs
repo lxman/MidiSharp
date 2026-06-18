@@ -537,6 +537,8 @@ public sealed class Voice
             _modEnvFilterDepthCents = f.EnvelopeDepthCents + velNorm * f.EnvVelToDepthCents;
             _filter.Type = f.Type;
             _filterRight.Type = f.Type;
+            _filter.GainDb = f.GainDb;          // shelf/peak gain; ignored by pass/notch types
+            _filterRight.GainDb = f.GainDb;
             _filter.SetParameters(_filterBaseCutoffHz, _filterBaseResonanceDb);
             if (_channels == 2) _filterRight.SetParameters(_filterBaseCutoffHz, _filterBaseResonanceDb);
             _hasFilter = _filter.Enabled;
@@ -557,6 +559,8 @@ public sealed class Voice
         {
             _filter2.Type = f2.Type;
             _filter2Right.Type = f2.Type;
+            _filter2.GainDb = f2.GainDb;
+            _filter2Right.GainDb = f2.GainDb;
             _filter2BaseCutoffHz = f2.CutoffHz;
             _filter2ResonanceDb = f2.ResonanceDb;
             _filter2CutoffCc = zone.Filter2CutoffCc;

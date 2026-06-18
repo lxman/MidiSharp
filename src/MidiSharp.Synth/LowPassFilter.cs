@@ -5,9 +5,10 @@ namespace MidiSharp.Synth;
 
 /// <summary>
 /// Resonant 2-pole (12 dB/oct) RBJ biquad. Despite the name it supports the SFZ filter types via
-/// <see cref="Type"/> (low/high-pass, band-pass, notch); 1-pole SFZ variants are approximated by the
-/// 2-pole form. Shelving types fall back to low-pass. The LowPass path is byte-identical to the
-/// original lowpass-only implementation (SF2/DLS and most SFZ filters), which is the default.
+/// <see cref="Type"/> (low/high-pass, band-pass, notch, low/high-shelf, peaking); 1-pole SFZ variants
+/// are approximated by the 2-pole form. Shelving and peaking types use <see cref="GainDb"/> (SFZ
+/// fil_gain). The LowPass path is byte-identical to the original lowpass-only implementation (SF2/DLS
+/// and most SFZ filters), which is the default.
 /// </summary>
 public sealed class LowPassFilter
 {
@@ -20,6 +21,10 @@ public sealed class LowPassFilter
 
     /// <summary>Filter response type. Set before <see cref="SetParameters(double,double)"/>.</summary>
     public FilterType Type { get; set; } = FilterType.LowPass;
+
+    /// <summary>SFZ fil_gain — shelf/peak gain in dB (LowShelf/HighShelf/Peaking). 0 = flat. Ignored by
+    /// the pass/notch types. Set before <see cref="SetParameters(double,double)"/>.</summary>
+    public double GainDb { get; set; }
 
     /// <summary>
     /// Whether the filter is enabled.
@@ -159,6 +164,15 @@ public sealed class LowPassFilter
         var cosOmega = Math.Cos(omega);
         var alpha = sinOmega / (2.0 * _resonance);
 
+        // Shelving / peaking biquads have a gain-dependent denominator, so they don't share the
+        // normalised form below — compute and set their coefficients directly, then return. (The
+        // pass/notch path is left untouched, so LowPass stays byte-identical.)
+        if (Type is FilterType.LowShelf or FilterType.HighShelf or FilterType.Peaking)
+        {
+            SetShelfOrPeakCoefficients(cosOmega, alpha);
+            return;
+        }
+
         double n0, n1, n2;
         switch (Type)
         {
@@ -182,5 +196,55 @@ public sealed class LowPassFilter
         _a2 = n2 / a0;
         _b1 = -2.0 * cosOmega / a0;
         _b2 = (1.0 - alpha) / a0;
+    }
+
+    /// <summary>
+    /// RBJ-cookbook coefficients for the gain-dependent biquads (low-shelf, high-shelf, peaking).
+    /// <c>A = 10^(gainDb/40)</c> is the shelf/peak amplitude; gain 0 dB ⇒ A = 1 ⇒ a flat pass-through.
+    /// </summary>
+    private void SetShelfOrPeakCoefficients(double cosOmega, double alpha)
+    {
+        double A = Math.Pow(10.0, GainDb / 40.0);
+        double b0, b1, b2, a0, a1, a2;
+
+        if (Type == FilterType.Peaking)
+        {
+            b0 = 1.0 + alpha * A;
+            b1 = -2.0 * cosOmega;
+            b2 = 1.0 - alpha * A;
+            a0 = 1.0 + alpha / A;
+            a1 = -2.0 * cosOmega;
+            a2 = 1.0 - alpha / A;
+        }
+        else
+        {
+            double sqrtA = Math.Sqrt(A);
+            double twoSqrtAalpha = 2.0 * sqrtA * alpha;
+            double am1 = A - 1.0, ap1 = A + 1.0;
+            if (Type == FilterType.LowShelf)
+            {
+                b0 = A * (ap1 - am1 * cosOmega + twoSqrtAalpha);
+                b1 = 2.0 * A * (am1 - ap1 * cosOmega);
+                b2 = A * (ap1 - am1 * cosOmega - twoSqrtAalpha);
+                a0 = ap1 + am1 * cosOmega + twoSqrtAalpha;
+                a1 = -2.0 * (am1 + ap1 * cosOmega);
+                a2 = ap1 + am1 * cosOmega - twoSqrtAalpha;
+            }
+            else // HighShelf
+            {
+                b0 = A * (ap1 + am1 * cosOmega + twoSqrtAalpha);
+                b1 = -2.0 * A * (am1 + ap1 * cosOmega);
+                b2 = A * (ap1 + am1 * cosOmega - twoSqrtAalpha);
+                a0 = ap1 - am1 * cosOmega + twoSqrtAalpha;
+                a1 = 2.0 * (am1 - ap1 * cosOmega);
+                a2 = ap1 - am1 * cosOmega - twoSqrtAalpha;
+            }
+        }
+
+        _a0 = b0 / a0;
+        _a1 = b1 / a0;
+        _a2 = b2 / a0;
+        _b1 = a1 / a0;
+        _b2 = a2 / a0;
     }
 }

@@ -40,10 +40,10 @@ internal static class SfzOpcodes
         "ampeg_dynamic",
         // ARIA ampeg_release_shape: curvature of the release segment
         "ampeg_release_shape",
-        // filter
-        "cutoff", "fil_type", "resonance", "fil_keytrack", "fil_keycenter", "fil_veltrack",
-        // second filter (cascaded): cutoff2 / fil2_type / resonance2 (cutoff2_cc handled as a mod param)
-        "cutoff2", "fil2_type", "resonance2",
+        // filter (fil_gain = shelf/peak gain for lsh/hsh/peq filter types)
+        "cutoff", "fil_type", "resonance", "fil_gain", "fil_keytrack", "fil_keycenter", "fil_veltrack",
+        // second filter (cascaded): cutoff2 / fil2_type / resonance2 / fil2_gain (cutoff2_cc is a mod param)
+        "cutoff2", "fil2_type", "resonance2", "fil2_gain",
         // filter envelope
         "fileg_depth", "fileg_delay", "fileg_attack", "fileg_hold", "fileg_decay", "fileg_sustain", "fileg_release",
         // pitch envelope

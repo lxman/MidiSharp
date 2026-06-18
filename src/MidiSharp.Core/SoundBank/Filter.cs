@@ -13,6 +13,9 @@ public enum FilterType
     LowShelf,
     HighShelf,
     Notch,
+    /// <summary>Parametric peaking/bell EQ (SFZ <c>peq</c>/<c>pkf</c>); boost/cut around the cutoff by
+    /// <see cref="FilterSettings.GainDb"/>. Distinct from the per-zone <see cref="EqBand"/> list.</summary>
+    Peaking,
 }
 
 /// <summary>
@@ -35,6 +38,11 @@ public sealed class FilterSettings
 
     /// <summary>Resonance in dB (0 = none; typical max ~24).</summary>
     public double ResonanceDb { get; init; }
+
+    /// <summary>SFZ <c>fil_gain</c>: shelf/peak gain in dB for <see cref="FilterType.LowShelf"/>,
+    /// <see cref="FilterType.HighShelf"/>, and <see cref="FilterType.Peaking"/>. 0 = flat (the default,
+    /// and a no-op for the pass/notch types that ignore it).</summary>
+    public double GainDb { get; init; }
 
     /// <summary>
     /// Key-tracking amount in cents per key. 0 = no tracking; 100 = full
