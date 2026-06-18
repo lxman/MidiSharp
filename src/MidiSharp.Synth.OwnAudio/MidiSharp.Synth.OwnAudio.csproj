@@ -9,7 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MidiSharp.Synth\MidiSharp.Synth.csproj" />
-    <PackageReference Include="OwnAudioSharp.Basic" Version="3.0.7" />
+    <PackageReference Include="OwnAudioSharp.Basic" Version="3.1.3" />
   </ItemGroup>
 
 </Project>

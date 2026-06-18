@@ -12,7 +12,7 @@
     <!-- Shift-JIS / legacy code pages for RP-026 SMF Language and Display Extensions.
          Japanese Karaoke lyric meta events declaring {@JP} use Shift-JIS; the BCL on
          netstandard2.1 doesn't include those by default. Small (~80KB) optional dep. -->
-    <PackageReference Include="System.Text.Encoding.CodePages" Version="11.0.0-preview.4.26230.115" />
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="10.0.9" />
   </ItemGroup>
 
 </Project>
