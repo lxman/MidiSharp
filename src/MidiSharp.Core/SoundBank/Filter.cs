@@ -76,4 +76,7 @@ public readonly struct EqBand
     /// <summary>The SFZ band number N (from <c>eqN_*</c>), so an LFO target (lfoN_eqNgain/freq) can
     /// address this band. 0 when unspecified (SF2/DLS, which don't number EQ bands).</summary>
     public int BandNumber { get; init; }
+
+    /// <summary>SFZ eqN_vel2gain: dB added to this band's gain at full velocity (scaled by velocity). 0 = none.</summary>
+    public double VelToGainDb { get; init; }
 }

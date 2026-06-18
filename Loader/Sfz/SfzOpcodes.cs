@@ -29,6 +29,8 @@ internal static class SfzOpcodes
         "volume", "global_volume", "master_volume", "group_volume", "pan",
         "amplitude",   // linear-% gain (folds into attenuation, combines with amplitude_oncc)
         "width",       // stereo mid/side width on stereo samples
+        // amp keytracking (gain varies by key)
+        "amp_keytrack", "amp_keycenter",
         // amp envelope
         "ampeg_delay", "ampeg_attack", "ampeg_hold", "ampeg_decay", "ampeg_sustain", "ampeg_release",
         // amp envelope velocity modulation (ampeg_vel2*)
@@ -98,7 +100,7 @@ internal static class SfzOpcodes
     // Opcode families (digits collapsed to "N") handled where the number sits mid-name, e.g. eq2_freq.
     private static readonly HashSet<string> HandledFamilies = new(StringComparer.Ordinal)
     {
-        "eqN_freq", "eqN_bw", "eqN_gain",
+        "eqN_freq", "eqN_bw", "eqN_gain", "eqN_velNgain",   // eqN_vel2gain: velocity → band gain
         // SFZ v2 generic LFOs (lfoN_*) — Phase 1: oscillator + direct pitch/volume/cutoff targets.
         // CC mods (lfoN_*_onccN), sub-stages (lfoN_waveN/ratioN/...) and eq/pan targets come later.
         "lfoN_freq", "lfoN_wave", "lfoN_delay", "lfoN_fade", "lfoN_phase",

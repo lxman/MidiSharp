@@ -440,6 +440,20 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Amp_keytrack_and_eq_vel2gain_parse()
+    {
+        WriteWav("a.wav");
+        var z = SoundBankLoader.Load(WriteSfz(
+            "<region> sample=a.wav key=60 amp_keytrack=-0.15 amp_keycenter=c2 " +
+            "eq1_freq=1000 eq1_vel2gain=6")).FindPatch(0, 0)!.Zones[0];
+        Assert.Equal(-0.15, z.AmpKeyTrackDbPerKey, 3);
+        Assert.Equal(36, z.AmpKeyTrackCenter);   // c2 = MIDI 36
+        var band = Assert.Single(z.EqBands);     // exists despite 0 base gain (velocity drives it)
+        Assert.Equal(0.0, band.GainDb, 3);
+        Assert.Equal(6.0, band.VelToGainDb, 3);
+    }
+
+    [Fact]
     public void Offby_alias_and_group_tune_parse()
     {
         WriteWav("a.wav");

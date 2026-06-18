@@ -173,6 +173,12 @@ public sealed class PatchZone
     /// <summary>SFZ bend_smooth: time constant (seconds) to glide pitch-bend changes. 0 = instant.</summary>
     public double BendSmoothSeconds { get; init; }
 
+    /// <summary>SFZ amp_keytrack: gain change in dB per key away from <see cref="AmpKeyTrackCenter"/>. 0 = none.</summary>
+    public double AmpKeyTrackDbPerKey { get; init; }
+
+    /// <summary>SFZ amp_keycenter: reference key for <see cref="AmpKeyTrackDbPerKey"/> (default 60).</summary>
+    public int AmpKeyTrackCenter { get; init; } = 60;
+
     /// <summary>
     /// SFZ v2 generic LFOs (<c>lfoN_*</c>): indexed oscillators routed to pitch/volume/cutoff/etc.,
     /// run per-sample in the voice alongside the SF2 two-slot LFOs. Null for SF2/DLS and for SFZ zones

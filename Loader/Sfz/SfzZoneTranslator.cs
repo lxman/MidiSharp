@@ -252,6 +252,8 @@ internal static class SfzZoneTranslator
             WidthCc = CollectCcAmounts(r, "width_oncc", "width_cc"),
             NoteSelfMask = !string.Equals(r.Get("note_selfmask")?.Trim(), "off", StringComparison.OrdinalIgnoreCase),
             BendSmoothSeconds = r.GetDouble("bend_smooth", 0) / 1000.0,   // SFZ bend_smooth is milliseconds
+            AmpKeyTrackDbPerKey = r.GetDouble("amp_keytrack", 0),
+            AmpKeyTrackCenter = r.GetKey("amp_keycenter", control) ?? 60,
             Lfos = lfos,
         };
     }
@@ -442,10 +444,11 @@ internal static class SfzZoneTranslator
         {
             double gain = r.GetDouble("eq" + n + "_gain", 0);
             double freq = r.GetDouble("eq" + n + "_freq", 0);
-            // Keep a band if it has audible static gain, OR an LFO drives it (then a 0-gain band is the
-            // centre the LFO oscillates around). Either way it needs a defined frequency.
+            double velGain = r.GetDouble("eq" + n + "_vel2gain", 0);
+            // Keep a band if it has audible static gain, an LFO drives it, or velocity drives it (then a
+            // 0-gain band is the centre that's modulated). Either way it needs a defined frequency.
             bool lfoDriven = lfoBands?.Contains(n) == true;
-            if ((gain == 0 && !lfoDriven) || freq <= 0) continue;
+            if ((gain == 0 && !lfoDriven && velGain == 0) || freq <= 0) continue;
             double bw = r.GetDouble("eq" + n + "_bw", 1.0);
             (bands ??= new List<EqBand>()).Add(new EqBand
             {
@@ -453,6 +456,7 @@ internal static class SfzZoneTranslator
                 BandwidthOctaves = bw,
                 GainDb = gain,
                 BandNumber = n,
+                VelToGainDb = velGain,
             });
         }
         return bands ?? (IReadOnlyList<EqBand>)Array.Empty<EqBand>();

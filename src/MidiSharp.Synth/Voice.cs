@@ -319,6 +319,9 @@ public sealed class Voice
             : 1.0;
         if (zone.AmpKeyCurve is { } keyCurve)
             _ampVelCurveFactor *= keyCurve[Math.Clamp(keyNumber, 0, 127)];
+        // SFZ amp_keytrack: dB gain change per key from the center, folded into the per-note factor.
+        if (zone.AmpKeyTrackDbPerKey != 0.0)
+            _ampVelCurveFactor *= Math.Pow(10.0, zone.AmpKeyTrackDbPerKey * (keyNumber - zone.AmpKeyTrackCenter) / 20.0);
 
         // SFZ CC crossfades are live (the controller can move during the note), so keep the tables
         // and re-evaluate them per block in Process rather than baking a single factor here.
@@ -532,13 +535,15 @@ public sealed class Voice
         for (int i = 0; i < _eqBandCount; i++)
         {
             var band = zone.EqBands[i];
+            // SFZ eqN_vel2gain: velocity adds to this band's gain (fixed per note).
+            double eqGain = band.GainDb + velNorm * band.VelToGainDb;
             _eqBaseFreq[i] = band.FrequencyHz;
             _eqBaseBw[i] = band.BandwidthOctaves;
-            _eqBaseGain[i] = band.GainDb;
+            _eqBaseGain[i] = eqGain;
             _eqBandNumber[i] = band.BandNumber;
             _eqLfoDriven[i] = false;
-            _eq[i].SetParameters(band.FrequencyHz, band.BandwidthOctaves, band.GainDb);
-            if (_channels == 2) _eqRight[i].SetParameters(band.FrequencyHz, band.BandwidthOctaves, band.GainDb);
+            _eq[i].SetParameters(band.FrequencyHz, band.BandwidthOctaves, eqGain);
+            if (_channels == 2) _eqRight[i].SetParameters(band.FrequencyHz, band.BandwidthOctaves, eqGain);
         }
 
         // Mark which EQ bands a generic LFO drives (needs both EQ bands and LFO runners configured).
