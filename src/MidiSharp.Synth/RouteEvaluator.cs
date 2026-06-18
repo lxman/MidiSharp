@@ -69,13 +69,18 @@ internal static class RouteEvaluator
             // gain→dB conversion is nonlinear.
             if (route.Transform == ModTransform.AmplitudeCurve)
             {
-                double gain = route.Amount * AriaCurve.Eval(route.CurveIndex, srcRaw);
+                double shaped = route.CurveTable is { } ampTable ? CurveLookup(ampTable, srcRaw)
+                                                                 : AriaCurve.Eval(route.CurveIndex, srcRaw);
+                double gain = route.Amount * shaped;
                 double att = -20.0 * Math.Log10(Math.Clamp(gain, 1e-5, 1e5));
                 contributions.AttenuationDb += att;
                 continue;
             }
 
-            double transformed = ApplyTransform(srcRaw, route.Transform);
+            // A resolved CC-response curve (SFZ *_curvecc) maps the source instead of the linear transform.
+            double transformed = route.CurveTable is { } table
+                ? CurveLookup(table, srcRaw)
+                : ApplyTransform(srcRaw, route.Transform);
             double amount = route.Amount;
 
             // SF2 modulator #10 (pitch wheel × bend range) is the canonical
@@ -144,6 +149,13 @@ internal static class RouteEvaluator
 
             default: return 0.0;
         }
+    }
+
+    /// <summary>Maps a normalized source x∈[0,1] through a resolved 128-entry CC-response curve.</summary>
+    private static double CurveLookup(double[] table, double x)
+    {
+        int i = (int)(Math.Clamp(x, 0.0, 1.0) * 127.0 + 0.5);
+        return table[i < 0 ? 0 : i > 127 ? 127 : i];
     }
 
     private static double ApplyTransform(double x, ModTransform transform)

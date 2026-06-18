@@ -409,6 +409,21 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Custom_curve_is_parsed_and_applied_to_a_route()
+    {
+        WriteWav("a.wav");
+        var z = SoundBankLoader.Load(WriteSfz("""
+            <curve> curve_index=16 v000=0 v064=1 v127=0
+            <region> sample=a.wav key=60 tune_oncc34=1200 tune_curvecc34=16
+            """)).FindPatch(0, 0)!.Zones[0];
+        // The tune route carries the resolved custom curve (the bend route has none).
+        var route = z.Routes.Single(rt => rt.Dest == MidiSharp.SoundBank.ModDestination.PitchCents && rt.CurveTable != null);
+        Assert.Equal(0.0, route.CurveTable![0], 3);    // v000
+        Assert.True(route.CurveTable[64] > 0.9);       // v064 peak
+        Assert.Equal(0.0, route.CurveTable[127], 3);   // v127
+    }
+
+    [Fact]
     public void Cithara_cluster_opcodes_parse()
     {
         WriteWav("a.wav");
@@ -965,7 +980,7 @@ public sealed class SfzLoaderTests : IDisposable
     {
         var path = WriteSfz("""
             <control> set_cc7=100 default_path=samples/
-            <curve> curve_index=1 v000=0 v127=1
+            <effect> type=reverb bus=main
             <region> sample=a.wav volume=-3 lorand=0.0 hirand=0.5 off_mode=fast amp_random=3 direction=reverse pitchlfo_freq_oncc4=2
             """);
 
@@ -985,8 +1000,8 @@ public sealed class SfzLoaderTests : IDisposable
         Assert.DoesNotContain("off_mode", ops);     // Tier B
         Assert.DoesNotContain("amp_random", ops);    // Tier A
         Assert.DoesNotContain("set_ccN", ops);       // set_cc/set_hdcc seeds
-        // The skipped <curve> header is recorded.
-        Assert.Contains(report.IgnoredHeaders, h => h.Header == "curve");
+        // A skipped header (e.g. <effect>) is recorded; <curve> is now parsed, not ignored.
+        Assert.Contains(report.IgnoredHeaders, h => h.Header == "effect");
         // A known ARIA opcode carries an explanatory note.
         Assert.Contains(report.UnsupportedOpcodes, o => o.Opcode == "direction" && o.Note != null);
     }

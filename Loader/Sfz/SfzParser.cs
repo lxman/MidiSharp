@@ -176,6 +176,28 @@ internal static class SfzParser
             region = null;
         }
 
+        // Accumulates a <curve> block; flushed on the next header into control.Curves.
+        Dictionary<string, string>? curve = null;
+        void FlushCurve()
+        {
+            if (curve == null) return;
+            if (curve.TryGetValue("curve_index", out var idxStr) &&
+                int.TryParse(idxStr.Trim(), out int idx))
+            {
+                var points = new SortedDictionary<int, double>();
+                foreach (var kv in curve)
+                {
+                    if (kv.Key.Length == 4 && kv.Key[0] == 'v' &&
+                        int.TryParse(kv.Key.AsSpan(1), out int pos) && pos is >= 0 and <= 127 &&
+                        double.TryParse(kv.Value.Trim(), System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture, out double v))
+                        points[pos] = v;
+                }
+                if (points.Count > 0) control.Curves[idx] = InterpolateCurve(points);
+            }
+            curve = null;
+        }
+
         var matches = Anchor.Matches(text);
         for (int m = 0; m < matches.Count; m++)
         {
@@ -185,6 +207,7 @@ internal static class SfzParser
             if (token[0] == '<')
             {
                 FlushRegion();
+                FlushCurve();
                 string header = token.Substring(1, token.Length - 2).ToLowerInvariant();
                 switch (header)
                 {
@@ -193,7 +216,8 @@ internal static class SfzParser
                     case "master": master.Clear(); group.Clear(); scope = Scope.Master; break;
                     case "group": group.Clear(); scope = Scope.Group; break;
                     case "region": region = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase); scope = Scope.Region; break;
-                    default:  // <curve>, <effect>, <sample>, … — skipped, but recorded for diagnostics
+                    case "curve": curve = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase); scope = Scope.Curve; break;
+                    default:  // <effect>, <sample>, … — skipped, but recorded for diagnostics
                         ignoredHeaders.TryGetValue(header, out int count);
                         ignoredHeaders[header] = count + 1;
                         scope = Scope.Ignore;
@@ -229,11 +253,13 @@ internal static class SfzParser
                 case Scope.Master: master[key] = value; break;
                 case Scope.Group: group[key] = value; break;
                 case Scope.Region: region![key] = value; break;
+                case Scope.Curve: curve![key] = value; break;
                 case Scope.Ignore: break;
             }
         }
 
         FlushRegion();
+        FlushCurve();
         return new SfzInstrument
         {
             Control = control,
@@ -280,5 +306,22 @@ internal static class SfzParser
         }
     }
 
-    private enum Scope { Control, Global, Master, Group, Region, Ignore }
+    /// <summary>Builds a 128-entry curve table from sparse v### points (linear interp; ends held).</summary>
+    private static double[] InterpolateCurve(SortedDictionary<int, double> points)
+    {
+        var table = new double[128];
+        var keys = new List<int>(points.Keys);
+        for (int i = 0; i < keys[0]; i++) table[i] = points[keys[0]];                 // before first → hold
+        for (int i = keys[^1]; i < 128; i++) table[i] = points[keys[^1]];             // after last → hold
+        for (int k = 0; k < keys.Count - 1; k++)
+        {
+            int a = keys[k], b = keys[k + 1];
+            double va = points[a], vb = points[b];
+            for (int i = a; i <= b; i++)
+                table[i] = va + (vb - va) * (i - a) / (double)(b - a);
+        }
+        return table;
+    }
+
+    private enum Scope { Control, Global, Master, Group, Region, Ignore, Curve }
 }

@@ -28,6 +28,13 @@ internal sealed class SfzControl
     /// routes and locc/hicc gates start where the instrument expects.
     /// </summary>
     public Dictionary<int, int> InitialControllers { get; } = new();
+
+    /// <summary>
+    /// Custom <c>&lt;curve&gt;</c> definitions: curve index → 128-entry table (v000..v127, sparse points
+    /// linearly interpolated). Referenced by <c>*_curvecc</c> opcodes with an index ≥ 7 (or any index a
+    /// curve block redefines); built-in curves 0-6 stay in <see cref="MidiSharp.SoundBank.AriaCurve"/>.
+    /// </summary>
+    public Dictionary<int, double[]> Curves { get; } = new();
 }
 
 /// <summary>

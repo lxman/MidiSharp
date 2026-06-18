@@ -115,7 +115,8 @@ internal static class SfzOpcodes
         "ampeg_delay_curveccN", "ampeg_attack_curveccN", "ampeg_hold_curveccN",
         "ampeg_decay_curveccN", "ampeg_release_curveccN", "ampeg_sustain_curveccN",
         "delay_curveccN",   // curve for delay_cc{N}
-        "tune_curveccN", "width_curveccN",   // curves for tune_oncc / width_oncc (custom curves → linear)
+        // curves for the routed _oncc params — custom <curve> tables applied; built-in stay continuous/linear
+        "tune_curveccN", "width_curveccN", "pan_curveccN", "cutoff_curveccN",
         // v1/ARIA bare-cc envelope aliases (ampeg_{stage}cc{N} ≡ ampeg_{stage}_oncc{N}), baked in EnvCcOffset
         "ampeg_delayccN", "ampeg_attackccN", "ampeg_holdccN",
         "ampeg_decayccN", "ampeg_sustainccN", "ampeg_releaseccN",

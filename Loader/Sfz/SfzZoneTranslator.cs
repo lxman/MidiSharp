@@ -65,7 +65,7 @@ internal static class SfzZoneTranslator
         // the static seeded CC here — which is correct for the static-seed case and keeps every existing
         // font byte-identical (the dynamic path is opt-in, gated on this flag).
         bool dynamic = r.GetInt("ampeg_dynamic", 0) != 0;
-        double CcBake(string stage) => dynamic ? 0.0 : EnvCcOffset(r, ic, stage);
+        double CcBake(string stage) => dynamic ? 0.0 : EnvCcOffset(r, ic, stage, control.Curves);
         var ampEnv = new EnvelopeSettings
         {
             DelaySeconds = r.GetDouble("ampeg_delay", 0) + CcBake("ampeg_delay"),
@@ -145,13 +145,13 @@ internal static class SfzZoneTranslator
         // dynamics match the reference instead of our older dB-attenuation route. Either way velocity
         // is a per-note linear factor applied in Voice — no separate velocity modulation route.
         double[] ampVelCurve = BuildVelocityCurve(r)
-                               ?? BuildVeltrackCurve(ComputeEffectiveVeltrack(r, control.InitialControllers));
+                               ?? BuildVeltrackCurve(ComputeEffectiveVeltrack(r, control.InitialControllers, control.Curves));
         // Velocity crossfade (xfin/xfout) folds in as an extra velocity→gain factor, so layers fade
         // across their boundaries instead of switching abruptly.
         ApplyVelocityCrossfade(r, ampVelCurve);
 
         // ── Routes: _oncc modulations + suppressed default-CC routes ──
-        var routes = BuildRoutes(r, control.InitialControllers);
+        var routes = BuildRoutes(r, control.InitialControllers, control.Curves);
 
         // ── Round-robin (seq_length / seq_position) ──────────────────
         RoundRobin? roundRobin = null;
@@ -204,7 +204,7 @@ internal static class SfzZoneTranslator
         double pitchRandomCents = r.GetDouble("pitch_random", 0);
         // delay_cc{N} / delay_oncc{N} shift the start delay by a CC, evaluated once at the seeded CC
         // (the delay is fixed at note onset). Negative offsets can cancel a base delay → clamp at 0.
-        double delaySeconds = Math.Max(0, r.GetDouble("delay", 0) + EnvCcOffset(r, ic, "delay"));
+        double delaySeconds = Math.Max(0, r.GetDouble("delay", 0) + EnvCcOffset(r, ic, "delay", control.Curves));
         double delayRandomSeconds = r.GetDouble("delay_random", 0);
         long offsetRandomFrames = r.Has("offset_random") ? r.GetInt("offset_random", 0) : 0;
 
@@ -276,14 +276,15 @@ internal static class SfzZoneTranslator
     /// (delay), both fixed at note onset. Returns the additive offset in the param's units (seconds,
     /// or percent for sustain); 0 when no CC is seeded.
     /// </summary>
-    private static double EnvCcOffset(SfzRegion r, IReadOnlyDictionary<int, int> initialCc, string stageParam)
+    private static double EnvCcOffset(SfzRegion r, IReadOnlyDictionary<int, int> initialCc, string stageParam,
+        IReadOnlyDictionary<int, double[]> curves)
     {
         double sum = 0;
         foreach (var (param, cc, value) in r.EnumerateModulations())
         {
             if (param != stageParam || !initialCc.TryGetValue(cc, out int ccVal)) continue;
             int curveIdx = r.GetInt(stageParam + "_curvecc" + cc, 0);
-            sum += value * EvalBuiltinCurve(curveIdx, ccVal / 127.0);
+            sum += value * EvalCurve(curveIdx, ccVal / 127.0, curves);
         }
 
         // v1/ARIA short form ampeg_{stage}cc{N} (no underscore) — an alias of ampeg_{stage}_oncc{N}
@@ -295,7 +296,7 @@ internal static class SfzZoneTranslator
             if (!double.TryParse(raw.Trim(), System.Globalization.NumberStyles.Float,
                     System.Globalization.CultureInfo.InvariantCulture, out double value)) continue;
             int curveIdx = r.GetInt(stageParam + "_curvecc" + cc, 0);
-            sum += value * EvalBuiltinCurve(curveIdx, ccVal / 127.0);
+            sum += value * EvalCurve(curveIdx, ccVal / 127.0, curves);
         }
         return sum;
     }
@@ -701,14 +702,15 @@ internal static class SfzZoneTranslator
     /// amp_veltrack_curvecc{N} and evaluated at the seeded initial CC. Falls back to an unseeded CC's
     /// raw depth when the base is zeroed (legacy banks that drive veltrack from a host-set CC).
     /// </summary>
-    private static double ComputeEffectiveVeltrack(SfzRegion r, IReadOnlyDictionary<int, int> initialCc)
+    private static double ComputeEffectiveVeltrack(SfzRegion r, IReadOnlyDictionary<int, int> initialCc,
+        IReadOnlyDictionary<int, double[]> curves)
     {
         double veltrack = r.GetDouble("amp_veltrack", 100.0);
         foreach (var (param, cc, value) in r.EnumerateModulations())
         {
             if (param != "amp_veltrack" || !initialCc.TryGetValue(cc, out int ccVal)) continue;
             int curveIdx = r.GetInt("amp_veltrack_curvecc" + cc, 0);
-            veltrack += EvalBuiltinCurve(curveIdx, ccVal / 127.0) * value;
+            veltrack += EvalCurve(curveIdx, ccVal / 127.0, curves) * value;
         }
         if (veltrack == 0)
         {
@@ -846,7 +848,8 @@ internal static class SfzZoneTranslator
         return 1.0;
     }
 
-    private static List<ModulationRoute> BuildRoutes(SfzRegion r, IReadOnlyDictionary<int, int> initialCc)
+    private static List<ModulationRoute> BuildRoutes(SfzRegion r, IReadOnlyDictionary<int, int> initialCc,
+        IReadOnlyDictionary<int, double[]> curves)
     {
         var routes = new List<ModulationRoute>();
         var handled = new HashSet<(int Cc, ModDestination Dest)>();
@@ -856,10 +859,14 @@ internal static class SfzZoneTranslator
             var source = MapCcSource(cc);
             if (source == null) continue;
 
+            // A custom <curve> (e.g. tune_curvecc16) shapes the CC response; built-in curves keep the
+            // route's continuous transform (null table). pan/cutoff/tune curves are only applied when custom.
+            double[]? Curve(string p) => ResolveCurveTable(r.GetInt(p + "_curvecc" + cc, 0), curves);
+
             ModulationRoute? route = param switch
             {
-                // pan_oncc: 0.1%-style ±100 span → normalized pan, linear.
-                "pan" => Route(source, ModDestination.PanNormalized, value / 100.0, ModTransform.Linear),
+                // pan_oncc: 0.1%-style ±100 span → normalized pan, linear (or pan_curvecc when custom).
+                "pan" => Route(source, ModDestination.PanNormalized, value / 100.0, ModTransform.Linear, Curve("pan")),
                 // volume_oncc (gain_cc is sfizz's alias for it): dB, linear (CC up = louder = less attenuation).
                 "volume" or "gain" => Route(source, ModDestination.AttenuationDb, -value, ModTransform.Linear),
                 // amplitude_oncc: CC → linear gain via the ARIA curve (amplitude_curvecc, default linear),
@@ -871,11 +878,11 @@ internal static class SfzZoneTranslator
                     Amount = value / 100.0,
                     Transform = ModTransform.AmplitudeCurve,
                     CurveIndex = r.GetInt("amplitude_curvecc" + cc, 0),
+                    CurveTable = Curve("amplitude"),
                 },
-                "cutoff" => Route(source, ModDestination.FilterCutoffCents, value, ModTransform.Linear),
-                // tune_oncc: CC → pitch (cents). tune_curvecc is its ARIA curve; built-in curves 0-6
-                // would shape it, but the SFZ fonts using this use custom curves (>6) → linear fallback.
-                "tune" => Route(source, ModDestination.PitchCents, value, ModTransform.Linear),
+                "cutoff" => Route(source, ModDestination.FilterCutoffCents, value, ModTransform.Linear, Curve("cutoff")),
+                // tune_oncc: CC → pitch (cents), shaped by tune_curvecc (custom curves applied; built-in → linear).
+                "tune" => Route(source, ModDestination.PitchCents, value, ModTransform.Linear, Curve("tune")),
                 "pitchlfo_depth" => Route(source, ModDestination.VibratoLfoPitchDepthCents, value, ModTransform.Linear),
                 _ => null,
             };
@@ -911,8 +918,28 @@ internal static class SfzZoneTranslator
         return routes;
     }
 
-    private static ModulationRoute Route(ModSource src, ModDestination dest, double amount, ModTransform t) =>
-        new() { Source = src, Dest = dest, Amount = amount, Transform = t };
+    private static ModulationRoute Route(ModSource src, ModDestination dest, double amount, ModTransform t,
+        double[]? curveTable = null) =>
+        new() { Source = src, Dest = dest, Amount = amount, Transform = t, CurveTable = curveTable };
+
+    /// <summary>
+    /// Resolves a *_curvecc index to a runtime curve table — but only for CUSTOM &lt;curve&gt; tables.
+    /// Built-in indices (0-6) return null so the route keeps its continuous transform (byte-identical),
+    /// and unknown built-ins (≥7) with no custom definition fall back to linear.
+    /// </summary>
+    private static double[]? ResolveCurveTable(int curveIndex, IReadOnlyDictionary<int, double[]> curves)
+        => curves.TryGetValue(curveIndex, out var custom) ? custom : null;
+
+    /// <summary>Evaluates a curve at x∈[0,1] for load-time bakes: a custom &lt;curve&gt; table, else built-in.</summary>
+    private static double EvalCurve(int index, double x, IReadOnlyDictionary<int, double[]> curves)
+    {
+        if (curves.TryGetValue(index, out var t))
+        {
+            int i = Math.Clamp((int)(x * 127.0 + 0.5), 0, 127);
+            return t[i];
+        }
+        return AriaCurve.Eval(index, x);
+    }
 
     /// <summary>
     /// Maps an SFZ CC index to a modulation source. 0-127 are MIDI CCs; the ARIA

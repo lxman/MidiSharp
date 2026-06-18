@@ -139,6 +139,13 @@ public sealed class ModulationRoute
     public int CurveIndex { get; init; }
 
     /// <summary>
+    /// Optional resolved 128-entry CC-response curve (SFZ <c>*_curvecc</c>: built-in 1-6 sampled, or a
+    /// custom &lt;curve&gt; table). When present the evaluator maps the source through it instead of the
+    /// linear transform. Null = use <see cref="Transform"/> directly (the common case).
+    /// </summary>
+    public double[]? CurveTable { get; init; }
+
+    /// <summary>
     /// Optional secondary source whose normalized value scales
     /// <see cref="Amount"/> per-block. Null = static amount.
     /// </summary>
