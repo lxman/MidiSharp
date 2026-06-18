@@ -209,6 +209,27 @@ public sealed class DlsLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Extensible_float_wave_decodes_as_float_not_int()
+    {
+        var pcm = new[] { 0.75f, 0.123f, 0.75f, 0.123f };
+        var dls = MakeDls(
+            Instrument(0, 0, false, "FloatExt", null,
+                new[] { Region(0, 127, 0, 127, 0, 0, null, null) }),
+            new[] { WaveFloatExtensible(pcm) });
+
+        using var bank = Load(dls);
+        int id = bank.FindPatch(0, 0)!.Zones[0].Sample.SampleId;
+        var buf = new float[pcm.Length];
+        int n = bank.Samples.ReadFrames(id, 0, buf);
+
+        Assert.Equal(pcm.Length, n);
+        // Decoded as float → matches the source. Misread as integer PCM would map every value to ~0.49
+        // (the float bit-patterns interpreted as int32), so the tolerance below would fail.
+        Assert.True(Math.Abs(buf[0] - 0.75f) < 1e-4, $"frame 0: {buf[0]}");
+        Assert.True(Math.Abs(buf[1] - 0.123f) < 1e-4, $"frame 1: {buf[1]}");
+    }
+
+    [Fact]
     public void Wsmp_gain_adds_attenuation()
     {
         // wsmp lGain is 16.16 cB of gain (negative = quieter); the reader negates → positive attenuation.
@@ -285,6 +306,25 @@ public sealed class DlsLoaderTests : IDisposable
         return List("wave",
             Chunk("fmt ", Cat(U16(1), U16(1), U32(44100), U32(88200), U16(2), U16(16))),  // PCM mono 16-bit
             Wsmp(wsmp),
+            Chunk("data", data),
+            List("INFO", Chunk("INAM", Zstr("wav"))));
+    }
+
+    /// <summary>A mono WAVE_FORMAT_EXTENSIBLE wave whose SubFormat GUID is KSDATAFORMAT_SUBTYPE_IEEE_FLOAT,
+    /// carrying float32 PCM. The reader must resolve the subformat and decode it as float.</summary>
+    private static byte[] WaveFloatExtensible(float[] pcm)
+    {
+        var data = new byte[pcm.Length * 4];
+        Buffer.BlockCopy(pcm, 0, data, 0, data.Length);
+        // KSDATAFORMAT_SUBTYPE_IEEE_FLOAT = {00000003-0000-0010-8000-00AA00389B71}; leading word = 0x0003.
+        byte[] floatSubformat = { 0x03, 0, 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xAA, 0, 0x38, 0x9B, 0x71 };
+        var fmt = Cat(
+            U16(0xFFFE), U16(1), U32(44100), U32(44100 * 4), U16(4), U16(32),  // extensible, mono, 32-bit
+            U16(22), U16(32), U32(0),    // cbSize, wValidBitsPerSample, dwChannelMask
+            floatSubformat);
+        return List("wave",
+            Chunk("fmt ", fmt),
+            Wsmp(new WsmpSpec(60, 0, 0, null)),
             Chunk("data", data),
             List("INFO", Chunk("INAM", Zstr("wav"))));
     }

@@ -326,6 +326,14 @@ public static class DlsReader
                     sampleRate = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(4));
                     blockAlign = BinaryPrimitives.ReadUInt16LittleEndian(span.Slice(12));
                     bitsPerSample = BinaryPrimitives.ReadUInt16LittleEndian(span.Slice(14));
+                    // WAVE_FORMAT_EXTENSIBLE (0xFFFE): the real format lives in the SubFormat GUID, whose
+                    // leading 16-bit word is the effective format tag (KSDATAFORMAT_SUBTYPE_PCM /
+                    // _IEEE_FLOAT, at byte 24). Resolve it so a float-tagged extensible wave decodes as
+                    // float instead of being misread as integer PCM. (Container bitsPerSample at byte 14
+                    // is what we decode with — extensible PCM is MSB-justified in the container, so an
+                    // N-in-32 sample reads correctly as 32-bit.)
+                    if (formatTag == WaveFormatTag.Extensible && span.Length >= 26)
+                        formatTag = (WaveFormatTag)BinaryPrimitives.ReadUInt16LittleEndian(span.Slice(24));
                     break;
                 case "data":
                     data = b;
