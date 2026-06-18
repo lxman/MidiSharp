@@ -161,6 +161,18 @@ public sealed class PatchZone
     /// </summary>
     public double WidthNormalized { get; init; } = 1.0;
 
+    /// <summary>Live CC modulation of stereo width (width_oncc{N}), in width-percent. Null = none.</summary>
+    public LfoCcDepth[]? WidthCc { get; init; }
+
+    /// <summary>
+    /// SFZ note_selfmask: when true (default), retriggering the same key cuts the previous voice;
+    /// note_selfmask=off lets overlapping same-key notes ring together (plucked/struck instruments).
+    /// </summary>
+    public bool NoteSelfMask { get; init; } = true;
+
+    /// <summary>SFZ bend_smooth: time constant (seconds) to glide pitch-bend changes. 0 = instant.</summary>
+    public double BendSmoothSeconds { get; init; }
+
     /// <summary>
     /// SFZ v2 generic LFOs (<c>lfoN_*</c>): indexed oscillators routed to pitch/volume/cutoff/etc.,
     /// run per-sample in the voice alongside the SF2 two-slot LFOs. Null for SF2/DLS and for SFZ zones

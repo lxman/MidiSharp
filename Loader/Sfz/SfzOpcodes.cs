@@ -22,7 +22,9 @@ internal static class SfzOpcodes
         // activation
         "key", "lokey", "hikey", "pitch_keycenter", "lovel", "hivel",
         // tuning
-        "tune", "pitch", "transpose", "pitch_keytrack", "bend_up", "bend_down",
+        "tune", "pitch", "transpose", "pitch_keytrack", "bend_up", "bend_down", "bend_smooth",
+        // note self-masking (overlapping same-key notes)
+        "note_selfmask",
         // level / pan / stereo
         "volume", "global_volume", "master_volume", "group_volume", "pan",
         "amplitude",   // linear-% gain (folds into attenuation, combines with amplitude_oncc)
@@ -85,7 +87,7 @@ internal static class SfzOpcodes
     // The "{param}_oncc{N}" / "{param}_cc{N}" modulation params actually routed.
     private static readonly HashSet<string> ModParams = new(StringComparer.Ordinal)
     {
-        "pan", "volume", "gain", "amplitude", "cutoff", "cutoff2", "pitchlfo_depth", "amp_veltrack",
+        "pan", "volume", "gain", "amplitude", "cutoff", "cutoff2", "tune", "width", "pitchlfo_depth", "amp_veltrack",
         "delay",   // delay_cc{N}/delay_oncc{N}: CC-modulated region start delay, baked at the seeded CC
         // CC→amp-envelope (ampeg_{stage}_oncc) — baked into the envelope at load, not routed
         "ampeg_delay", "ampeg_attack", "ampeg_hold", "ampeg_decay", "ampeg_release", "ampeg_sustain",
@@ -113,6 +115,7 @@ internal static class SfzOpcodes
         "ampeg_delay_curveccN", "ampeg_attack_curveccN", "ampeg_hold_curveccN",
         "ampeg_decay_curveccN", "ampeg_release_curveccN", "ampeg_sustain_curveccN",
         "delay_curveccN",   // curve for delay_cc{N}
+        "tune_curveccN", "width_curveccN",   // curves for tune_oncc / width_oncc (custom curves → linear)
         // v1/ARIA bare-cc envelope aliases (ampeg_{stage}cc{N} ≡ ampeg_{stage}_oncc{N}), baked in EnvCcOffset
         "ampeg_delayccN", "ampeg_attackccN", "ampeg_holdccN",
         "ampeg_decayccN", "ampeg_sustainccN", "ampeg_releaseccN",

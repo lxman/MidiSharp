@@ -409,6 +409,22 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Cithara_cluster_opcodes_parse()
+    {
+        WriteWav("a.wav");
+        var z = SoundBankLoader.Load(WriteSfz(
+            "<region> sample=a.wav key=60 note_selfmask=off bend_smooth=40 width_oncc31=100 tune_oncc34=-2400"))
+            .FindPatch(0, 0)!.Zones[0];
+        Assert.False(z.NoteSelfMask);
+        Assert.Equal(0.040, z.BendSmoothSeconds, 4);   // ms → seconds
+        Assert.Equal(31, Assert.Single(z.WidthCc!).Cc);
+        Assert.Equal(100.0, z.WidthCc![0].Amount, 1);
+        // tune_oncc34 is a CC → PitchCents route with the given cents amount.
+        Assert.Contains(z.Routes, rt => rt.Dest == MidiSharp.SoundBank.ModDestination.PitchCents
+                                        && Math.Abs(rt.Amount - (-2400)) < 1);
+    }
+
+    [Fact]
     public void Offby_alias_and_group_tune_parse()
     {
         WriteWav("a.wav");
@@ -950,7 +966,7 @@ public sealed class SfzLoaderTests : IDisposable
         var path = WriteSfz("""
             <control> set_cc7=100 default_path=samples/
             <curve> curve_index=1 v000=0 v127=1
-            <region> sample=a.wav volume=-3 lorand=0.0 hirand=0.5 off_mode=fast amp_random=3 direction=reverse width_oncc20=50
+            <region> sample=a.wav volume=-3 lorand=0.0 hirand=0.5 off_mode=fast amp_random=3 direction=reverse pitchlfo_freq_oncc4=2
             """);
 
         var report = SfzDiagnostics.Scan(path);
@@ -959,7 +975,7 @@ public sealed class SfzLoaderTests : IDisposable
         var ops = report.UnsupportedOpcodes.Select(o => o.Opcode).ToList();
         // Genuinely-dropped opcodes are reported (numbered ones aggregated to a family).
         Assert.Contains("direction", ops);
-        Assert.Contains("width_onccN", ops);
+        Assert.Contains("pitchlfo_freq_onccN", ops);
         // Handled opcodes — including ones implemented this session — are NOT reported.
         Assert.DoesNotContain("volume", ops);
         Assert.DoesNotContain("lorand", ops);

@@ -1396,6 +1396,9 @@ public sealed class Synthesizer
                 voice.Channel == channel &&
                 voice.KeyNumber == key)
             {
+                // SFZ note_selfmask=off: overlapping same-key notes ring together (plucked/struck), so
+                // the previous strike is left untouched instead of cut.
+                if (!voice.NoteSelfMask) continue;
                 // SFZ note_polyphony/off_mode: fade the previous strike (so a trill overlaps naturally)
                 // rather than hard-cutting it. Plain SF2/SFZ voices keep the abrupt kill. TurnOff only
                 // affects a Playing voice, so earlier fading retriggers ring on undisturbed.

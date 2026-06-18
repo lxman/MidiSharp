@@ -115,6 +115,14 @@ public sealed class Voice
     private CcCrossfade[]? _ccCrossfades;
     // SFZ stereo width (mid/side scale): 1.0 = full stereo (no-op), 0 = mono, -1 = swapped.
     private double _widthNorm = 1.0;
+    private double _widthBase = 1.0;                 // pre-modulation width; _widthNorm = base + live CC
+    private LfoCcDepth[]? _widthCc;                  // SFZ width_oncc (live, per-block)
+    // SFZ note_selfmask=off keeps overlapping same-key strikes ringing (read by KillVoicesByChannelKey).
+    private bool _noteSelfMask = true;
+    // SFZ bend_smooth: one-pole glide of the pitch-route contribution toward its per-block target.
+    private double _bendSmoothSeconds;
+    private double _smoothedPitchRouteCents;
+    private bool _pitchSmoothPrimed;
     // SFZ v2 generic LFOs (lfoN_*) — reusable runners; only the first _genericLfoCount are active.
     private GenericLfoRunner[] _genericLfos = System.Array.Empty<GenericLfoRunner>();
     private int _genericLfoCount;
@@ -192,6 +200,9 @@ public sealed class Voice
     public int GenerationId => _generationId;
     /// <summary>True when this voice should fade (not hard-cut) if turned off by a retrigger/off_by.</summary>
     public bool SmoothOff => _smoothOff;
+
+    /// <summary>SFZ note_selfmask — false lets a same-key retrigger ring alongside this voice.</summary>
+    public bool NoteSelfMask => _noteSelfMask;
     public bool IsFinished => _state == VoiceState.Free || _volumeEnvelope.IsFinished;
 
     public bool SostenutoHeld { get => _sostenutoHeld; set => _sostenutoHeld = value; }
@@ -314,7 +325,13 @@ public sealed class Voice
         _ccCrossfades = zone.CcCrossfades;
 
         // SFZ width: a per-voice mid/side scale on stereo samples (no-op at 1.0 / for mono).
-        _widthNorm = zone.WidthNormalized;
+        _widthBase = zone.WidthNormalized;
+        _widthNorm = _widthBase;
+        _widthCc = zone.WidthCc;
+        _noteSelfMask = zone.NoteSelfMask;
+        _bendSmoothSeconds = zone.BendSmoothSeconds;
+        _smoothedPitchRouteCents = 0;
+        _pitchSmoothPrimed = false;
 
         // SFZ v2 generic LFOs: configure one runner per zone LFO (growing the reusable pool as needed).
         if (zone.Lfos is { Length: > 0 } zoneLfos)
@@ -752,6 +769,15 @@ public sealed class Voice
         for (int g = 0; g < _genericLfoCount; g++)
             _genericLfos[g].BeginBlock(channelState);
 
+        // SFZ width_oncc: live CC modulation of stereo width, refreshed per block (amount is width-%).
+        if (_widthCc is { } widthCc)
+        {
+            double w = 0;
+            for (int i = 0; i < widthCc.Length; i++)
+                w += channelState.GetCC(widthCc[i].Cc) / 127.0 * widthCc[i].Amount / 100.0;
+            _widthNorm = _widthBase + w;
+        }
+
         // SFZ second-filter cutoff modulation (cutoff2_cc): re-coefficient the cascaded filter per block
         // from the live CC (constant within the block). Static second filters skip this.
         if (_hasFilter2 && _filter2CutoffCc is { } f2cc)
@@ -821,6 +847,21 @@ public sealed class Voice
             rightGain = (effectivePan >= 0 ? 1.0 : 1.0 + effectivePan) * balanceRight;
         }
 
+        // SFZ bend_smooth: glide the pitch-route contribution (pitch bend + tune CCs) toward its
+        // per-block target with a one-pole filter, instead of jumping. 0 → instant (byte-identical).
+        double pitchRouteCents = contrib.PitchCents;
+        if (_bendSmoothSeconds > 0.0)
+        {
+            if (!_pitchSmoothPrimed) { _smoothedPitchRouteCents = pitchRouteCents; _pitchSmoothPrimed = true; }
+            else
+            {
+                double blockSec = leftBuffer.Length / (double)_sampleRate;
+                double coeff = 1.0 - Math.Exp(-blockSec / _bendSmoothSeconds);
+                _smoothedPitchRouteCents += (pitchRouteCents - _smoothedPitchRouteCents) * coeff;
+            }
+            pitchRouteCents = _smoothedPitchRouteCents;
+        }
+
         // Base pitch in cents (not including bend or modulation — those add per sample).
         double baseStaticPitchCents =
             (_keyNumber - _rootKey) * _scaleTuningCentsPerKey
@@ -828,7 +869,7 @@ public sealed class Voice
             + _fineTuneCents
             + _pitchCorrectionCents
             + nonBendPitchCents
-            + contrib.PitchCents;
+            + pitchRouteCents;
 
         // Filter resonance can be modulated per block; cutoff changes per sample.
         double filterResonanceDb = _filterBaseResonanceDb + contrib.FilterResonanceDb;

@@ -249,6 +249,9 @@ internal static class SfzZoneTranslator
             AmpKeyCurve = BuildKeyCrossfade(r, control),
             CcCrossfades = BuildCcCrossfades(r),
             WidthNormalized = r.GetDouble("width", 100.0) / 100.0,
+            WidthCc = CollectCcAmounts(r, "width_oncc", "width_cc"),
+            NoteSelfMask = !string.Equals(r.Get("note_selfmask")?.Trim(), "off", StringComparison.OrdinalIgnoreCase),
+            BendSmoothSeconds = r.GetDouble("bend_smooth", 0) / 1000.0,   // SFZ bend_smooth is milliseconds
             Lfos = lfos,
         };
     }
@@ -471,6 +474,18 @@ internal static class SfzZoneTranslator
             EnvelopeDepthCents = envDepthCents,
             LfoDepthCents = r.GetDouble("fillfo_depth", 0),
         };
+    }
+
+    /// <summary>Collects {prefix}{N}=amount CC modulations (e.g. width_oncc31) into (cc, amount) pairs.</summary>
+    private static LfoCcDepth[]? CollectCcAmounts(SfzRegion r, params string[] prefixes)
+    {
+        List<LfoCcDepth>? list = null;
+        foreach (var prefix in prefixes)
+            foreach (var (n, raw) in r.EnumerateCc(prefix))
+                if (double.TryParse(raw.Trim(), System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out double amt))
+                    (list ??= new List<LfoCcDepth>()).Add(new LfoCcDepth(n, amt));
+        return list?.ToArray();
     }
 
     private static FilterType ParseFilterType(string? filType) =>
@@ -858,6 +873,9 @@ internal static class SfzZoneTranslator
                     CurveIndex = r.GetInt("amplitude_curvecc" + cc, 0),
                 },
                 "cutoff" => Route(source, ModDestination.FilterCutoffCents, value, ModTransform.Linear),
+                // tune_oncc: CC → pitch (cents). tune_curvecc is its ARIA curve; built-in curves 0-6
+                // would shape it, but the SFZ fonts using this use custom curves (>6) → linear fallback.
+                "tune" => Route(source, ModDestination.PitchCents, value, ModTransform.Linear),
                 "pitchlfo_depth" => Route(source, ModDestination.VibratoLfoPitchDepthCents, value, ModTransform.Linear),
                 _ => null,
             };
