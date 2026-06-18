@@ -45,6 +45,13 @@ public sealed class SoundBank : IDisposable
         = new Dictionary<int, int>();
 
     /// <summary>
+    /// The MIDI controller the synth should treat as the sustain pedal for this bank (SFZ sustain_cc).
+    /// Default CC64; half-pedal SFZ fonts reassign it (e.g. to CC90), in which case literal CC64 no
+    /// longer holds notes. 64 for SF2/SF3/DLS.
+    /// </summary>
+    public int SustainCc { get; init; } = 64;
+
+    /// <summary>
     /// Look up a patch by (bank, program). Returns null if no match exists.
     /// O(1) — backed by a dictionary built lazily on first call.
     /// </summary>

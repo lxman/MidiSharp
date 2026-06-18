@@ -157,6 +157,11 @@ public sealed class Synthesizer
         AllSoundOff();
         _soundBank = soundBank;
 
+        // SFZ sustain_cc reassignment: tell every channel which controller acts as its sustain pedal
+        // (CC64 for SF2/SF3/DLS and most SFZ; a half-pedal font may route it elsewhere, e.g. CC90).
+        for (int ch = 0; ch < _channels.Length; ch++)
+            _channels[ch].SustainCc = soundBank.SustainCc;
+
         // Seed the instrument's expected initial controller values (SFZ set_ccN/set_hdccN) onto every
         // channel so CC-driven routes and locc/hicc gates start where the bank expects. Routed through
         // ControlChange so known CCs hit their fields and the rest land in the generic store.
@@ -320,6 +325,11 @@ public sealed class Synthesizer
 
             voice.Configure(zone, samples, key, velocity, channel, ++_generationCounter, channelState);
 
+            // SFZ polyphony: cap simultaneous voices from this region, stealing the oldest past the limit
+            // (the just-allocated voice has the highest generation, so it survives unless the cap is 0).
+            if (zone.Polyphony >= 0)
+                EnforceRegionPolyphony(zone, channel);
+
             // GM2 CC72/73/75 envelope time scaling.
             if (attackOctaves != 0 || decayOctaves != 0 || releaseOctaves != 0)
                 voice.ApplyEnvelopeTimeScaling(attackOctaves, decayOctaves, releaseOctaves);
@@ -433,6 +443,19 @@ public sealed class Synthesizer
 
         var channelState = _channels[channel];
 
+        // Sustain pedal — handled here (not as a switch case) because SFZ sustain_cc can reassign it to
+        // any controller. Also stored generically so routes/ampeg_dynamic can read the raw value. When
+        // the bank keeps the default (CC64), this is exactly the old behaviour.
+        if (controller == channelState.SustainCc)
+        {
+            bool on = value >= 64;
+            if (channelState.Sustain && !on)
+                ReleaseAllSustainedVoices(channel);
+            channelState.Sustain = on;
+            channelState.SetGenericCc(controller, (byte)value);
+            return;
+        }
+
         switch (controller)
         {
             case 0: // Bank Select MSB
@@ -486,16 +509,6 @@ public sealed class Synthesizer
             case 95: // Phaser Depth (no processor)
                 channelState.PhaserDepth = (byte)value;
                 break;
-            case 64: // Sustain
-                var newSustain = value >= 64;
-                if (channelState.Sustain && !newSustain)
-                {
-                    // Release all sustained notes
-                    ReleaseAllSustainedVoices(channel);
-                }
-                channelState.Sustain = newSustain;
-                break;
-
             case 66: // Sostenuto
                 var newSostenuto = value >= 64;
                 switch (channelState.Sostenuto)
@@ -1420,6 +1433,33 @@ public sealed class Synthesizer
                 if (voice.SmoothOff) voice.TurnOff();
                 else voice.Kill();
             }
+        }
+    }
+
+    /// <summary>
+    /// SFZ polyphony: enforce a per-region voice cap. Counts the sounding voices from this exact zone on
+    /// the channel and steals the oldest (lowest generation) until at most <c>zone.Polyphony</c> remain.
+    /// The voice just allocated has the newest generation, so it survives unless the cap is 0.
+    /// </summary>
+    private void EnforceRegionPolyphony(PatchZone zone, int channel)
+    {
+        int cap = zone.Polyphony;
+        // Count only Playing voices (a stolen voice becomes Released/Free and drops out, so the loop
+        // terminates). This caps the simultaneously-held notes from the region; release tails ring on.
+        while (true)
+        {
+            int count = 0;
+            Voice? oldest = null;
+            foreach (var voice in _voices)
+            {
+                if (voice.State != VoiceState.Playing || voice.Channel != channel ||
+                    !ReferenceEquals(voice.Zone, zone)) continue;
+                count++;
+                if (oldest == null || voice.GenerationId < oldest.GenerationId) oldest = voice;
+            }
+            if (count <= cap || oldest == null) break;
+            if (oldest.SmoothOff) oldest.TurnOff();
+            else oldest.Kill();
         }
     }
 

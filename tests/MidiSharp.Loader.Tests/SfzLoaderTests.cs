@@ -1027,7 +1027,7 @@ public sealed class SfzLoaderTests : IDisposable
         var path = WriteSfz("""
             <control> set_cc7=100 default_path=samples/
             <effect> type=reverb bus=main
-            <region> sample=a.wav volume=-3 lorand=0.0 hirand=0.5 off_mode=fast amp_random=3 direction=reverse eq1_gain_oncc4=2
+            <region> sample=a.wav volume=-3 lorand=0.0 hirand=0.5 off_mode=fast amp_random=3 direction=reverse loop_crossfade=0.1
             """);
 
         var report = SfzDiagnostics.Scan(path);
@@ -1036,7 +1036,7 @@ public sealed class SfzLoaderTests : IDisposable
         var ops = report.UnsupportedOpcodes.Select(o => o.Opcode).ToList();
         // Genuinely-dropped opcodes are reported (numbered ones aggregated to a family).
         Assert.Contains("direction", ops);
-        Assert.Contains("eqN_gain_onccN", ops);
+        Assert.Contains("loop_crossfade", ops);
         // Handled opcodes — including ones implemented this session — are NOT reported.
         Assert.DoesNotContain("volume", ops);
         Assert.DoesNotContain("lorand", ops);
@@ -1106,5 +1106,87 @@ public sealed class SfzLoaderTests : IDisposable
         Assert.NotNull(bank.FindPatch(0, 111));   // FLAC instrument resolved
         // A program the bank doesn't wire up has no patch.
         Assert.Null(bank.FindPatch(0, 60));
+    }
+
+    // ── Final singletons (tail of the opcode-coverage sweep) ────────────
+
+    [Fact]
+    public void Pitch_veltrack_sets_velocity_to_pitch_cents()
+    {
+        WriteWav("a.wav");
+        var z = SoundBankLoader.Load(WriteSfz("<region> sample=a.wav key=60 pitch_veltrack=8"))
+            .FindPatch(0, 0)!.Zones[0];
+        Assert.Equal(8.0, z.PitchVelTrackCents, 3);
+        var def = SoundBankLoader.Load(WriteSfz("<region> sample=a.wav key=60"))
+            .FindPatch(0, 0)!.Zones[0];
+        Assert.Equal(0.0, def.PitchVelTrackCents, 3);   // default = none
+    }
+
+    [Fact]
+    public void Offset_oncc_collects_cc_to_start_offset()
+    {
+        WriteWav("a.wav");
+        var z = SoundBankLoader.Load(WriteSfz("<region> sample=a.wav key=60 offset_oncc98=320"))
+            .FindPatch(0, 0)!.Zones[0];
+        Assert.NotNull(z.OffsetCc);
+        Assert.Contains(z.OffsetCc!, c => c.Cc == 98 && Math.Abs(c.Amount - 320) < 1e-6);
+        var def = SoundBankLoader.Load(WriteSfz("<region> sample=a.wav key=60"))
+            .FindPatch(0, 0)!.Zones[0];
+        Assert.Null(def.OffsetCc);   // default = none
+    }
+
+    [Fact]
+    public void Polyphony_sets_region_voice_cap()
+    {
+        WriteWav("a.wav");
+        var z = SoundBankLoader.Load(WriteSfz("<region> sample=a.wav key=60 polyphony=1"))
+            .FindPatch(0, 0)!.Zones[0];
+        Assert.Equal(1, z.Polyphony);
+        var def = SoundBankLoader.Load(WriteSfz("<region> sample=a.wav key=60"))
+            .FindPatch(0, 0)!.Zones[0];
+        Assert.Equal(-1, def.Polyphony);   // default = unlimited
+    }
+
+    [Fact]
+    public void Sustain_cc_reassigns_bank_sustain_controller()
+    {
+        WriteWav("a.wav");
+        var bank = SoundBankLoader.Load(WriteSfz("<global> sustain_cc=90\n<region> sample=a.wav key=60"));
+        Assert.Equal(90, bank.SustainCc);
+        Assert.Equal(90, bank.FindPatch(0, 0)!.Zones[0].SustainCc);
+        var def = SoundBankLoader.Load(WriteSfz("<region> sample=a.wav key=60"));
+        Assert.Equal(64, def.SustainCc);   // default = CC64
+    }
+
+    [Fact]
+    public void Ampeg_release_shape_parses_into_volume_envelope()
+    {
+        WriteWav("a.wav");
+        var z = SoundBankLoader.Load(WriteSfz("<region> sample=a.wav key=60 ampeg_release=0.5 ampeg_release_shape=-6"))
+            .FindPatch(0, 0)!.Zones[0];
+        Assert.Equal(-6.0, z.VolumeEnvelope.ReleaseShape, 3);
+        var def = SoundBankLoader.Load(WriteSfz("<region> sample=a.wav key=60"))
+            .FindPatch(0, 0)!.Zones[0];
+        Assert.Equal(0.0, def.VolumeEnvelope.ReleaseShape, 3);   // default = unshaped exponential
+    }
+
+    [Fact]
+    public void Eq_oncc_builds_live_cc_modulation_on_a_band()
+    {
+        WriteWav("a.wav");
+        // A band with 0 base gain that exists only to be CC-driven (eq1_gain_oncc), plus freq/bw CC.
+        var z = SoundBankLoader.Load(WriteSfz(
+                "<region> sample=a.wav key=60 eq1_freq=200 eq1_bw=0 " +
+                "eq1_gain_oncc86=12 eq1_freq_oncc80=380 eq1_bw_oncc92=4"))
+            .FindPatch(0, 0)!.Zones[0];
+        Assert.Single(z.EqBands);
+        var band = z.EqBands[0];
+        Assert.Equal(1, band.BandNumber);
+        Assert.NotNull(band.GainCc);
+        Assert.Contains(band.GainCc!, c => c.Cc == 86 && Math.Abs(c.Amount - 12) < 1e-6);
+        Assert.NotNull(band.FreqCc);
+        Assert.Contains(band.FreqCc!, c => c.Cc == 80 && Math.Abs(c.Amount - 380) < 1e-6);
+        Assert.NotNull(band.BwCc);
+        Assert.Contains(band.BwCc!, c => c.Cc == 92 && Math.Abs(c.Amount - 4) < 1e-6);
     }
 }

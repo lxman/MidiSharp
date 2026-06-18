@@ -102,9 +102,16 @@ public sealed class ChannelState
     public byte ChannelPressure { get; set; }
 
     /// <summary>
-    /// Sustain pedal state (CC64).
+    /// Sustain pedal state (held via <see cref="SustainCc"/>).
     /// </summary>
     public bool Sustain { get; set; }
+
+    /// <summary>
+    /// The MIDI controller that acts as the sustain pedal on this channel. Default CC64; set from the
+    /// loaded bank's SFZ sustain_cc reassignment (e.g. CC90 for half-pedal fonts). A bank-load property,
+    /// not a controller — it isn't cleared by Reset-All-Controllers.
+    /// </summary>
+    public int SustainCc { get; set; } = 64;
 
     /// <summary>
     /// Sostenuto pedal state (CC66). Captures only voices already sounding when the
@@ -429,7 +436,9 @@ public sealed class ChannelState
             case 10: return Pan;
             case 11: return Expression;
             case 32: return BankLsb;
-            case 64: return (byte)(Sustain ? 127 : 0);
+            // When sustain is reassigned away from CC64, literal CC64 is an ordinary controller (read it
+            // from the generic store — half-pedal fonts drive their release modulation through it).
+            case 64: return SustainCc == 64 ? (byte)(Sustain ? 127 : 0) : _genericCc[64];
             case 65: return (byte)(PortamentoOn ? 127 : 0);
             case 66: return (byte)(Sostenuto ? 127 : 0);
             case 67: return SoftPedal;

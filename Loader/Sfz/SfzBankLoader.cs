@@ -206,6 +206,12 @@ internal static class SfzBankLoader
                     Zones = kv.Value,
                 });
 
+            // sustain_cc is per-region in SFZ but global to the pedal in practice; surface the dominant
+            // non-default reassignment to the synth (half-pedal fonts route the whole bank to one CC).
+            int sustainCc = 64;
+            foreach (var (_, _, _, zone, _) in _placed)
+                if (zone.SustainCc != 64) { sustainCc = zone.SustainCc; break; }
+
             return new SoundBank
             {
                 Name = name,
@@ -213,6 +219,7 @@ internal static class SfzBankLoader
                 Patches = patches,
                 Samples = new SfzSampleSource(_paths, _metadatas, cacheBudgetBytes, blockingDecode),
                 InitialControllers = _initialControllers,
+                SustainCc = sustainCc,
             };
         }
     }

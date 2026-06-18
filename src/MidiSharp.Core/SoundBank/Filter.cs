@@ -82,4 +82,17 @@ public readonly struct EqBand
 
     /// <summary>SFZ eqN_vel2gain: dB added to this band's gain at full velocity (scaled by velocity). 0 = none.</summary>
     public double VelToGainDb { get; init; }
+
+    /// <summary>SFZ eqN_gain_oncc{X}: CCs that add to this band's gain (dB), refreshed live per block. Null = none.</summary>
+    public LfoCcDepth[]? GainCc { get; init; }
+
+    /// <summary>SFZ eqN_freq_oncc{X}: CCs that add to this band's centre frequency (Hz), live per block. Null = none.</summary>
+    public LfoCcDepth[]? FreqCc { get; init; }
+
+    /// <summary>SFZ eqN_bw_oncc{X}: CCs that add to this band's bandwidth (octaves), live per block. Null = none.</summary>
+    public LfoCcDepth[]? BwCc { get; init; }
+
+    /// <summary>SFZ eqN_gain_curvecc{X}: a 128-entry custom curve shaping the gain-CC response
+    /// (replaces the linear cc/127). Null = linear response. Applies to <see cref="GainCc"/>.</summary>
+    public double[]? GainCurve { get; init; }
 }

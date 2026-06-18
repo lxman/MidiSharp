@@ -22,7 +22,7 @@ internal static class SfzOpcodes
         // activation
         "key", "lokey", "hikey", "pitch_keycenter", "lovel", "hivel",
         // tuning
-        "tune", "pitch", "transpose", "pitch_keytrack", "bend_up", "bend_down", "bend_smooth",
+        "tune", "pitch", "transpose", "pitch_keytrack", "pitch_veltrack", "bend_up", "bend_down", "bend_smooth",
         // note self-masking (overlapping same-key notes)
         "note_selfmask",
         // level / pan / stereo
@@ -38,6 +38,8 @@ internal static class SfzOpcodes
         "ampeg_vel2release", "ampeg_vel2sustain",
         // ampeg_dynamic: live (note-on) evaluation of the CC-modulated envelope stages
         "ampeg_dynamic",
+        // ARIA ampeg_release_shape: curvature of the release segment
+        "ampeg_release_shape",
         // filter
         "cutoff", "fil_type", "resonance", "fil_keytrack", "fil_keycenter", "fil_veltrack",
         // second filter (cascaded): cutoff2 / fil2_type / resonance2 (cutoff2_cc handled as a mod param)
@@ -68,8 +70,10 @@ internal static class SfzOpcodes
         "sustain_lo",
         // trigger / release
         "trigger", "rt_decay",
-        // voice-off (note_polyphony / off_mode / off_time)
-        "note_polyphony", "off_mode", "off_time",
+        // voice-off (note_polyphony / off_mode / off_time) + per-region voice cap (polyphony)
+        "note_polyphony", "off_mode", "off_time", "polyphony",
+        // sustain_cc: reassigns the controller the synth treats as the sustain pedal (half-pedal fonts)
+        "sustain_cc",
         // humanization
         "amp_random", "pitch_random", "delay", "delay_random", "offset_random",
         // <control> settings
@@ -91,6 +95,7 @@ internal static class SfzOpcodes
     {
         "pan", "volume", "gain", "amplitude", "cutoff", "cutoff2", "tune", "width",
         "pitchlfo_depth", "pitchlfo_freq", "amp_veltrack",
+        "offset",  // offset_cc{N}/offset_oncc{N}: CC → sample start offset, baked at note-on
         "delay",   // delay_cc{N}/delay_oncc{N}: CC-modulated region start delay, baked at the seeded CC
         // CC→amp-envelope (ampeg_{stage}_oncc) — baked into the envelope at load, not routed
         "ampeg_delay", "ampeg_attack", "ampeg_hold", "ampeg_decay", "ampeg_release", "ampeg_sustain",
@@ -102,6 +107,8 @@ internal static class SfzOpcodes
     private static readonly HashSet<string> HandledFamilies = new(StringComparer.Ordinal)
     {
         "eqN_freq", "eqN_bw", "eqN_gain", "eqN_velNgain",   // eqN_vel2gain: velocity → band gain
+        // live CC → EQ band (eqN_gain/freq/bw_oncc{N}) + the gain-CC response curve (eqN_gain_curvecc{N})
+        "eqN_gain_onccN", "eqN_freq_onccN", "eqN_bw_onccN", "eqN_gain_curveccN",
         // SFZ v2 generic LFOs (lfoN_*) — Phase 1: oscillator + direct pitch/volume/cutoff targets.
         // CC mods (lfoN_*_onccN), sub-stages (lfoN_waveN/ratioN/...) and eq/pan targets come later.
         "lfoN_freq", "lfoN_wave", "lfoN_delay", "lfoN_fade", "lfoN_phase",

@@ -56,6 +56,10 @@ public sealed class Voice
     private readonly double[] _eqBaseGain = new double[MaxEqBands];
     private readonly int[] _eqBandNumber = new int[MaxEqBands];
     private readonly bool[] _eqLfoDriven = new bool[MaxEqBands];
+    // SFZ eqN_gain/freq/bw_oncc: each band's live CC modulation (held as the IR band) recomputed per block.
+    private readonly EqBand[] _eqBands = new EqBand[MaxEqBands];
+    private readonly bool[] _eqCcDriven = new bool[MaxEqBands];
+    private bool _hasCcEq;
     private bool _hasLfoEq;
 
     // ── Sample addressing ─────────────────────────────────────────────
@@ -202,6 +206,9 @@ public sealed class Voice
     public int KeyNumber => _keyNumber;
     public int ExclusiveGroup => _exclusiveGroup;
     public int GenerationId => _generationId;
+
+    /// <summary>The zone this voice was configured from — used to enforce SFZ per-region polyphony.</summary>
+    public PatchZone? Zone { get; private set; }
     /// <summary>True when this voice should fade (not hard-cut) if turned off by a retrigger/off_by.</summary>
     public bool SmoothOff => _smoothOff;
 
@@ -292,6 +299,7 @@ public sealed class Voice
     {
         Reset();
 
+        Zone = zone;
         var sampleRef = zone.Sample;
         var metadata = sampleSource.Metadata(sampleRef.SampleId);
 
@@ -399,9 +407,11 @@ public sealed class Voice
         if (_loopEnd <= _loopStart || _loopEnd > _sampleEnd || _loopStart < _sampleStart)
             _loopMode = IRLoopMode.None;
 
-        // Pitch settings (zone + sample-level tuning sum at Configure time).
+        // Pitch settings (zone + sample-level tuning sum at Configure time). SFZ pitch_veltrack adds a
+        // velocity-scaled detune (cents × vel/127) — a static per-note offset, so it folds in here.
         _coarseTuneSemitones = zone.Pitch.CoarseTuneSemitones + sampleRef.CoarseTuneSemitones;
-        _fineTuneCents = zone.Pitch.FineTuneCents + sampleRef.FineTuneCents;
+        _fineTuneCents = zone.Pitch.FineTuneCents + sampleRef.FineTuneCents
+                         + zone.PitchVelTrackCents * (velocity / 127.0);
         _scaleTuningCentsPerKey = sampleRef.ScaleTuningCentsPerKey;
         _modEnvPitchDepthCents = zone.Pitch.ModulationEnvelopeDepthCents;
 
@@ -453,6 +463,8 @@ public sealed class Voice
             releaseSeconds: Math.Max(0.0, ve.ReleaseSeconds + envReleaseCc + velNorm * ve.VelToReleaseSeconds),
             keynumToHoldCentsPerKey: ve.KeynumToHoldCentsPerKey,
             keynumToDecayCentsPerKey: ve.KeynumToDecayCentsPerKey);
+        // ARIA ampeg_release_shape (0 = unchanged exponential release).
+        _volumeEnvelope.SetReleaseShape(ve.ReleaseShape);
 
         // Modulation envelope (optional).
         if (zone.ModulationEnvelope is { } me)
@@ -560,6 +572,7 @@ public sealed class Voice
         // SFZ peaking EQ (eqN_*). Empty for SF2/SF3/DLS, so _eqBandCount stays 0 and the per-sample
         // loop skips it entirely (bit-identical there).
         _eqBandCount = Math.Min(zone.EqBands.Count, MaxEqBands);
+        _hasCcEq = false;
         for (int i = 0; i < _eqBandCount; i++)
         {
             var band = zone.EqBands[i];
@@ -570,6 +583,9 @@ public sealed class Voice
             _eqBaseGain[i] = eqGain;
             _eqBandNumber[i] = band.BandNumber;
             _eqLfoDriven[i] = false;
+            _eqBands[i] = band;
+            _eqCcDriven[i] = band.GainCc != null || band.FreqCc != null || band.BwCc != null;
+            if (_eqCcDriven[i]) _hasCcEq = true;
             _eq[i].SetParameters(band.FrequencyHz, band.BandwidthOctaves, eqGain);
             if (_channels == 2) _eqRight[i].SetParameters(band.FrequencyHz, band.BandwidthOctaves, eqGain);
         }
@@ -588,6 +604,20 @@ public sealed class Voice
 
         // Stash routes (could be the zone-authored list or empty).
         _routes = zone.Routes ?? Array.Empty<ModulationRoute>();
+
+        // SFZ offset_oncc{N}: the live controller shifts the sample start (frames). The start is fixed
+        // once playback begins, so it's baked here from the channel CC, alongside offset_random.
+        if (zone.OffsetCc is { } offsetCc)
+        {
+            long add = 0;
+            for (int i = 0; i < offsetCc.Length; i++)
+                add += (long)(channelState.GetCC(offsetCc[i].Cc) / 127.0 * offsetCc[i].Amount);
+            if (add > 0)
+            {
+                _sampleStart += add;
+                if (_sampleStart >= _sampleEnd) _sampleStart = Math.Max(0, _sampleEnd - 1);
+            }
+        }
 
         // Trigger envelopes and LFOs.
         _volumeEnvelope.Trigger(keyNumber);
@@ -842,28 +872,51 @@ public sealed class Voice
             if (_channels == 2) _filter2Right.SetParameters(c2, _filter2ResonanceDb);
         }
 
-        // LFO → EQ (lfoN_eqNgain/freq): recompute each LFO-driven band's biquad once per block from its
-        // base params plus the LFO deltas. SetParameters only touches coefficients, not filter state.
-        if (_hasLfoEq)
+        // LFO/CC → EQ (lfoN_eqNgain/freq, eqN_gain/freq/bw_oncc): recompute each modulated band's biquad
+        // once per block from its base params plus the LFO and live-CC deltas. SetParameters only touches
+        // coefficients, not filter state.
+        if (_hasLfoEq || _hasCcEq)
         {
             for (int b = 0; b < _eqBandCount; b++)
             {
-                if (!_eqLfoDriven[b]) continue;
-                double gainDelta = 0.0, freqDelta = 0.0;
-                for (int g = 0; g < _genericLfoCount; g++)
+                if (!_eqLfoDriven[b] && !_eqCcDriven[b]) continue;
+                double gainDelta = 0.0, freqDelta = 0.0, bwDelta = 0.0;
+                if (_eqLfoDriven[b])
                 {
-                    var lfo = _genericLfos[g];
-                    for (int e = 0; e < lfo.EqCount; e++)
+                    for (int g = 0; g < _genericLfoCount; g++)
                     {
-                        if (EqIndexForBand(lfo.EqTargetBand(e)) != b) continue;
-                        if (lfo.EqTargetIsFreq(e)) freqDelta += lfo.EqTargetDelta(e);
-                        else gainDelta += lfo.EqTargetDelta(e);
+                        var lfo = _genericLfos[g];
+                        for (int e = 0; e < lfo.EqCount; e++)
+                        {
+                            if (EqIndexForBand(lfo.EqTargetBand(e)) != b) continue;
+                            if (lfo.EqTargetIsFreq(e)) freqDelta += lfo.EqTargetDelta(e);
+                            else gainDelta += lfo.EqTargetDelta(e);
+                        }
                     }
                 }
+                if (_eqCcDriven[b])
+                {
+                    var band = _eqBands[b];
+                    if (band.FreqCc is { } fcc)
+                        for (int i = 0; i < fcc.Length; i++)
+                            freqDelta += channelState.GetCC(fcc[i].Cc) / 127.0 * fcc[i].Amount;
+                    if (band.BwCc is { } bcc)
+                        for (int i = 0; i < bcc.Length; i++)
+                            bwDelta += channelState.GetCC(bcc[i].Cc) / 127.0 * bcc[i].Amount;
+                    if (band.GainCc is { } gcc)
+                        for (int i = 0; i < gcc.Length; i++)
+                        {
+                            // eqN_gain_curvecc shapes the controller response; else it's linear cc/127.
+                            double x = channelState.GetCC(gcc[i].Cc) / 127.0;
+                            double resp = band.GainCurve is { } gc ? gc[Math.Clamp((int)(x * 127.0 + 0.5), 0, 127)] : x;
+                            gainDelta += resp * gcc[i].Amount;
+                        }
+                }
                 double f = _eqBaseFreq[b] + freqDelta;
+                double bw = _eqBaseBw[b] + bwDelta;
                 double gain = _eqBaseGain[b] + gainDelta;
-                _eq[b].SetParameters(f, _eqBaseBw[b], gain);
-                if (_channels == 2) _eqRight[b].SetParameters(f, _eqBaseBw[b], gain);
+                _eq[b].SetParameters(f, bw, gain);
+                if (_channels == 2) _eqRight[b].SetParameters(f, bw, gain);
             }
         }
 

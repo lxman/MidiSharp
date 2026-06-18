@@ -142,6 +142,9 @@ public static class SoundBankComposer
             // drops them, so a library that sets its dynamics from a seeded CC (e.g. SSO/VPO seed
             // CC1≈96 and author the samples ~30 dB down) plays at its silent floor.
             InitialControllers = baseBank.InitialControllers,
+            // Carry the base font's sustain-pedal reassignment (SFZ sustain_cc) so half-pedal fonts hold
+            // notes correctly through the composite the web player always builds.
+            SustainCc = baseBank.SustainCc,
             Patches = byKey.Values.ToList(),
             Samples = new ConcatenatedSampleSource(sampleSources),
         };

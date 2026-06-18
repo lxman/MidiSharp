@@ -203,6 +203,22 @@ public sealed class PatchZone
     /// volume, run per-sample in the voice. Null for SF2/DLS and SFZ zones that declare none.
     /// </summary>
     public GenericEg[]? Egs { get; init; }
+
+    /// <summary>SFZ pitch_veltrack: cents added to the note's pitch at full velocity, scaled linearly by
+    /// velocity (sfizz: cents × vel/127). 0 = none (the default for every format).</summary>
+    public double PitchVelTrackCents { get; init; }
+
+    /// <summary>SFZ offset_oncc{N}: CCs that add to the sample start offset (in frames), baked once at
+    /// note-on from the live controller. Null = none.</summary>
+    public LfoCcDepth[]? OffsetCc { get; init; }
+
+    /// <summary>SFZ polyphony: maximum simultaneous voices this region may sound; past the cap the oldest
+    /// is stolen. -1 = unlimited (the default for every format and most SFZ regions).</summary>
+    public int Polyphony { get; init; } = -1;
+
+    /// <summary>SFZ sustain_cc: the MIDI controller this region treats as the sustain pedal. Default CC64;
+    /// half-pedal SFZ fonts reassign it (e.g. to CC90, freeing CC64 to modulate the release envelope).</summary>
+    public int SustainCc { get; init; } = 64;
 }
 
 /// <summary>

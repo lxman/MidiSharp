@@ -31,6 +31,13 @@ public sealed class EnvelopeSettings
     public double ReleaseSeconds { get; init; }
 
     /// <summary>
+    /// ARIA <c>ampeg_release_shape</c>: curvature of the release segment. 0 (the default for every
+    /// format) keeps the dB-linear exponential release; negative values make it more convex (drops
+    /// faster at first then tails), positive more concave. Only the release segment is shaped.
+    /// </summary>
+    public double ReleaseShape { get; init; }
+
+    /// <summary>
     /// Per-key scaling of hold time. Hold is offset by N cents (1200 = 2× time)
     /// per key away from middle C (key 60). 0 = no scaling.
     /// </summary>

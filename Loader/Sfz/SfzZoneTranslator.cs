@@ -82,6 +82,9 @@ internal static class SfzZoneTranslator
             VelToDecaySeconds = r.GetDouble("ampeg_vel2decay", 0),
             VelToReleaseSeconds = r.GetDouble("ampeg_vel2release", 0),
             VelToSustainLevel = r.GetDouble("ampeg_vel2sustain", 0) / 100.0,
+            // ARIA ampeg_release_shape: curvature of the release segment (0 = the existing dB-linear
+            // exponential, so non-shaped fonts and SF2 stay byte-identical).
+            ReleaseShape = r.GetDouble("ampeg_release_shape", 0),
             Dynamic = dynamic,
             CcMods = dynamic ? CollectEnvCcMods(r) : null,
         };
@@ -93,7 +96,7 @@ internal static class SfzZoneTranslator
         // even when their static gain is 0 (the LFO oscillates around it).
         var lfos = BuildGenericLfos(r);
         var lfoEqBands = CollectLfoEqBands(lfos);
-        var eqBands = BuildEqBands(r, lfoEqBands);
+        var eqBands = BuildEqBands(r, lfoEqBands, control.Curves);
 
         // ── Modulation envelope (filter and/or pitch EG) ─────────────
         double pitchEgDepth = r.GetDouble("pitcheg_depth", 0);
@@ -260,6 +263,14 @@ internal static class SfzZoneTranslator
             VibLfoFreqCc = CollectCcAmounts(r, "pitchlfo_freq_oncc", "pitchlfo_freq_cc"),
             Lfos = lfos,
             Egs = BuildGenericEgs(r),
+            // pitch_veltrack: velocity → pitch in cents (a one-time per-note offset in the voice).
+            PitchVelTrackCents = r.GetDouble("pitch_veltrack", 0),
+            // offset_oncc{N}: CC → sample start offset (frames), baked at note-on.
+            OffsetCc = CollectCcAmounts(r, "offset_oncc", "offset_cc"),
+            // polyphony: per-region voice cap (-1 = unlimited). Only present when the region asks for it.
+            Polyphony = r.Has("polyphony") ? Math.Max(0, r.GetInt("polyphony", -1)) : -1,
+            // sustain_cc: the controller this region treats as the sustain pedal (default CC64).
+            SustainCc = r.GetInt("sustain_cc", 64),
         };
     }
 
@@ -442,7 +453,8 @@ internal static class SfzZoneTranslator
         return set;
     }
 
-    private static IReadOnlyList<EqBand> BuildEqBands(SfzRegion r, HashSet<int>? lfoBands)
+    private static IReadOnlyList<EqBand> BuildEqBands(SfzRegion r, HashSet<int>? lfoBands,
+        IReadOnlyDictionary<int, double[]> curves)
     {
         List<EqBand>? bands = null;
         for (int n = 1; n <= 8; n++)
@@ -450,11 +462,26 @@ internal static class SfzZoneTranslator
             double gain = r.GetDouble("eq" + n + "_gain", 0);
             double freq = r.GetDouble("eq" + n + "_freq", 0);
             double velGain = r.GetDouble("eq" + n + "_vel2gain", 0);
-            // Keep a band if it has audible static gain, an LFO drives it, or velocity drives it (then a
-            // 0-gain band is the centre that's modulated). Either way it needs a defined frequency.
+            // Live CC modulation of this band (eqN_gain/freq/bw_oncc{X}) — the direct-CC analogue of the
+            // LFO→EQ path. A band can exist purely to be CC-driven (gain 0 base, swung by the controller).
+            var gainCc = CollectCcAmounts(r, "eq" + n + "_gain_oncc", "eq" + n + "_gain_cc");
+            var freqCc = CollectCcAmounts(r, "eq" + n + "_freq_oncc", "eq" + n + "_freq_cc");
+            var bwCc = CollectCcAmounts(r, "eq" + n + "_bw_oncc", "eq" + n + "_bw_cc");
+            bool ccDriven = gainCc != null || freqCc != null || bwCc != null;
+            // Keep a band if it has audible static gain, an LFO/CC/velocity drives it (then a 0-gain band
+            // is the centre that's modulated). Either way it needs a defined frequency.
             bool lfoDriven = lfoBands?.Contains(n) == true;
-            if ((gain == 0 && !lfoDriven && velGain == 0) || freq <= 0) continue;
+            if ((gain == 0 && !lfoDriven && velGain == 0 && !ccDriven) || freq <= 0) continue;
             double bw = r.GetDouble("eq" + n + "_bw", 1.0);
+            // eqN_gain_curvecc{X}: a custom curve shaping the gain-CC response (first one wins).
+            double[]? gainCurve = null;
+            foreach (var (_, raw) in r.EnumerateCc("eq" + n + "_gain_curvecc"))
+            {
+                if (int.TryParse(raw.Trim(), System.Globalization.NumberStyles.Integer,
+                        System.Globalization.CultureInfo.InvariantCulture, out int idx))
+                    gainCurve = ResolveCurveTable(idx, curves);
+                break;
+            }
             (bands ??= new List<EqBand>()).Add(new EqBand
             {
                 FrequencyHz = freq,
@@ -462,6 +489,10 @@ internal static class SfzZoneTranslator
                 GainDb = gain,
                 BandNumber = n,
                 VelToGainDb = velGain,
+                GainCc = gainCc,
+                FreqCc = freqCc,
+                BwCc = bwCc,
+                GainCurve = gainCurve,
             });
         }
         return bands ?? (IReadOnlyList<EqBand>)Array.Empty<EqBand>();

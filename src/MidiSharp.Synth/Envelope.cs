@@ -36,6 +36,14 @@ public sealed class Envelope
     private int _samplesRemaining;
     private readonly int _sampleRate;
 
+    // ARIA ampeg_release_shape: when non-zero the release follows a power-shaped linear-amplitude ramp
+    // instead of the dB-linear exponential. _releaseShapeExp is the precomputed (1-p) exponent; 0 keeps
+    // the exponential path (so SF2 and non-shaped SFZ are unchanged).
+    private double _releaseShape;
+    private double _releaseShapeExp = 1.0;
+    private double _releaseStartLevel;
+    private int _releaseElapsed;
+
     // SF2 envelope parameters (in timecents, converted to samples)
     private int _delaySamples;
     private int _attackSamples;
@@ -83,6 +91,8 @@ public sealed class Envelope
         _targetLevel = 0;
         _increment = 0;
         _samplesRemaining = 0;
+        _releaseElapsed = 0;
+        _releaseStartLevel = 0;
     }
 
     /// <summary>
@@ -163,6 +173,17 @@ public sealed class Envelope
     /// turned off by a retrigger or off_by group fades over a specific time rather than its own release.
     /// </summary>
     public void SetReleaseTime(double seconds) => _releaseSamples = SecondsToSamples(seconds);
+
+    /// <summary>
+    /// Sets the ARIA ampeg_release_shape curvature. 0 (default) keeps the dB-linear exponential release;
+    /// negative makes it more convex (fast initial drop, long tail — natural piano damping), positive
+    /// more concave. Mapped to a (1-p) power on a linear-amplitude ramp: k = 2^(-shape/6).
+    /// </summary>
+    public void SetReleaseShape(double shape)
+    {
+        _releaseShape = shape;
+        _releaseShapeExp = shape == 0 ? 1.0 : Math.Pow(2.0, -shape / 6.0);
+    }
 
     /// <summary>
     /// Scales the attack, decay, and release stage times in place by powers
@@ -251,6 +272,9 @@ public sealed class Envelope
         _stage = EnvelopeStage.Release;
         _targetLevel = 0;
         _samplesRemaining = _releaseSamples;
+        // Shaped-release bookkeeping: capture the level we release from and reset the ramp clock.
+        _releaseStartLevel = _currentLevel;
+        _releaseElapsed = 0;
 
         // SF2 spec: release time is the time from peak to -100 dB. Multiplicative
         // per-sample factor that drops the signal by 100 dB over _releaseSamples
@@ -301,7 +325,17 @@ public sealed class Envelope
                 break;
 
             case EnvelopeStage.Release:
-                _currentLevel *= _releaseFactor;
+                if (_releaseShape != 0 && _releaseSamples > 0)
+                {
+                    // ARIA shaped release: level = startLevel · (1−p)^k over the release window.
+                    _releaseElapsed++;
+                    double p = (double)_releaseElapsed / _releaseSamples;
+                    _currentLevel = p >= 1.0 ? 0.0 : _releaseStartLevel * Math.Pow(1.0 - p, _releaseShapeExp);
+                }
+                else
+                {
+                    _currentLevel *= _releaseFactor;
+                }
                 if (_currentLevel <= SilenceFloor)
                 {
                     _currentLevel = 0;
