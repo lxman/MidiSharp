@@ -90,6 +90,10 @@ internal static class SfzOpcodes
     private static readonly HashSet<string> HandledFamilies = new(StringComparer.Ordinal)
     {
         "eqN_freq", "eqN_bw", "eqN_gain",
+        // SFZ v2 generic LFOs (lfoN_*) — Phase 1: oscillator + direct pitch/volume/cutoff targets.
+        // CC mods (lfoN_*_onccN), sub-stages (lfoN_waveN/ratioN/...) and eq/pan targets come later.
+        "lfoN_freq", "lfoN_wave", "lfoN_delay", "lfoN_fade", "lfoN_phase",
+        "lfoN_pitch", "lfoN_volume", "lfoN_cutoff",
         "label_ccN",   // display-only CC label — no audio effect
         // curve tables we consume when evaluating the corresponding _oncc
         "amplitude_curveccN", "amp_veltrack_curveccN",

@@ -151,6 +151,13 @@ public sealed class PatchZone
     /// only; a no-op (1.0) for mono samples and for zones that don't set <c>width</c>.
     /// </summary>
     public double WidthNormalized { get; init; } = 1.0;
+
+    /// <summary>
+    /// SFZ v2 generic LFOs (<c>lfoN_*</c>): indexed oscillators routed to pitch/volume/cutoff/etc.,
+    /// run per-sample in the voice alongside the SF2 two-slot LFOs. Null for SF2/DLS and for SFZ zones
+    /// that declare none (the common case), which keeps those paths untouched.
+    /// </summary>
+    public GenericLfo[]? Lfos { get; init; }
 }
 
 /// <summary>

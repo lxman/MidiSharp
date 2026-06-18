@@ -232,6 +232,7 @@ internal static class SfzZoneTranslator
             AmpKeyCurve = BuildKeyCrossfade(r, control),
             CcCrossfades = BuildCcCrossfades(r),
             WidthNormalized = r.GetDouble("width", 100.0) / 100.0,
+            Lfos = BuildGenericLfos(r),
         };
     }
 
@@ -446,6 +447,72 @@ internal static class SfzZoneTranslator
             VolumeDepthDb = r.GetDouble("amplfo_depth", 0),
             FilterDepthCents = r.GetDouble("fillfo_depth", 0),
         };
+    }
+
+    /// <summary>
+    /// Parses the SFZ v2 generic LFOs (<c>lfoN_*</c>) into <see cref="GenericLfo"/>s. Phase 1 reads the
+    /// oscillator (freq/delay/fade/phase + main <c>wave</c>, v2 default sine) and the direct
+    /// pitch/volume/cutoff targets; CC modulation, sub-stages and EQ/pan/amp/width targets are added in
+    /// later phases (their opcodes stay reported as unsupported until then). Returns null when the
+    /// region declares no lfoN_ opcodes — SF2/DLS and plain SFZ zones keep <see cref="PatchZone.Lfos"/>
+    /// null and the voice's generic-LFO path dormant.
+    /// </summary>
+    private static GenericLfo[]? BuildGenericLfos(SfzRegion r)
+    {
+        // Group lfo{index}_{suffix} opcodes by index (sorted so the result is deterministic).
+        SortedDictionary<int, Dictionary<string, string>>? byIndex = null;
+        foreach (var kv in r.Opcodes)
+        {
+            string k = kv.Key;
+            if (!k.StartsWith("lfo", StringComparison.Ordinal)) continue;
+            int s = 3, p = 3;
+            while (p < k.Length && char.IsDigit(k[p])) p++;
+            if (p == s || p >= k.Length || k[p] != '_') continue;          // need digits then '_'
+            if (!int.TryParse(k.Substring(s, p - s), out int idx)) continue;
+            string suffix = k.Substring(p + 1);
+            byIndex ??= new SortedDictionary<int, Dictionary<string, string>>();
+            if (!byIndex.TryGetValue(idx, out var map))
+                byIndex[idx] = map = new Dictionary<string, string>(StringComparer.Ordinal);
+            map[suffix] = kv.Value;
+        }
+        if (byIndex == null) return null;
+
+        var lfos = new List<GenericLfo>();
+        foreach (var pair in byIndex)
+        {
+            var map = pair.Value;
+
+            double Get(string key, double def) =>
+                map.TryGetValue(key, out var v) && double.TryParse(v.Trim(),
+                    System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture,
+                    out double d) ? d : def;
+            int GetI(string key, int def) =>
+                map.TryGetValue(key, out var v) && int.TryParse(v.Trim(), out int d) ? d : def;
+
+            var targets = new List<LfoTarget>();
+            void AddTarget(string key, LfoDestination dest)
+            {
+                if (map.ContainsKey(key))
+                    targets.Add(new LfoTarget { Destination = dest, Depth = Get(key, 0) });
+            }
+            AddTarget("pitch", LfoDestination.Pitch);
+            AddTarget("volume", LfoDestination.Volume);
+            AddTarget("cutoff", LfoDestination.Cutoff);
+
+            bool hasFreq = map.ContainsKey("freq");
+            if (!hasFreq && targets.Count == 0) continue;
+
+            lfos.Add(new GenericLfo
+            {
+                FrequencyHz = Get("freq", 0),
+                DelaySeconds = Get("delay", 0),
+                FadeSeconds = Get("fade", 0),
+                Phase = Get("phase", 0),
+                Stages = [new LfoStage(GetI("wave", 1), 1.0, 1.0, 0.0)],   // v2 default wave = sine (1)
+                Targets = targets.ToArray(),
+            });
+        }
+        return lfos.Count > 0 ? lfos.ToArray() : null;
     }
 
     private static (LoopMode Mode, long? Start, long? End) ResolveLoop(SfzRegion r, AudioInfo wav)

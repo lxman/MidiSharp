@@ -226,6 +226,24 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Generic_v2_lfo_parses_oscillator_and_direct_targets()
+    {
+        WriteWav("a.wav");
+        var z = SoundBankLoader.Load(WriteSfz(
+            "<region> sample=a.wav key=60 lfo01_freq=5 lfo01_wave=1 lfo01_delay=0.2 lfo01_fade=0.5 " +
+            "lfo01_pitch=50 lfo01_volume=3")).FindPatch(0, 0)!.Zones[0];
+        Assert.NotNull(z.Lfos);
+        var lfo = Assert.Single(z.Lfos!);
+        Assert.Equal(5.0, lfo.FrequencyHz, 3);
+        Assert.Equal(0.2, lfo.DelaySeconds, 3);
+        Assert.Equal(0.5, lfo.FadeSeconds, 3);
+        Assert.Equal(1, lfo.Stages[0].Wave);   // sine
+        Assert.Equal(2, lfo.Targets.Length);
+        Assert.Contains(lfo.Targets, t => t.Destination == MidiSharp.SoundBank.LfoDestination.Pitch && t.Depth == 50);
+        Assert.Contains(lfo.Targets, t => t.Destination == MidiSharp.SoundBank.LfoDestination.Volume && t.Depth == 3);
+    }
+
+    [Fact]
     public void Lfo_fade_in_time_parses_for_pitch_and_amp()
     {
         WriteWav("a.wav");

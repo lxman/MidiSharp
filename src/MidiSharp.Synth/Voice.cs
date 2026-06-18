@@ -102,6 +102,9 @@ public sealed class Voice
     private CcCrossfade[]? _ccCrossfades;
     // SFZ stereo width (mid/side scale): 1.0 = full stereo (no-op), 0 = mono, -1 = swapped.
     private double _widthNorm = 1.0;
+    // SFZ v2 generic LFOs (lfoN_*) — reusable runners; only the first _genericLfoCount are active.
+    private GenericLfoRunner[] _genericLfos = System.Array.Empty<GenericLfoRunner>();
+    private int _genericLfoCount;
     private double _pitchCorrectionCents;
     private double _coarseTuneSemitones;
     private double _fineTuneCents;
@@ -292,6 +295,24 @@ public sealed class Voice
 
         // SFZ width: a per-voice mid/side scale on stereo samples (no-op at 1.0 / for mono).
         _widthNorm = zone.WidthNormalized;
+
+        // SFZ v2 generic LFOs: configure one runner per zone LFO (growing the reusable pool as needed).
+        if (zone.Lfos is { Length: > 0 } zoneLfos)
+        {
+            if (_genericLfos.Length < zoneLfos.Length)
+            {
+                var grown = new GenericLfoRunner[zoneLfos.Length];
+                System.Array.Copy(_genericLfos, grown, _genericLfos.Length);
+                for (int i = _genericLfos.Length; i < grown.Length; i++) grown[i] = new GenericLfoRunner();
+                _genericLfos = grown;
+            }
+            for (int i = 0; i < zoneLfos.Length; i++) _genericLfos[i].Configure(zoneLfos[i], _sampleRate);
+            _genericLfoCount = zoneLfos.Length;
+        }
+        else
+        {
+            _genericLfoCount = 0;
+        }
 
         // Sample addressing — IR fields are sample-relative frames. The metadata's
         // base length/loop points are overridable by the zone's optional offset
@@ -700,6 +721,18 @@ public sealed class Voice
             double vibLfo = _vibratoLfo.Process();
             double modLfo = _hasModulationLfo ? _modulationLfo.Process() : 0.0;
 
+            // SFZ v2 generic LFOs: advance each every sample and sum its per-destination contributions.
+            // Volume depth is positive=louder, so it lowers attenuation (negative dB delta).
+            double gLfoPitchCents = 0.0, gLfoCutoffCents = 0.0, gLfoAttenDb = 0.0;
+            for (int g = 0; g < _genericLfoCount; g++)
+            {
+                var lfo = _genericLfos[g];
+                double lv = lfo.Process();
+                gLfoPitchCents += lv * lfo.PitchDepthCents;
+                gLfoCutoffCents += lv * lfo.CutoffDepthCents;
+                gLfoAttenDb -= lv * lfo.VolumeDepthDb;
+            }
+
             if (_volumeEnvelope.IsFinished)
             {
                 _state = VoiceState.Free;
@@ -709,7 +742,8 @@ public sealed class Voice
             // Pitch modulation (additive cents).
             double pitchMod = vibLfo * effectiveVibLfoDepthCents
                             + modLfo * effectiveModLfoPitchDepthCents
-                            + modEnv * effectiveModEnvPitchDepthCents;
+                            + modEnv * effectiveModEnvPitchDepthCents
+                            + gLfoPitchCents;
 
             if (_portamentoCents != 0.0)
             {
@@ -739,7 +773,8 @@ public sealed class Voice
             {
                 double filterCents = modEnv * effectiveModEnvFilterDepthCents
                                    + modLfo * effectiveModLfoFilterDepthCents
-                                   + contrib.FilterCutoffCents;
+                                   + contrib.FilterCutoffCents
+                                   + gLfoCutoffCents;
                 if (filterCents != _cachedFilterCents)   // recompute coefficients only when cutoff moves
                 {
                     _cachedFilterCents = filterCents;
@@ -752,7 +787,7 @@ public sealed class Voice
             // then the SFZ amp_velcurve_N factor (1.0 when no custom curve; a flat
             // multiply so a curve value of 0 yields true silence without a dB log).
             double volumeMod = modLfo * effectiveModLfoVolumeDepthDb;
-            double totalAttenuationDb = effectiveAttenuationDb + volumeMod;
+            double totalAttenuationDb = effectiveAttenuationDb + volumeMod + gLfoAttenDb;
             if (totalAttenuationDb != _cachedAttenuationDb)   // dB→linear only when attenuation moves
             {
                 _cachedAttenuationDb = totalAttenuationDb;
