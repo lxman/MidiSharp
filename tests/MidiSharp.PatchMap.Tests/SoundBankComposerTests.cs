@@ -19,6 +19,26 @@ public class SoundBankComposerTests
     }
 
     [Fact]
+    public void Composite_PreservesBaseInitialControllers()
+    {
+        // SFZ <control> set_ccN seeds (e.g. SSO/VPO seed CC1≈96 for mod-wheel dynamics) must survive
+        // compositing — the web player always composites, even with no overrides.
+        var data = new[] { new[] { 0.5f, 0.5f, 0.5f, 0.5f } };
+        var meta = new[] { new SampleMetadata { SampleRate = 44100, Channels = 1, LengthFrames = 4, RootKey = 60 } };
+        var baseBank = new IRBank
+        {
+            Name = "sso",
+            Patches = new[] { new Patch { Bank = 0, Program = 0, Name = "x",
+                Zones = new[] { new PatchZone { Sample = new SampleRef { SampleId = 0 } } } } },
+            Samples = new PreDecodedFloatSampleSource(data, meta),
+            InitialControllers = new Dictionary<int, int> { { 1, 96 } },
+        };
+
+        var composite = SoundBankComposer.BuildComposite(baseBank, NoOverrides);
+        Assert.Equal(96, composite.InitialControllers[1]);
+    }
+
+    [Fact]
     public void NoOverrides_PreservesBasePatchesAndSamples()
     {
         using var baseBank = TestBanks.OneSamplePatch("base", 0.1f, 0, 0, "Piano");

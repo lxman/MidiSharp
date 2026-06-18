@@ -137,6 +137,11 @@ public static class SoundBankComposer
             Copyright = baseBank.Copyright,
             Comment = baseBank.Comment,
             SourceFormat = baseBank.SourceFormat,
+            // Carry the base font's initial controller seeds (SFZ <control> set_ccN) into the composite.
+            // Without this, compositing — which the web player always does, even with no overrides —
+            // drops them, so a library that sets its dynamics from a seeded CC (e.g. SSO/VPO seed
+            // CC1≈96 and author the samples ~30 dB down) plays at its silent floor.
+            InitialControllers = baseBank.InitialControllers,
             Patches = byKey.Values.ToList(),
             Samples = new ConcatenatedSampleSource(sampleSources),
         };
