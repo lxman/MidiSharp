@@ -43,6 +43,15 @@ internal static class SfzZoneTranslator
                              + r.GetDouble("global_volume", 0)
                              + r.GetDouble("master_volume", 0)
                              + r.GetDouble("group_volume", 0);
+
+        // amplitude is a linear-% gain (100 = unchanged) that multiplies on top of volume — so it
+        // adds as dB here, and combines correctly with the amplitude_oncc route (also dB). 0 → silence
+        // (floored so the log is finite). 100 is the default and a no-op, keeping non-amplitude zones
+        // byte-identical.
+        double amplitude = r.GetDouble("amplitude", 100.0);
+        if (amplitude != 100.0)
+            totalVolumeDb += 20.0 * Math.Log10(Math.Max(amplitude, 1e-4) / 100.0);
+
         double pan = Math.Clamp(r.GetDouble("pan", 0) / 100.0, -1.0, 1.0);
 
         // ── Amp envelope (DAHDSR; sustain is percent) ────────────────
@@ -222,6 +231,7 @@ internal static class SfzZoneTranslator
             AmpVelCurve = ampVelCurve,
             AmpKeyCurve = BuildKeyCrossfade(r, control),
             CcCrossfades = BuildCcCrossfades(r),
+            WidthNormalized = r.GetDouble("width", 100.0) / 100.0,
         };
     }
 

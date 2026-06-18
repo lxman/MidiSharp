@@ -144,6 +144,13 @@ public sealed class PatchZone
     /// fade. Null when the zone sets no CC crossfade.
     /// </summary>
     public CcCrossfade[]? CcCrossfades { get; init; }
+
+    /// <summary>
+    /// SFZ stereo width (the <c>width</c> opcode) as a normalized factor: 1.0 = full stereo (default),
+    /// 0.0 = mono (mid only), -1.0 = channels swapped. Applied as a mid/side scale to stereo samples
+    /// only; a no-op (1.0) for mono samples and for zones that don't set <c>width</c>.
+    /// </summary>
+    public double WidthNormalized { get; init; } = 1.0;
 }
 
 /// <summary>

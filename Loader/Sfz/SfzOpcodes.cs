@@ -23,8 +23,10 @@ internal static class SfzOpcodes
         "key", "lokey", "hikey", "pitch_keycenter", "lovel", "hivel",
         // tuning
         "tune", "pitch", "transpose", "pitch_keytrack", "bend_up", "bend_down",
-        // level / pan
+        // level / pan / stereo
         "volume", "global_volume", "master_volume", "group_volume", "pan",
+        "amplitude",   // linear-% gain (folds into attenuation, combines with amplitude_oncc)
+        "width",       // stereo mid/side width on stereo samples
         // amp envelope
         "ampeg_delay", "ampeg_attack", "ampeg_hold", "ampeg_decay", "ampeg_sustain", "ampeg_release",
         // amp envelope velocity modulation (ampeg_vel2*)

@@ -277,6 +277,31 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Amplitude_percent_folds_into_attenuation()
+    {
+        WriteWav("a.wav");
+        // amplitude=50 → 0.5 linear gain → ~6.02 dB attenuation (volume defaults to 0).
+        var lvl = SoundBankLoader.Load(WriteSfz("<region> sample=a.wav key=60 amplitude=50"))
+            .FindPatch(0, 0)!.Zones[0].Level;
+        Assert.InRange(lvl.AttenuationDb, 5.9, 6.1);
+    }
+
+    [Fact]
+    public void Width_sets_normalized_stereo_factor()
+    {
+        WriteWav("a.wav");
+        var def = SoundBankLoader.Load(WriteSfz("<region> sample=a.wav key=60"))
+            .FindPatch(0, 0)!.Zones[0].WidthNormalized;
+        Assert.Equal(1.0, def, 3);   // default = full stereo
+        var w0 = SoundBankLoader.Load(WriteSfz("<region> sample=a.wav key=60 width=0"))
+            .FindPatch(0, 0)!.Zones[0].WidthNormalized;
+        Assert.Equal(0.0, w0, 3);    // mono
+        var wNeg = SoundBankLoader.Load(WriteSfz("<region> sample=a.wav key=60 width=-100"))
+            .FindPatch(0, 0)!.Zones[0].WidthNormalized;
+        Assert.Equal(-1.0, wNeg, 3); // swapped
+    }
+
+    [Fact]
     public void Cc_crossfade_builds_a_live_gain_table_per_controller()
     {
         WriteWav("a.wav");

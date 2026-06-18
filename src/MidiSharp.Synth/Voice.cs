@@ -100,6 +100,8 @@ public sealed class Voice
     private double _ampVelCurveFactor = 1.0;
     // SFZ live CC crossfades (xfin/xfout_locc) — re-read from channel state every block. Null = none.
     private CcCrossfade[]? _ccCrossfades;
+    // SFZ stereo width (mid/side scale): 1.0 = full stereo (no-op), 0 = mono, -1 = swapped.
+    private double _widthNorm = 1.0;
     private double _pitchCorrectionCents;
     private double _coarseTuneSemitones;
     private double _fineTuneCents;
@@ -287,6 +289,9 @@ public sealed class Voice
         // SFZ CC crossfades are live (the controller can move during the note), so keep the tables
         // and re-evaluate them per block in Process rather than baking a single factor here.
         _ccCrossfades = zone.CcCrossfades;
+
+        // SFZ width: a per-voice mid/side scale on stereo samples (no-op at 1.0 / for mono).
+        _widthNorm = zone.WidthNormalized;
 
         // Sample addressing — IR fields are sample-relative frames. The metadata's
         // base length/loop points are overridable by the zone's optional offset
@@ -783,6 +788,15 @@ public sealed class Voice
                 {
                     sampleL = _eq[e].Process(sampleL);
                     sampleR = _eqRight[e].Process(sampleR);
+                }
+                // SFZ width: mid/side scale. width=1 (default) leaves L/R untouched; 0 → mono (mid),
+                // -1 → swapped. The 0.5 mid keeps a centred/correlated signal at unity (level comp).
+                if (_widthNorm != 1.0)
+                {
+                    double mid = (sampleL + sampleR) * 0.5;
+                    double side = (sampleL - sampleR) * 0.5 * _widthNorm;
+                    sampleL = mid + side;
+                    sampleR = mid - side;
                 }
                 float outL = (float)(sampleL * gain);
                 float outR = (float)(sampleR * gain);
