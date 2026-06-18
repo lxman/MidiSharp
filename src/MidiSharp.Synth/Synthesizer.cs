@@ -343,7 +343,7 @@ public sealed class Synthesizer
             // seeded RNG so each note varies but renders stay reproducible. Only touch the RNG when the
             // zone actually asks for variation, so banks without it keep the exact RNG stream (and the
             // byte-identical renders) they have today. Each draw is uniform [0, value] (sfizz's law).
-            if (zone.AmpRandomDb != 0 || zone.PitchRandomCents != 0 ||
+            if (zone.AmpRandomDb != 0 || zone.PitchRandomCents != 0 || zone.FilterRandomCents != 0 ||
                 zone.DelaySeconds != 0 || zone.DelayRandomSeconds != 0 || zone.OffsetRandomFrames != 0)
             {
                 double gainDb = zone.AmpRandomDb != 0 ? _rng.NextDouble() * zone.AmpRandomDb : 0.0;
@@ -351,7 +351,8 @@ public sealed class Synthesizer
                 double delaySec = zone.DelaySeconds
                                 + (zone.DelayRandomSeconds != 0 ? _rng.NextDouble() * zone.DelayRandomSeconds : 0.0);
                 long offFrames = zone.OffsetRandomFrames != 0 ? (long)(_rng.NextDouble() * zone.OffsetRandomFrames) : 0;
-                voice.ApplyHumanization(gainDb, detune, delaySec, offFrames);
+                double filRand = zone.FilterRandomCents != 0 ? _rng.NextDouble() * zone.FilterRandomCents : 0.0;
+                voice.ApplyHumanization(gainDb, detune, delaySec, offFrames, filRand);
             }
         }
     }

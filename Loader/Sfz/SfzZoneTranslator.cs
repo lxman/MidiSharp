@@ -254,6 +254,10 @@ internal static class SfzZoneTranslator
             BendSmoothSeconds = r.GetDouble("bend_smooth", 0) / 1000.0,   // SFZ bend_smooth is milliseconds
             AmpKeyTrackDbPerKey = r.GetDouble("amp_keytrack", 0),
             AmpKeyTrackCenter = r.GetKey("amp_keycenter", control) ?? 60,
+            PanKeyTrackPercentPerKey = r.GetDouble("pan_keytrack", 0),
+            PanKeyTrackCenter = r.GetKey("pan_keycenter", control) ?? 60,
+            FilterRandomCents = r.GetDouble("fil_random", 0),
+            VibLfoFreqCc = CollectCcAmounts(r, "pitchlfo_freq_oncc", "pitchlfo_freq_cc"),
             Lfos = lfos,
             Egs = BuildGenericEgs(r),
         };

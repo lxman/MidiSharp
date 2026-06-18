@@ -179,6 +179,18 @@ public sealed class PatchZone
     /// <summary>SFZ amp_keycenter: reference key for <see cref="AmpKeyTrackDbPerKey"/> (default 60).</summary>
     public int AmpKeyTrackCenter { get; init; } = 60;
 
+    /// <summary>SFZ pan_keytrack: pan change (in pan-%, -100..100) per key from <see cref="PanKeyTrackCenter"/>.</summary>
+    public double PanKeyTrackPercentPerKey { get; init; }
+
+    /// <summary>SFZ pan_keycenter: reference key for <see cref="PanKeyTrackPercentPerKey"/> (default 60).</summary>
+    public int PanKeyTrackCenter { get; init; } = 60;
+
+    /// <summary>SFZ fil_random: max random per-note filter cutoff offset, in cents. 0 = none.</summary>
+    public double FilterRandomCents { get; init; }
+
+    /// <summary>SFZ pitchlfo_freq_oncc{N}: CCs that add to the vibrato-LFO frequency (Hz). Null = none.</summary>
+    public LfoCcDepth[]? VibLfoFreqCc { get; init; }
+
     /// <summary>
     /// SFZ v2 generic LFOs (<c>lfoN_*</c>): indexed oscillators routed to pitch/volume/cutoff/etc.,
     /// run per-sample in the voice alongside the SF2 two-slot LFOs. Null for SF2/DLS and for SFZ zones

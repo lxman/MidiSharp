@@ -458,6 +458,20 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Pan_keytrack_fil_random_and_pitchlfo_freq_cc_parse()
+    {
+        WriteWav("a.wav");
+        var z = SoundBankLoader.Load(WriteSfz(
+            "<region> sample=a.wav key=60 pan_keytrack=1 pan_keycenter=60 fil_random=150 pitchlfo_freq_oncc76=10"))
+            .FindPatch(0, 0)!.Zones[0];
+        Assert.Equal(1.0, z.PanKeyTrackPercentPerKey, 3);
+        Assert.Equal(60, z.PanKeyTrackCenter);
+        Assert.Equal(150.0, z.FilterRandomCents, 3);
+        Assert.Equal(76, Assert.Single(z.VibLfoFreqCc!).Cc);
+        Assert.Equal(10.0, z.VibLfoFreqCc![0].Amount, 3);
+    }
+
+    [Fact]
     public void Amp_keytrack_and_eq_vel2gain_parse()
     {
         WriteWav("a.wav");
@@ -1013,7 +1027,7 @@ public sealed class SfzLoaderTests : IDisposable
         var path = WriteSfz("""
             <control> set_cc7=100 default_path=samples/
             <effect> type=reverb bus=main
-            <region> sample=a.wav volume=-3 lorand=0.0 hirand=0.5 off_mode=fast amp_random=3 direction=reverse pitchlfo_freq_oncc4=2
+            <region> sample=a.wav volume=-3 lorand=0.0 hirand=0.5 off_mode=fast amp_random=3 direction=reverse eq1_gain_oncc4=2
             """);
 
         var report = SfzDiagnostics.Scan(path);
@@ -1022,7 +1036,7 @@ public sealed class SfzLoaderTests : IDisposable
         var ops = report.UnsupportedOpcodes.Select(o => o.Opcode).ToList();
         // Genuinely-dropped opcodes are reported (numbered ones aggregated to a family).
         Assert.Contains("direction", ops);
-        Assert.Contains("pitchlfo_freq_onccN", ops);
+        Assert.Contains("eqN_gain_onccN", ops);
         // Handled opcodes — including ones implemented this session — are NOT reported.
         Assert.DoesNotContain("volume", ops);
         Assert.DoesNotContain("lorand", ops);

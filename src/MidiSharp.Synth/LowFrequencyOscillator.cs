@@ -79,6 +79,13 @@ public sealed class LowFrequencyOscillator
         _fadeElapsed = 0;
     }
 
+    /// <summary>Updates only the oscillation frequency (e.g. SFZ pitchlfo_freq_oncc), keeping phase/delay.</summary>
+    public void SetFrequency(double frequencyHz)
+    {
+        _frequency = frequencyHz;
+        _phaseIncrement = 2.0 * Math.PI * frequencyHz / _sampleRate;
+    }
+
     private static double TimecentsToSeconds(short timecents)
     {
         if (timecents <= -12000) return 0;

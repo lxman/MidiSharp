@@ -29,8 +29,8 @@ internal static class SfzOpcodes
         "volume", "global_volume", "master_volume", "group_volume", "pan",
         "amplitude",   // linear-% gain (folds into attenuation, combines with amplitude_oncc)
         "width",       // stereo mid/side width on stereo samples
-        // amp keytracking (gain varies by key)
-        "amp_keytrack", "amp_keycenter",
+        // amp/pan keytracking (gain/pan vary by key) + random filter cutoff
+        "amp_keytrack", "amp_keycenter", "pan_keytrack", "pan_keycenter", "fil_random",
         // amp envelope
         "ampeg_delay", "ampeg_attack", "ampeg_hold", "ampeg_decay", "ampeg_sustain", "ampeg_release",
         // amp envelope velocity modulation (ampeg_vel2*)
@@ -89,7 +89,8 @@ internal static class SfzOpcodes
     // The "{param}_oncc{N}" / "{param}_cc{N}" modulation params actually routed.
     private static readonly HashSet<string> ModParams = new(StringComparer.Ordinal)
     {
-        "pan", "volume", "gain", "amplitude", "cutoff", "cutoff2", "tune", "width", "pitchlfo_depth", "amp_veltrack",
+        "pan", "volume", "gain", "amplitude", "cutoff", "cutoff2", "tune", "width",
+        "pitchlfo_depth", "pitchlfo_freq", "amp_veltrack",
         "delay",   // delay_cc{N}/delay_oncc{N}: CC-modulated region start delay, baked at the seeded CC
         // CC→amp-envelope (ampeg_{stage}_oncc) — baked into the envelope at load, not routed
         "ampeg_delay", "ampeg_attack", "ampeg_hold", "ampeg_decay", "ampeg_release", "ampeg_sustain",

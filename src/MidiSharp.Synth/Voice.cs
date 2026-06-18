@@ -152,6 +152,7 @@ public sealed class Voice
     // LFO timing kept on voice so GM2 CC76/78 mid-flight adjustments
     // can re-derive the LFO state.
     private double _vibLfoFrequencyHz;
+    private LfoCcDepth[]? _vibLfoFreqCc;            // SFZ pitchlfo_freq_oncc (live, per-block, Hz)
     private double _vibLfoDelaySeconds;
 
     // ── Filter ─────────────────────────────────────────────────────────
@@ -407,6 +408,11 @@ public sealed class Voice
         // Level & pan baseline (routes contribute on top per block).
         _attenuationDb = zone.Level.AttenuationDb;
         _panNormalized = zone.Level.Pan;
+        // SFZ pan_keytrack: pan shifts by key distance from the center (pan-% per key → normalized).
+        if (zone.PanKeyTrackPercentPerKey != 0.0)
+            _panNormalized = Math.Clamp(
+                _panNormalized + zone.PanKeyTrackPercentPerKey * (keyNumber - zone.PanKeyTrackCenter) / 100.0, -1.0, 1.0);
+        _vibLfoFreqCc = zone.VibLfoFreqCc;
 
         // Effect sends baseline.
         _reverbSend = zone.ReverbSend;
@@ -632,10 +638,18 @@ public sealed class Voice
     /// (seconds, delay + delay_random) and a sample-start offset (frames, offset_random). All are
     /// constant for the note, so they fold into the base values the per-sample loop already reads.
     /// </summary>
-    public void ApplyHumanization(double extraGainDb, double detuneCents, double delaySeconds, long offsetFrames)
+    public void ApplyHumanization(double extraGainDb, double detuneCents, double delaySeconds, long offsetFrames,
+        double filterRandomCents = 0)
     {
         _attenuationDb -= extraGainDb;     // +volume ⇒ −attenuation
         _fineTuneCents += detuneCents;
+        // SFZ fil_random: shift this note's filter cutoff by the rolled offset.
+        if (filterRandomCents != 0 && _hasFilter)
+        {
+            _filterBaseCutoffHz *= Math.Pow(2.0, filterRandomCents / 1200.0);
+            _filter.SetParameters(_filterBaseCutoffHz, _filterBaseResonanceDb);
+            if (_channels == 2) _filterRight.SetParameters(_filterBaseCutoffHz, _filterBaseResonanceDb);
+        }
         if (delaySeconds > 0)
             _delayRemaining = (int)(delaySeconds * _sampleRate);
         if (offsetFrames > 0)
@@ -797,6 +811,15 @@ public sealed class Voice
             _genericLfos[g].BeginBlock(channelState);
         for (int e = 0; e < _genericEgCount; e++)
             _genericEgs[e].BeginBlock(channelState);
+
+        // SFZ pitchlfo_freq_oncc: add the live CC to the vibrato-LFO frequency this block.
+        if (_vibLfoFreqCc is { } vfcc)
+        {
+            double hz = _vibLfoFrequencyHz;
+            for (int i = 0; i < vfcc.Length; i++)
+                hz += channelState.GetCC(vfcc[i].Cc) / 127.0 * vfcc[i].Amount;
+            _vibratoLfo.SetFrequency(hz);
+        }
 
         // SFZ width_oncc: live CC modulation of stereo width, refreshed per block (amount is width-%).
         if (_widthCc is { } widthCc)
