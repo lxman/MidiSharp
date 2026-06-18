@@ -87,6 +87,7 @@ internal static class SfzZoneTranslator
 
         // ── Filter ───────────────────────────────────────────────────
         FilterSettings? filter = BuildFilter(r, out double fileDepthCents);
+        FilterSettings? filter2 = BuildSecondFilter(r, out var filter2CutoffCc);
         // Generic LFOs are built first so EQ bands they target (lfoN_eqNgain/freq) get instantiated
         // even when their static gain is 0 (the LFO oscillates around it).
         var lfos = BuildGenericLfos(r);
@@ -234,6 +235,8 @@ internal static class SfzZoneTranslator
             VibratoLFO = vibratoLfo,
             ModulationLFO = modLfo,
             Filter = filter,
+            Filter2 = filter2,
+            Filter2CutoffCc = filter2CutoffCc,
             EqBands = eqBands,
 
             ReverbSend = Math.Clamp(r.GetDouble("effect1", 0) / 100.0, 0, 1),
@@ -456,7 +459,20 @@ internal static class SfzZoneTranslator
         if (!hasCutoff && envDepthCents == 0) return null;
 
         double cutoff = r.GetDouble("cutoff", 20000.0);
-        var type = (r.Get("fil_type") ?? "lpf_2p").ToLowerInvariant() switch
+        return new FilterSettings
+        {
+            Type = ParseFilterType(r.Get("fil_type")),
+            CutoffHz = cutoff,
+            ResonanceDb = r.GetDouble("resonance", 0),
+            KeyTrackCentsPerKey = r.GetDouble("fil_keytrack", 0),
+            KeyTrackCenter = r.GetInt("fil_keycenter", 60),
+            EnvelopeDepthCents = envDepthCents,
+            LfoDepthCents = r.GetDouble("fillfo_depth", 0),
+        };
+    }
+
+    private static FilterType ParseFilterType(string? filType) =>
+        (filType ?? "lpf_2p").ToLowerInvariant() switch
         {
             var s when s.StartsWith("hpf") => FilterType.HighPass,
             var s when s.StartsWith("bpf") => FilterType.BandPass,
@@ -465,15 +481,30 @@ internal static class SfzZoneTranslator
             var s when s.StartsWith("hsh") => FilterType.HighShelf,
             _ => FilterType.LowPass,
         };
+
+    /// <summary>
+    /// Parses the optional SFZ second filter (cutoff2 / fil2_type / resonance2), cascaded in series
+    /// after the first. Its live cutoff modulation (cutoff2_cc{N}) is returned separately for the voice
+    /// to apply per block. Returns null when the region sets no second filter.
+    /// </summary>
+    private static FilterSettings? BuildSecondFilter(SfzRegion r, out LfoCcDepth[]? cutoffCc)
+    {
+        cutoffCc = null;
+        if (!r.Has("cutoff2") && !r.Has("fil2_type")) return null;
+
+        List<LfoCcDepth>? cc = null;
+        foreach (var prefix in new[] { "cutoff2_oncc", "cutoff2_cc" })
+            foreach (var (n, raw) in r.EnumerateCc(prefix))
+                if (double.TryParse(raw.Trim(), System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out double cents))
+                    (cc ??= new List<LfoCcDepth>()).Add(new LfoCcDepth(n, cents));
+        cutoffCc = cc?.ToArray();
+
         return new FilterSettings
         {
-            Type = type,
-            CutoffHz = cutoff,
-            ResonanceDb = r.GetDouble("resonance", 0),
-            KeyTrackCentsPerKey = r.GetDouble("fil_keytrack", 0),
-            KeyTrackCenter = r.GetInt("fil_keycenter", 60),
-            EnvelopeDepthCents = envDepthCents,
-            LfoDepthCents = r.GetDouble("fillfo_depth", 0),
+            Type = ParseFilterType(r.Get("fil2_type")),
+            CutoffHz = r.GetDouble("cutoff2", 20000.0),
+            ResonanceDb = r.GetDouble("resonance2", 0),
         };
     }
 

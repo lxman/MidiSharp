@@ -109,6 +109,15 @@ public sealed class PatchZone
 
     public FilterSettings? Filter { get; init; }
 
+    /// <summary>
+    /// SFZ optional second filter (cutoff2/fil2_type/resonance2), cascaded in series after
+    /// <see cref="Filter"/>. Null when the zone sets none (SF2/DLS and most SFZ).
+    /// </summary>
+    public FilterSettings? Filter2 { get; init; }
+
+    /// <summary>Live CC modulation of the second filter's cutoff (cutoff2_cc{N}), in cents. Null = none.</summary>
+    public LfoCcDepth[]? Filter2CutoffCc { get; init; }
+
     /// <summary>SFZ peaking-EQ bands (eqN_freq/bw/gain). Empty for SF2/SF3/DLS and SFZ without EQ.</summary>
     public IReadOnlyList<EqBand> EqBands { get; init; } = Array.Empty<EqBand>();
 

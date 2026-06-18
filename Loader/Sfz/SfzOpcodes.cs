@@ -36,6 +36,8 @@ internal static class SfzOpcodes
         "ampeg_dynamic",
         // filter
         "cutoff", "fil_type", "resonance", "fil_keytrack", "fil_keycenter", "fil_veltrack",
+        // second filter (cascaded): cutoff2 / fil2_type / resonance2 (cutoff2_cc handled as a mod param)
+        "cutoff2", "fil2_type", "resonance2",
         // filter envelope
         "fileg_depth", "fileg_delay", "fileg_attack", "fileg_hold", "fileg_decay", "fileg_sustain", "fileg_release",
         // pitch envelope
@@ -80,7 +82,7 @@ internal static class SfzOpcodes
     // The "{param}_oncc{N}" / "{param}_cc{N}" modulation params actually routed.
     private static readonly HashSet<string> ModParams = new(StringComparer.Ordinal)
     {
-        "pan", "volume", "gain", "amplitude", "cutoff", "pitchlfo_depth", "amp_veltrack",
+        "pan", "volume", "gain", "amplitude", "cutoff", "cutoff2", "pitchlfo_depth", "amp_veltrack",
         "delay",   // delay_cc{N}/delay_oncc{N}: CC-modulated region start delay, baked at the seeded CC
         // CC→amp-envelope (ampeg_{stage}_oncc) — baked into the envelope at load, not routed
         "ampeg_delay", "ampeg_attack", "ampeg_hold", "ampeg_decay", "ampeg_release", "ampeg_sustain",

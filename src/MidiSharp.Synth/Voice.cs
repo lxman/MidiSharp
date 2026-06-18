@@ -36,6 +36,12 @@ public sealed class Voice
     private readonly LowFrequencyOscillator _vibratoLfo;
     private readonly LowFrequencyOscillator _modulationLfo;
     private readonly LowPassFilter _filter;
+    // SFZ optional second filter (cutoff2/fil2_type), cascaded in series after _filter.
+    private LowPassFilter _filter2 = null!;
+    private LowPassFilter _filter2Right = null!;
+    private bool _hasFilter2;
+    private double _filter2BaseCutoffHz, _filter2ResonanceDb;
+    private LfoCcDepth[]? _filter2CutoffCc;
     private readonly LowPassFilter _filterRight;   // right channel's filter state (stereo samples only)
 
     // SFZ peaking-EQ bands (eqN_*). Pre-allocated and reused; _eqBandCount of them are active this note.
@@ -206,6 +212,8 @@ public sealed class Voice
         _vibratoLfo = new LowFrequencyOscillator(sampleRate);
         _modulationLfo = new LowFrequencyOscillator(sampleRate);
         _filter = new LowPassFilter(sampleRate);
+        _filter2 = new LowPassFilter(sampleRate);
+        _filter2Right = new LowPassFilter(sampleRate);
         _filterRight = new LowPassFilter(sampleRate);
         _eq = new PeakingEqFilter[MaxEqBands];
         _eqRight = new PeakingEqFilter[MaxEqBands];
@@ -243,6 +251,10 @@ public sealed class Voice
         _modulationLfo.Reset();
         _filter.Reset();
         _filterRight.Reset();
+        _filter2.Reset();
+        _filter2Right.Reset();
+        _hasFilter2 = false;
+        _filter2CutoffCc = null;
         for (int i = 0; i < MaxEqBands; i++) { _eq[i].Reset(); _eqRight[i].Reset(); }
         _eqBandCount = 0;
     }
@@ -463,6 +475,8 @@ public sealed class Voice
                 : f.CutoffHz;
             _filterBaseResonanceDb = f.ResonanceDb;
             _modEnvFilterDepthCents = f.EnvelopeDepthCents;
+            _filter.Type = f.Type;
+            _filterRight.Type = f.Type;
             _filter.SetParameters(_filterBaseCutoffHz, _filterBaseResonanceDb);
             if (_channels == 2) _filterRight.SetParameters(_filterBaseCutoffHz, _filterBaseResonanceDb);
             _hasFilter = _filter.Enabled;
@@ -476,6 +490,23 @@ public sealed class Voice
         {
             _hasFilter = false;
             _modEnvFilterDepthCents = 0;
+        }
+
+        // SFZ second filter (cutoff2/fil2_type), cascaded in series after the first.
+        if (zone.Filter2 is { } f2)
+        {
+            _filter2.Type = f2.Type;
+            _filter2Right.Type = f2.Type;
+            _filter2BaseCutoffHz = f2.CutoffHz;
+            _filter2ResonanceDb = f2.ResonanceDb;
+            _filter2CutoffCc = zone.Filter2CutoffCc;
+            _filter2.SetParameters(_filter2BaseCutoffHz, _filter2ResonanceDb);
+            if (_channels == 2) _filter2Right.SetParameters(_filter2BaseCutoffHz, _filter2ResonanceDb);
+            _hasFilter2 = _filter2.Enabled;
+        }
+        else
+        {
+            _hasFilter2 = false;
         }
 
         // SFZ peaking EQ (eqN_*). Empty for SF2/SF3/DLS, so _eqBandCount stays 0 and the per-sample
@@ -721,6 +752,18 @@ public sealed class Voice
         for (int g = 0; g < _genericLfoCount; g++)
             _genericLfos[g].BeginBlock(channelState);
 
+        // SFZ second-filter cutoff modulation (cutoff2_cc): re-coefficient the cascaded filter per block
+        // from the live CC (constant within the block). Static second filters skip this.
+        if (_hasFilter2 && _filter2CutoffCc is { } f2cc)
+        {
+            double cents = 0;
+            for (int i = 0; i < f2cc.Length; i++)
+                cents += channelState.GetCC(f2cc[i].Cc) / 127.0 * f2cc[i].Amount;
+            double c2 = _filter2BaseCutoffHz * Math.Pow(2.0, cents / 1200.0);
+            _filter2.SetParameters(c2, _filter2ResonanceDb);
+            if (_channels == 2) _filter2Right.SetParameters(c2, _filter2ResonanceDb);
+        }
+
         // LFO → EQ (lfoN_eqNgain/freq): recompute each LFO-driven band's biquad once per block from its
         // base params plus the LFO deltas. SetParameters only touches coefficients, not filter state.
         if (_hasLfoEq)
@@ -884,6 +927,7 @@ public sealed class Voice
                 // Mono path — arithmetically identical to the original when no filter/EQ.
                 double sample = GetInterpolatedSample(0);
                 if (_hasFilter) sample = _filter.Process(sample);
+                if (_hasFilter2) sample = _filter2.Process(sample);
                 for (int e = 0; e < _eqBandCount; e++) sample = _eq[e].Process(sample);
                 float outputSample = (float)(sample * gain);
                 leftBuffer[i] += outputSample * (float)leftGain;
@@ -902,6 +946,11 @@ public sealed class Voice
                 {
                     sampleL = _filter.Process(sampleL);
                     sampleR = _filterRight.Process(sampleR);
+                }
+                if (_hasFilter2)
+                {
+                    sampleL = _filter2.Process(sampleL);
+                    sampleR = _filter2Right.Process(sampleR);
                 }
                 for (int e = 0; e < _eqBandCount; e++)
                 {

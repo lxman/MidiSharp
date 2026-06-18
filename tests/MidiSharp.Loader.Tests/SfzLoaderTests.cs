@@ -409,6 +409,21 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Second_filter_parses_type_cutoff_and_cc()
+    {
+        WriteWav("a.wav");
+        var z = SoundBankLoader.Load(WriteSfz(
+            "<region> sample=a.wav key=60 fil_type=lpf_2p cutoff=2000 fil2_type=hpf_1p cutoff2=300 cutoff2_cc1=1200"))
+            .FindPatch(0, 0)!.Zones[0];
+        Assert.Equal(MidiSharp.SoundBank.FilterType.LowPass, z.Filter!.Type);
+        Assert.NotNull(z.Filter2);
+        Assert.Equal(MidiSharp.SoundBank.FilterType.HighPass, z.Filter2!.Type);
+        Assert.Equal(300.0, z.Filter2.CutoffHz, 1);
+        Assert.Equal(1, Assert.Single(z.Filter2CutoffCc!).Cc);
+        Assert.Equal(1200.0, z.Filter2CutoffCc![0].Amount, 1);
+    }
+
+    [Fact]
     public void Eq_bands_parse_and_skip_zero_gain()
     {
         WriteWav("a.wav");

@@ -1,10 +1,13 @@
 using System;
+using MidiSharp.SoundBank;
 
 namespace MidiSharp.Synth;
 
 /// <summary>
-/// Resonant low-pass filter (2-pole, 12dB/octave).
-/// Based on the classic SF2 filter design.
+/// Resonant 2-pole (12 dB/oct) RBJ biquad. Despite the name it supports the SFZ filter types via
+/// <see cref="Type"/> (low/high-pass, band-pass, notch); 1-pole SFZ variants are approximated by the
+/// 2-pole form. Shelving types fall back to low-pass. The LowPass path is byte-identical to the
+/// original lowpass-only implementation (SF2/DLS and most SFZ filters), which is the default.
 /// </summary>
 public sealed class LowPassFilter
 {
@@ -14,6 +17,9 @@ public sealed class LowPassFilter
     private double _cutoffFrequency;
     private double _resonance;
     private bool _enabled;
+
+    /// <summary>Filter response type. Set before <see cref="SetParameters(double,double)"/>.</summary>
+    public FilterType Type { get; set; } = FilterType.LowPass;
 
     /// <summary>
     /// Whether the filter is enabled.
@@ -82,7 +88,9 @@ public sealed class LowPassFilter
         _resonance = Math.Pow(10.0, resonanceDb / 20.0);
         _resonance = Math.Clamp(_resonance, 0.5, 40.0);
 
-        _enabled = _cutoffFrequency < _sampleRate * 0.45;
+        // Low-pass keeps its original bypass-near-Nyquist behaviour (byte-identical); the other types
+        // filter at any valid cutoff (e.g. a low high-pass cutoff is the whole point).
+        _enabled = Type == FilterType.LowPass ? _cutoffFrequency < _sampleRate * 0.45 : true;
 
         if (_enabled)
             CalculateCoefficients();
@@ -145,19 +153,34 @@ public sealed class LowPassFilter
 
     private void CalculateCoefficients(double frequency)
     {
-        // Compute biquad low-pass filter coefficients
+        // RBJ cookbook biquad. Numerator (n*) varies by type; denominator is shared. Normalised by a0.
         var omega = 2.0 * Math.PI * frequency / _sampleRate;
         var sinOmega = Math.Sin(omega);
         var cosOmega = Math.Cos(omega);
         var alpha = sinOmega / (2.0 * _resonance);
 
+        double n0, n1, n2;
+        switch (Type)
+        {
+            case FilterType.HighPass:
+                n0 = (1.0 + cosOmega) / 2.0; n1 = -(1.0 + cosOmega); n2 = (1.0 + cosOmega) / 2.0;
+                break;
+            case FilterType.BandPass:   // constant 0 dB peak gain
+                n0 = alpha; n1 = 0.0; n2 = -alpha;
+                break;
+            case FilterType.Notch:
+                n0 = 1.0; n1 = -2.0 * cosOmega; n2 = 1.0;
+                break;
+            default:                    // LowPass (and shelf fallback) — identical to the original path
+                n0 = (1.0 - cosOmega) / 2.0; n1 = 1.0 - cosOmega; n2 = (1.0 - cosOmega) / 2.0;
+                break;
+        }
+
         var a0 = 1.0 + alpha;
+        _a0 = n0 / a0;
+        _a1 = n1 / a0;
+        _a2 = n2 / a0;
         _b1 = -2.0 * cosOmega / a0;
         _b2 = (1.0 - alpha) / a0;
-
-        var b0 = (1.0 - cosOmega) / 2.0;
-        _a0 = b0 / a0;
-        _a1 = (1.0 - cosOmega) / a0;
-        _a2 = b0 / a0;
     }
 }
