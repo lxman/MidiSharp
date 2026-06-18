@@ -96,6 +96,8 @@ internal static class SfzOpcodes
         "lfoN_pitch", "lfoN_volume", "lfoN_cutoff",
         // Phase 2: CC modulation of LFO frequency and target depth (mod-wheel vibrato).
         "lfoN_freq_onccN", "lfoN_pitch_onccN", "lfoN_volume_onccN", "lfoN_cutoff_onccN",
+        // Phase 3: complex multi-stage LFOs (additive sub-waveforms 2..8).
+        "lfoN_waveN", "lfoN_ratioN", "lfoN_scaleN", "lfoN_offsetN",
         "label_ccN",   // display-only CC label — no audio effect
         // curve tables we consume when evaluating the corresponding _oncc
         "amplitude_curveccN", "amp_veltrack_curveccN",

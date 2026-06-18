@@ -521,13 +521,25 @@ internal static class SfzZoneTranslator
             bool hasFreq = map.ContainsKey("freq");
             if (!hasFreq && freqCc == null && targets.Count == 0) continue;
 
+            // Stage 0 = the main waveform (v2 default sine); stages 2..8 are additive sub-waveforms
+            // (lfoN_waveX/ratioX/scaleX/offsetX), each at a frequency ratio, amplitude scale and DC offset.
+            var stages = new List<LfoStage> { new LfoStage(GetI("wave", 1), 1.0, 1.0, 0.0) };
+            for (int x = 2; x <= 8; x++)
+            {
+                string sx = x.ToString();
+                if (!map.ContainsKey("wave" + sx) && !map.ContainsKey("ratio" + sx)
+                    && !map.ContainsKey("scale" + sx) && !map.ContainsKey("offset" + sx)) continue;
+                stages.Add(new LfoStage(GetI("wave" + sx, 1), Get("ratio" + sx, 1.0),
+                    Get("scale" + sx, 1.0), Get("offset" + sx, 0.0)));
+            }
+
             lfos.Add(new GenericLfo
             {
                 FrequencyHz = Get("freq", 0),
                 DelaySeconds = Get("delay", 0),
                 FadeSeconds = Get("fade", 0),
                 Phase = Get("phase", 0),
-                Stages = [new LfoStage(GetI("wave", 1), 1.0, 1.0, 0.0)],   // v2 default wave = sine (1)
+                Stages = stages.ToArray(),
                 FreqCc = freqCc,
                 Targets = targets.ToArray(),
             });

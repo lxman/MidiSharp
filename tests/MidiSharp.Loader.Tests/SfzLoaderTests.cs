@@ -261,6 +261,24 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Generic_v2_lfo_parses_complex_multi_stage()
+    {
+        WriteWav("a.wav");
+        // main S&H (12) plus a 4x-faster sine sub-stage at 30% amplitude (the spec's example).
+        var z = SoundBankLoader.Load(WriteSfz(
+            "<region> sample=a.wav key=60 lfo01_freq=2 lfo01_pitch=10 lfo01_wave=12 " +
+            "lfo01_wave2=1 lfo01_ratio2=4 lfo01_scale2=0.3 lfo01_offset2=0.1"))
+            .FindPatch(0, 0)!.Zones[0];
+        var lfo = Assert.Single(z.Lfos!);
+        Assert.Equal(2, lfo.Stages.Length);
+        Assert.Equal(12, lfo.Stages[0].Wave);     // main
+        Assert.Equal(1, lfo.Stages[1].Wave);      // sub sine
+        Assert.Equal(4.0, lfo.Stages[1].Ratio, 3);
+        Assert.Equal(0.3, lfo.Stages[1].Scale, 3);
+        Assert.Equal(0.1, lfo.Stages[1].Offset, 3);
+    }
+
+    [Fact]
     public void Lfo_fade_in_time_parses_for_pitch_and_amp()
     {
         WriteWav("a.wav");
