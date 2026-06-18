@@ -26,7 +26,9 @@ internal static class GenericLfoWave
             case 5:  return p < 0.125 ? 1.0 : -1.0;        // 12.5% pulse
             case 6:  return 2.0 * p - 1.0;                 // saw up
             case 7:  return 1.0 - 2.0 * p;                 // saw down
-            default: return Math.Sin(2.0 * Math.PI * p);   // 12 (S&H) / 13 (stepped) land in Phase 3
+            // 12 (random S&H) and 13 (stepped) are stateful/table-driven, handled in the runner's
+            // StageSum, not here. Any other unknown wave falls back to sine.
+            default: return Math.Sin(2.0 * Math.PI * p);
         }
     }
 }
@@ -42,6 +44,7 @@ internal sealed class GenericLfoRunner
 {
     private int _sampleRate = 48000;
     private double _phase;          // cycles, 0..1
+    private long _cycle;            // completed periods since the note started (for sample-and-hold)
     private double _phaseInc;       // cycles per sample (set per block)
     private int _delaySamples, _delayCounter, _fadeSamples, _fadeElapsed;
     private LfoStage[] _stages = [];
@@ -74,6 +77,7 @@ internal sealed class GenericLfoRunner
     {
         _sampleRate = sampleRate;
         _phase = lfo.Phase - Math.Floor(lfo.Phase);
+        _cycle = 0;
         _delaySamples = lfo.DelaySeconds > 0 ? (int)(lfo.DelaySeconds * sampleRate) : 0;
         _fadeSamples = lfo.FadeSeconds > 0 ? (int)(lfo.FadeSeconds * sampleRate) : 0;
         _delayCounter = _delaySamples;
@@ -153,7 +157,7 @@ internal sealed class GenericLfoRunner
         }
 
         _phase += _phaseInc;
-        if (_phase >= 1.0) _phase -= Math.Floor(_phase);
+        if (_phase >= 1.0) { double f = Math.Floor(_phase); _phase -= f; _cycle += (long)f; }
         return v;
     }
 
@@ -173,9 +177,41 @@ internal sealed class GenericLfoRunner
         for (int s = 0; s < _stages.Length; s++)
         {
             var st = _stages[s];
-            v += GenericLfoWave.Eval(st.Wave, _phase * st.Ratio) * st.Scale + st.Offset;
+            double w = st.Wave switch
+            {
+                // Random sample-and-hold: a new random value twice per period, held between. Deterministic
+                // (hashed from the monotonic half-period index) so renders stay reproducible.
+                12 => SampleHold((_cycle + _phase) * st.Ratio),
+                // Stepped staircase: walk the step table evenly across the period (frac handles sub-stage
+                // ratios). With no steps defined it contributes nothing.
+                13 => Stepped(st.Steps, _phase * st.Ratio),
+                _ => GenericLfoWave.Eval(st.Wave, _phase * st.Ratio),
+            };
+            v += w * st.Scale + st.Offset;
         }
         return v;
+    }
+
+    /// <summary>Random value in [-1,1) for the half-period the (monotonic) phase falls in, sampled twice
+    /// per cycle and held — derived from a splitmix64 hash of the half index, so it's reproducible.</summary>
+    private static double SampleHold(double monotonicPhase)
+    {
+        long halfIndex = (long)Math.Floor(monotonicPhase * 2.0);
+        ulong x = (ulong)halfIndex + 0x9E3779B97F4A7C15UL;
+        x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9UL;
+        x = (x ^ (x >> 27)) * 0x94D049BB133111EBUL;
+        x ^= x >> 31;
+        return (x >> 11) * (1.0 / (1UL << 53)) * 2.0 - 1.0;
+    }
+
+    /// <summary>Stepped-LFO value: the step the wrapped phase lands in (each step occupies 1/N of a period).</summary>
+    private static double Stepped(double[]? steps, double phase)
+    {
+        if (steps is not { Length: > 0 }) return 0.0;
+        double p = phase - Math.Floor(phase);
+        int i = (int)(p * steps.Length);
+        if (i >= steps.Length) i = steps.Length - 1;   // guard the p≈1 boundary
+        return steps[i];
     }
 
     private static double SumCc(LfoCcDepth[]? mods, ChannelState ch)

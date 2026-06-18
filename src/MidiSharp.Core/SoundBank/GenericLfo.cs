@@ -50,6 +50,13 @@ public readonly struct LfoStage
     public double Ratio { get; }
     public double Scale { get; }
     public double Offset { get; }
+
+    /// <summary>
+    /// SFZ v2 stepped-LFO staircase (<c>lfoN_steps</c> + <c>lfoN_stepX</c>): the step values normalized to
+    /// -1..1, walked evenly across one period. Only meaningful when <see cref="Wave"/> is 13 (stepped);
+    /// null otherwise.
+    /// </summary>
+    public double[]? Steps { get; init; }
 }
 
 /// <summary>One destination an LFO drives, with a depth that may be scaled by one or more CCs.</summary>

@@ -1171,6 +1171,24 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Stepped_lfo_parses_step_table()
+    {
+        WriteWav("a.wav");
+        var lfo = SoundBankLoader.Load(WriteSfz(
+                "<region> sample=a.wav key=60 lfo1_freq=4 lfo1_wave=13 lfo1_volume=6 " +
+                "lfo1_steps=4 lfo1_step1=100 lfo1_step2=50 lfo1_step3=-50 lfo1_step4=-100"))
+            .FindPatch(0, 0)!.Zones[0].Lfos![0];
+        var steps = lfo.Stages[0].Steps;
+        Assert.NotNull(steps);
+        Assert.Equal(new[] { 1.0, 0.5, -0.5, -1.0 }, steps!);
+
+        // A non-stepped LFO carries no step table.
+        var plain = SoundBankLoader.Load(WriteSfz("<region> sample=a.wav key=60 lfo1_freq=4 lfo1_wave=1 lfo1_pitch=50"))
+            .FindPatch(0, 0)!.Zones[0].Lfos![0];
+        Assert.Null(plain.Stages[0].Steps);
+    }
+
+    [Fact]
     public void Shelf_and_peaking_filter_types_carry_fil_gain()
     {
         WriteWav("a.wav");

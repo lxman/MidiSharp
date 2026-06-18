@@ -691,7 +691,21 @@ internal static class SfzZoneTranslator
 
             // Stage 0 = the main waveform (v2 default sine); stages 2..8 are additive sub-waveforms
             // (lfoN_waveX/ratioX/scaleX/offsetX), each at a frequency ratio, amplitude scale and DC offset.
-            var stages = new List<LfoStage> { new LfoStage(GetI("wave", 1), 1.0, 1.0, 0.0) };
+            int mainWave = GetI("wave", 1);
+            // Stepped LFO (wave 13): lfoN_steps gives the count, lfoN_step{X} each step's value in percent
+            // (-100..100 → -1..1), walked evenly across the period.
+            double[]? steps = null;
+            if (mainWave == 13)
+            {
+                int stepCount = Math.Clamp(GetI("steps", 0), 0, 128);
+                if (stepCount > 0)
+                {
+                    steps = new double[stepCount];
+                    for (int x = 1; x <= stepCount; x++)
+                        steps[x - 1] = Math.Clamp(Get("step" + x, 0) / 100.0, -1.0, 1.0);
+                }
+            }
+            var stages = new List<LfoStage> { new LfoStage(mainWave, 1.0, 1.0, 0.0) { Steps = steps } };
             for (int x = 2; x <= 8; x++)
             {
                 string sx = x.ToString();

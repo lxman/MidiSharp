@@ -117,6 +117,8 @@ internal static class SfzOpcodes
         "lfoN_freq_onccN", "lfoN_pitch_onccN", "lfoN_volume_onccN", "lfoN_cutoff_onccN",
         // Phase 3: complex multi-stage LFOs (additive sub-waveforms 2..8).
         "lfoN_waveN", "lfoN_ratioN", "lfoN_scaleN", "lfoN_offsetN",
+        // Stepped LFO (wave 13): step count + per-step values.
+        "lfoN_steps", "lfoN_stepN",
         // Phase 4: LFO → EQ band (gain/freq), with CC-modulated depth.
         "lfoN_eqNgain", "lfoN_eqNfreq", "lfoN_eqNgain_onccN", "lfoN_eqNfreq_onccN",
         "label_ccN",   // display-only CC label — no audio effect
