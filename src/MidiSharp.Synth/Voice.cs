@@ -126,6 +126,9 @@ public sealed class Voice
     // SFZ v2 generic LFOs (lfoN_*) — reusable runners; only the first _genericLfoCount are active.
     private GenericLfoRunner[] _genericLfos = System.Array.Empty<GenericLfoRunner>();
     private int _genericLfoCount;
+    // SFZ v2 generic flex envelopes (egN_*) — reusable runners; first _genericEgCount are active.
+    private GenericEgRunner[] _genericEgs = System.Array.Empty<GenericEgRunner>();
+    private int _genericEgCount;
     private double _pitchCorrectionCents;
     private double _coarseTuneSemitones;
     private double _fineTuneCents;
@@ -354,6 +357,24 @@ public sealed class Voice
             _genericLfoCount = 0;
         }
 
+        // SFZ v2 generic flex envelopes (egN_*): one runner per zone EG.
+        if (zone.Egs is { Length: > 0 } zoneEgs)
+        {
+            if (_genericEgs.Length < zoneEgs.Length)
+            {
+                var grown = new GenericEgRunner[zoneEgs.Length];
+                System.Array.Copy(_genericEgs, grown, _genericEgs.Length);
+                for (int i = _genericEgs.Length; i < grown.Length; i++) grown[i] = new GenericEgRunner();
+                _genericEgs = grown;
+            }
+            for (int i = 0; i < zoneEgs.Length; i++) _genericEgs[i].Configure(zoneEgs[i], _sampleRate);
+            _genericEgCount = zoneEgs.Length;
+        }
+        else
+        {
+            _genericEgCount = 0;
+        }
+
         // Sample addressing — IR fields are sample-relative frames. The metadata's
         // base length/loop points are overridable by the zone's optional offset
         // generators (SF2 StartAddrsOffset etc.).
@@ -494,7 +515,8 @@ public sealed class Voice
                 ? f.CutoffHz * Math.Pow(2.0, f.KeyTrackCentsPerKey * (keyNumber - f.KeyTrackCenter) / 1200.0)
                 : f.CutoffHz;
             _filterBaseResonanceDb = f.ResonanceDb;
-            _modEnvFilterDepthCents = f.EnvelopeDepthCents;
+            // SFZ fileg_vel2depth: velocity adds to the filter-EG cutoff depth.
+            _modEnvFilterDepthCents = f.EnvelopeDepthCents + velNorm * f.EnvVelToDepthCents;
             _filter.Type = f.Type;
             _filterRight.Type = f.Type;
             _filter.SetParameters(_filterBaseCutoffHz, _filterBaseResonanceDb);
@@ -773,6 +795,8 @@ public sealed class Voice
         // within the block) so lfoN_freq_oncc and lfoN_{target}_oncc (mod-wheel vibrato) track live.
         for (int g = 0; g < _genericLfoCount; g++)
             _genericLfos[g].BeginBlock(channelState);
+        for (int e = 0; e < _genericEgCount; e++)
+            _genericEgs[e].BeginBlock(channelState);
 
         // SFZ width_oncc: live CC modulation of stereo width, refreshed per block (amount is width-%).
         if (_widthCc is { } widthCc)
@@ -904,6 +928,15 @@ public sealed class Voice
                 gLfoPitchCents += lv * lfo.PitchDepthCents;
                 gLfoCutoffCents += lv * lfo.CutoffDepthCents;
                 gLfoAttenDb -= lv * lfo.VolumeDepthDb;
+            }
+            // SFZ v2 flex envelopes (egN_*): same destinations as the LFOs (volume positive = louder).
+            for (int e = 0; e < _genericEgCount; e++)
+            {
+                var eg = _genericEgs[e];
+                double ev = eg.Process();
+                gLfoPitchCents += ev * eg.PitchDepthCents;
+                gLfoCutoffCents += ev * eg.CutoffDepthCents;
+                gLfoAttenDb -= ev * eg.VolumeDepthDb;
             }
 
             if (_volumeEnvelope.IsFinished)

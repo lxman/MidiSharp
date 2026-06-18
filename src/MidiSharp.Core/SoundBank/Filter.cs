@@ -54,6 +54,9 @@ public sealed class FilterSettings
     /// <summary>Modulation envelope → cutoff depth, in cents.</summary>
     public double EnvelopeDepthCents { get; init; }
 
+    /// <summary>SFZ fileg_vel2depth: velocity adds to the filter-EG → cutoff depth (cents at full velocity).</summary>
+    public double EnvVelToDepthCents { get; init; }
+
     /// <summary>Modulation LFO → cutoff depth, in cents.</summary>
     public double LfoDepthCents { get; init; }
 }

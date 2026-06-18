@@ -122,6 +122,12 @@ internal static class SfzOpcodes
         // v1/ARIA bare-cc envelope aliases (ampeg_{stage}cc{N} ≡ ampeg_{stage}_oncc{N}), baked in EnvCcOffset
         "ampeg_delayccN", "ampeg_attackccN", "ampeg_holdccN",
         "ampeg_decayccN", "ampeg_sustainccN", "ampeg_releaseccN",
+        // SFZ v2 flex envelopes (egN_*): segments, sustain, pitch/cutoff/volume targets + CC depth.
+        "egN_timeN", "egN_levelN", "egN_sustain",
+        "egN_pitch", "egN_cutoff", "egN_volume",
+        "egN_pitch_onccN", "egN_cutoff_onccN", "egN_volume_onccN",
+        // velocity → filter-EG depth (fileg_vel2depth)
+        "fileg_velNdepth",
     };
 
     /// <summary>True when the loader actually acts on <paramref name="opcode"/> (lowercase).</summary>

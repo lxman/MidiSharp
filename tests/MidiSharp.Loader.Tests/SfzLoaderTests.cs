@@ -440,6 +440,24 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Flex_eg_parses_stages_sustain_and_cc_target()
+    {
+        WriteWav("a.wav");
+        // The Discord Sitar's eg06: 2 segments, sustain at stage 1, pitch depth driven by CC140.
+        var z = SoundBankLoader.Load(WriteSfz(
+            "<region> sample=a.wav key=60 eg06_time0=0.02 eg06_level0=-1 eg06_time1=0.07 eg06_level1=0 " +
+            "eg06_sustain=1 eg06_pitch_oncc140=100")).FindPatch(0, 0)!.Zones[0];
+        var eg = Assert.Single(z.Egs!);
+        Assert.Equal(2, eg.Stages.Length);
+        Assert.Equal(0.02, eg.Stages[0].TimeSeconds, 3);
+        Assert.Equal(-1.0, eg.Stages[0].Level, 3);
+        Assert.Equal(1, eg.SustainStage);
+        var t = Assert.Single(eg.Targets);
+        Assert.Equal(MidiSharp.SoundBank.LfoDestination.Pitch, t.Destination);
+        Assert.Equal(140, Assert.Single(t.DepthCc!).Cc);
+    }
+
+    [Fact]
     public void Amp_keytrack_and_eq_vel2gain_parse()
     {
         WriteWav("a.wav");

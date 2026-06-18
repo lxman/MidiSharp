@@ -185,6 +185,12 @@ public sealed class PatchZone
     /// that declare none (the common case), which keeps those paths untouched.
     /// </summary>
     public GenericLfo[]? Lfos { get; init; }
+
+    /// <summary>
+    /// SFZ v2 generic flex envelopes (<c>egN_*</c>): multi-segment envelopes routed to pitch/cutoff/
+    /// volume, run per-sample in the voice. Null for SF2/DLS and SFZ zones that declare none.
+    /// </summary>
+    public GenericEg[]? Egs { get; init; }
 }
 
 /// <summary>

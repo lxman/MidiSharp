@@ -255,6 +255,7 @@ internal static class SfzZoneTranslator
             AmpKeyTrackDbPerKey = r.GetDouble("amp_keytrack", 0),
             AmpKeyTrackCenter = r.GetKey("amp_keycenter", control) ?? 60,
             Lfos = lfos,
+            Egs = BuildGenericEgs(r),
         };
     }
 
@@ -477,6 +478,7 @@ internal static class SfzZoneTranslator
             KeyTrackCentsPerKey = r.GetDouble("fil_keytrack", 0),
             KeyTrackCenter = r.GetInt("fil_keycenter", 60),
             EnvelopeDepthCents = envDepthCents,
+            EnvVelToDepthCents = r.GetDouble("fileg_vel2depth", 0),
             LfoDepthCents = r.GetDouble("fillfo_depth", 0),
         };
     }
@@ -672,6 +674,86 @@ internal static class SfzZoneTranslator
             });
         }
         return lfos.Count > 0 ? lfos.ToArray() : null;
+    }
+
+    /// <summary>
+    /// Parses SFZ v2 flex envelopes (<c>egN_*</c>): timed level segments (egN_timeX/levelX), a sustain
+    /// point (egN_sustain), and pitch/cutoff/volume targets (egN_{target} + egN_{target}_onccX). Returns
+    /// null when the region declares none. Other targets (pan/eq/amplitude) and post-sustain release
+    /// segments aren't modelled yet (those opcodes stay reported).
+    /// </summary>
+    private static GenericEg[]? BuildGenericEgs(SfzRegion r)
+    {
+        SortedDictionary<int, Dictionary<string, string>>? byIndex = null;
+        foreach (var kv in r.Opcodes)
+        {
+            string k = kv.Key;
+            if (!k.StartsWith("eg", StringComparison.Ordinal)) continue;
+            int s = 2, p = 2;
+            while (p < k.Length && char.IsDigit(k[p])) p++;
+            if (p == s || p >= k.Length || k[p] != '_') continue;
+            if (!int.TryParse(k.Substring(s, p - s), out int idx)) continue;
+            string suffix = k.Substring(p + 1);
+            byIndex ??= new SortedDictionary<int, Dictionary<string, string>>();
+            if (!byIndex.TryGetValue(idx, out var map))
+                byIndex[idx] = map = new Dictionary<string, string>(StringComparer.Ordinal);
+            map[suffix] = kv.Value;
+        }
+        if (byIndex == null) return null;
+
+        var egs = new List<GenericEg>();
+        foreach (var pair in byIndex)
+        {
+            var map = pair.Value;
+            double Get(string key, double def) =>
+                map.TryGetValue(key, out var v) && double.TryParse(v.Trim(),
+                    System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture,
+                    out double d) ? d : def;
+
+            // Segments: time{X}/level{X}, indexed from 0.
+            var stageIdx = new SortedSet<int>();
+            foreach (var key in map.Keys)
+            {
+                if (key.StartsWith("time", StringComparison.Ordinal) && int.TryParse(key.AsSpan(4), out int ti)) stageIdx.Add(ti);
+                else if (key.StartsWith("level", StringComparison.Ordinal) && int.TryParse(key.AsSpan(5), out int li)) stageIdx.Add(li);
+            }
+            if (stageIdx.Count == 0) continue;
+            int maxStage = 0;
+            foreach (var i in stageIdx) maxStage = Math.Max(maxStage, i);
+            var stages = new EgStage[maxStage + 1];
+            for (int i = 0; i <= maxStage; i++)
+                stages[i] = new EgStage(Get("time" + i, 0), Get("level" + i, 0));
+
+            LfoCcDepth[]? CcMods(string prefix)
+            {
+                List<LfoCcDepth>? list = null;
+                foreach (var kv in map)
+                {
+                    if (!kv.Key.StartsWith(prefix, StringComparison.Ordinal)) continue;
+                    if (!int.TryParse(kv.Key.Substring(prefix.Length), out int cc)) continue;
+                    if (!double.TryParse(kv.Value.Trim(), System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture, out double amt)) continue;
+                    (list ??= new List<LfoCcDepth>()).Add(new LfoCcDepth(cc, amt));
+                }
+                return list?.ToArray();
+            }
+
+            var targets = new List<EgTarget>();
+            void AddTarget(string key, LfoDestination dest)
+            {
+                var depthCc = CcMods(key + "_oncc");
+                if (map.ContainsKey(key) || depthCc != null)
+                    targets.Add(new EgTarget { Destination = dest, Depth = Get(key, 0), DepthCc = depthCc });
+            }
+            AddTarget("pitch", LfoDestination.Pitch);
+            AddTarget("cutoff", LfoDestination.Cutoff);
+            AddTarget("volume", LfoDestination.Volume);
+            if (targets.Count == 0) continue;
+
+            int sustain = map.TryGetValue("sustain", out var sv) && int.TryParse(sv.Trim(), out int ss) ? ss : -1;
+            egs.Add(new GenericEg { Stages = stages, SustainStage = sustain, Targets = targets.ToArray() });
+        }
+        return egs.Count > 0 ? egs.ToArray() : null;
     }
 
     private static (LoopMode Mode, long? Start, long? End) ResolveLoop(SfzRegion r, AudioInfo wav)
