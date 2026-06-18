@@ -177,6 +177,44 @@ public sealed class DecoderTests : IDisposable
         AssertLossless(reference, mine);
     }
 
+    [Fact]
+    public void Flac_reserved_channel_assignment_is_rejected()
+    {
+        if (!CodecFixtures.FfmpegAvailable) return;
+        string flac = Path.Combine(_dir, "reserved.flac");
+        if (!CodecFixtures.Transcode(_wav, flac)) return;
+        var bytes = File.ReadAllBytes(flac);
+
+        int frame = FirstFrameOffset(bytes);
+        // Sanity: a FLAC frame begins with the 0xFF F8/F9 sync; bail if we mis-located it.
+        Assert.True(frame > 0 && frame + 3 < bytes.Length && bytes[frame] == 0xFF && (bytes[frame + 1] & 0xFC) == 0xF8,
+            "could not locate the first FLAC frame header");
+
+        // Byte 3 high nibble = channel assignment; force a reserved value (12). CRCs aren't verified, and
+        // the guard fires before subframe decoding, so the decoder must reject it rather than misread 2ch.
+        bytes[frame + 3] = (byte)((bytes[frame + 3] & 0x0F) | 0xC0);
+        File.WriteAllBytes(flac, bytes);
+
+        Assert.ThrowsAny<Exception>(() => AudioCodecs.Decode(flac));
+    }
+
+    // Offset of the first audio frame: skip "fLaC" then the metadata blocks (each = 1 flag/type byte +
+    // 3-byte big-endian length + body; the block with the high flag bit set is the last).
+    private static int FirstFrameOffset(byte[] b)
+    {
+        if (b.Length < 4 || b[0] != (byte)'f' || b[1] != (byte)'L' || b[2] != (byte)'a' || b[3] != (byte)'C')
+            return -1;
+        int p = 4;
+        while (p + 4 <= b.Length)
+        {
+            bool last = (b[p] & 0x80) != 0;
+            int len = (b[p + 1] << 16) | (b[p + 2] << 8) | b[p + 3];
+            p += 4 + len;
+            if (last) break;
+        }
+        return p;
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────
 
     private static void AssertLossless(DecodedAudio expected, DecodedAudio actual)

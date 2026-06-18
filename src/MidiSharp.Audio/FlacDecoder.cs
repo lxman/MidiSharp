@@ -168,6 +168,10 @@ public sealed class FlacDecoder : IAudioDecoder
 
         r.ReadBits(8);                       // CRC-8 (not verified)
 
+        // Channel assignment 0-7 = N+1 independent channels; 8/9/10 = L/R, R/S, M/S stereo (2 channels);
+        // 11-15 are reserved by the FLAC spec — reject rather than silently decoding as 2 channels.
+        if (channelAssignment > 10)
+            throw new AudioDecodeException("Reserved FLAC channel assignment");
         // Per-channel subframes. Side channels carry one extra bit of range.
         int chCount = channelAssignment < 8 ? channelAssignment + 1 : 2;
         var block = new int[chCount][];

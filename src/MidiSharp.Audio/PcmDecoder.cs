@@ -87,7 +87,28 @@ public static class PcmDecoder
                 break;
             }
             default:
-                return (Array.Empty<float>(), 0);
+            {
+                // Generic signed little-endian integer PCM for any 1..8-byte container — covers exotic
+                // depths (40/48/56/64-bit) and sub-byte depths (12/20) stored MSB-justified in their byte
+                // container. Normalised by the container's full range, so a byte-aligned depth is exact;
+                // a sub-byte depth left-justified in the container reads correctly too. >64-bit is bogus.
+                if (bytesPerSample is < 1 or > 8) return (Array.Empty<float>(), 0);
+                int containerBits = bytesPerSample * 8;
+                bool full64 = containerBits >= 64;
+                double scale = full64 ? 1.0 / 9223372036854775808.0 : 1.0 / (1L << (containerBits - 1));
+                long signMask = full64 ? 0 : 1L << (containerBits - 1);
+                long extend = full64 ? 0 : 1L << containerBits;
+                for (int i = 0; i < totalSamples; i++)
+                {
+                    int off = i * bytesPerSample;
+                    long v = 0;
+                    for (int b = 0; b < bytesPerSample; b++)
+                        v |= (long)bytes[off + b] << (8 * b);
+                    if (signMask != 0 && (v & signMask) != 0) v -= extend;   // sign-extend from the container
+                    output[i] = (float)(v * scale);
+                }
+                break;
+            }
         }
 
         return (output, frames);
