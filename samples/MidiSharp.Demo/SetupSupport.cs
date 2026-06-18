@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using Loader;
+using MidiSharp.Loader;
 using MidiSharp.PatchMap;
 using MidiSharp.SoundBank;
 using IRBank = MidiSharp.SoundBank.SoundBank;

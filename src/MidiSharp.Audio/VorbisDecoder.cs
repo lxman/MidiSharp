@@ -2,12 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
-using NVorbis;
+using MidiSharp.Audio.Vorbis;
 
 namespace MidiSharp.Audio;
 
 /// <summary>
-/// Ogg/Vorbis decoder, wrapping the vendored NVorbis reader. Serves both the
+/// Ogg/Vorbis decoder, wrapping the maintained NVorbis fork (MidiSharp.Audio.Vorbis). Serves both the
 /// eager file path (SFZ <c>.ogg</c> samples, via <see cref="Decode"/>) and SF3's
 /// lazy per-sample path (via the static <see cref="DecodePcm"/> / <see cref="Peek"/>
 /// primitives), so there is a single Vorbis implementation behind every caller.

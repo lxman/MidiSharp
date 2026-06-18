@@ -1,4 +1,4 @@
-﻿namespace NVorbis.Contracts
+﻿namespace MidiSharp.Audio.Vorbis.Contracts
 {
     /// <summary>
     /// Describes a packet of data from a data stream.

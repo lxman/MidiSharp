@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using MidiSharp.Audio;
 using MidiSharp.SoundBank;
 
-namespace Loader.Sfz;
+namespace MidiSharp.Loader.Sfz;
 
 /// <summary>
 /// Lazy sample source for SFZ external sample files. Each referenced file is decoded on first use

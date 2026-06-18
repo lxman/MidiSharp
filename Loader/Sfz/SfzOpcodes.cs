@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 
-namespace Loader.Sfz;
+namespace MidiSharp.Loader.Sfz;
 
 /// <summary>
 /// The authoritative set of SFZ opcodes the translator (<see cref="SfzZoneTranslator"/>)

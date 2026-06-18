@@ -1,8 +1,8 @@
 using System;
 using System.Runtime.InteropServices;
-using Loader.Sf2.Model;
+using MidiSharp.Loader.Sf2.Model;
 
-namespace Loader.Sf2.Io;
+namespace MidiSharp.Loader.Sf2.Io;
 
 /// <summary>
 /// Owns the sample data byte arrays (16-bit <c>smpl</c> and optional 24-bit <c>sm24</c> LS bytes)

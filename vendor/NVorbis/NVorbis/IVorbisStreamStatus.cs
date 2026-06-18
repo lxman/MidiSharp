@@ -1,11 +1,11 @@
 ﻿using System;
 
-namespace NVorbis
+namespace MidiSharp.Audio.Vorbis
 {
     /// <summary>
     /// Backwards compatibility type
     /// </summary>
-    [Obsolete("Moved to NVorbis.Contracts.IStreamStats", true)]
+    [Obsolete("Moved to MidiSharp.Audio.Vorbis.Contracts.IStreamStats", true)]
     public interface IVorbisStreamStatus : Contracts.IStreamStats
     {
         /// <summary>

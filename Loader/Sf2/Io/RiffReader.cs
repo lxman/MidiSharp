@@ -1,6 +1,6 @@
 using System;
 
-namespace Loader.Sf2.Io;
+namespace MidiSharp.Loader.Sf2.Io;
 
 /// <summary>
 /// Splits the top-level RIFF/sfbk container into its three LIST chunks (INFO, sdta, pdta).

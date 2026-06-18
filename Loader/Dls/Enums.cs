@@ -1,4 +1,4 @@
-namespace Loader.Dls;
+namespace MidiSharp.Loader.Dls;
 
 /// <summary>
 /// DLS connection-block source codes (DLS Level 2 §1.7.1, "Source Enumerations").

@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using MidiSharp.SoundBank;
 
-namespace Loader.Dls;
+namespace MidiSharp.Loader.Dls;
 
 /// <summary>
 /// Mutable per-zone accumulator that processes DLS articulator connections

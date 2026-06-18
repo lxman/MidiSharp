@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 
-namespace NVorbis.Contracts
+namespace MidiSharp.Audio.Vorbis.Contracts
 {
     interface IHuffman
     {

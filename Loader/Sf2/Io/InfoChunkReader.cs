@@ -1,7 +1,7 @@
 using System;
-using Loader.Sf2.Model;
+using MidiSharp.Loader.Sf2.Model;
 
-namespace Loader.Sf2.Io;
+namespace MidiSharp.Loader.Sf2.Io;
 
 /// <summary>
 /// Walks the sub-chunks of an INFO LIST and decodes them into <see cref="InfoMetadata"/>.

@@ -1,7 +1,8 @@
 using System.Collections.Generic;
 using MidiSharp.SoundBank;
 
-namespace Loader.Dls;
+using IRBank = MidiSharp.SoundBank.SoundBank;
+namespace MidiSharp.Loader.Dls;
 
 /// <summary>
 /// DLS → IR translator. Walks <see cref="DlsCollection"/>.Instruments × Regions,
@@ -18,12 +19,12 @@ namespace Loader.Dls;
 /// </remarks>
 internal static class DlsBankLoader
 {
-    public static SoundBank Load(DlsCollection col, SoundBankLoadOptions options)
+    public static IRBank Load(DlsCollection col, SoundBankLoadOptions options)
     {
         var samples = new DlsWaveTableSampleSource(col.Waves);
         var patches = BuildPatches(col);
 
-        return new SoundBank
+        return new IRBank
         {
             Name = col.Name ?? string.Empty,
             Author = col.Engineer,

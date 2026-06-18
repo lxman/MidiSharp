@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using MidiSharp.Audio;
 using MidiSharp.SoundBank;
 
-namespace Loader.Sfz;
+namespace MidiSharp.Loader.Sfz;
 
 /// <summary>
 /// Translates one flattened <see cref="SfzRegion"/> into an IR

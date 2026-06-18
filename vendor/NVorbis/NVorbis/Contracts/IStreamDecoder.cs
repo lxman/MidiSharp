@@ -1,7 +1,7 @@
 ﻿using System;
 using System.IO;
 
-namespace NVorbis.Contracts
+namespace MidiSharp.Audio.Vorbis.Contracts
 {
     /// <summary>
     /// Describes a stream decoder instance for Vorbis data.

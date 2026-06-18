@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Loader.Sf2;
+namespace MidiSharp.Loader.Sf2;
 
 /// <summary>
 /// Validation failure codes (1:1 with the C++ <c>violations</c> enum from sflib).

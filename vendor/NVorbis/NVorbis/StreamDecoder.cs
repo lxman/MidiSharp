@@ -1,9 +1,9 @@
-﻿using NVorbis.Contracts;
+﻿using MidiSharp.Audio.Vorbis.Contracts;
 using System;
 using System.IO;
 using System.Text;
 
-namespace NVorbis
+namespace MidiSharp.Audio.Vorbis
 {
     /// <summary>
     /// Implements a stream decoder for Vorbis data.

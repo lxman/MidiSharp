@@ -1,7 +1,7 @@
-﻿using NVorbis.Contracts;
+﻿using MidiSharp.Audio.Vorbis.Contracts;
 using System;
 
-namespace NVorbis
+namespace MidiSharp.Audio.Vorbis
 {
     class Mapping : IMapping
     {

@@ -1,4 +1,4 @@
-namespace Loader.Sf2.Enums;
+namespace MidiSharp.Loader.Sf2.Enums;
 
 /// <summary>
 /// SoundFont 2 generator operator codes (see SF2 spec §8.1.2).

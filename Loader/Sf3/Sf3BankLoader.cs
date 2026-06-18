@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
-using Loader.Sf2;
-using Loader.Sf2.Enums;
-using Loader.Sf2.Model;
+using MidiSharp.Loader.Sf2;
+using MidiSharp.Loader.Sf2.Enums;
+using MidiSharp.Loader.Sf2.Model;
 using MidiSharp.Audio;
 using MidiSharp.SoundBank;
 
-namespace Loader.Sf3;
+using IRBank = MidiSharp.SoundBank.SoundBank;
+namespace MidiSharp.Loader.Sf3;
 
 /// <summary>
 /// SF3 → IR translator. SF3 is structurally identical to SF2 — same RIFF
@@ -19,12 +20,12 @@ namespace Loader.Sf3;
 /// </summary>
 internal static class Sf3BankLoader
 {
-    public static SoundBank Load(SoundFont sf, SoundBankLoadOptions options)
+    public static IRBank Load(SoundFont sf, SoundBankLoadOptions options)
     {
         var samples = BuildSampleSource(sf, options);
         var patches = Sf2BankLoader.BuildPatches(sf);
 
-        return new SoundBank
+        return new IRBank
         {
             Name = sf.Info.BankName,
             Author = sf.Info.Engineer,

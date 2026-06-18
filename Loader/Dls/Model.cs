@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Loader.Dls;
+namespace MidiSharp.Loader.Dls;
 
 /// <summary>
 /// One DLS articulator connection — modulation source × control × destination

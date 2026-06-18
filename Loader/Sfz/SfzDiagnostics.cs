@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace Loader.Sfz;
+namespace MidiSharp.Loader.Sfz;
 
 /// <summary>One unsupported opcode family and how many regions carry it.</summary>
 public sealed record SfzOpcodeStat(string Opcode, int Count, string? Note);

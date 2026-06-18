@@ -4,7 +4,8 @@ using System.IO;
 using MidiSharp.Audio;
 using MidiSharp.SoundBank;
 
-namespace Loader.Sfz;
+using IRBank = MidiSharp.SoundBank.SoundBank;
+namespace MidiSharp.Loader.Sfz;
 
 /// <summary>
 /// SFZ → IR translator. An SFZ file describes a single instrument as text opcodes
@@ -20,14 +21,14 @@ namespace Loader.Sfz;
 /// </remarks>
 internal static class SfzBankLoader
 {
-    public static SoundBank Load(string path, SoundBankLoadOptions options)
+    public static IRBank Load(string path, SoundBankLoadOptions options)
     {
         var acc = new Accumulator();
         acc.AddFile(path, bank: 0);
         return acc.Build(Path.GetFileNameWithoutExtension(path), options.DecodedSampleCacheBytes, options.BlockingSampleDecode);
     }
 
-    public static SoundBank Load(Stream stream, string? basePath, SoundBankLoadOptions options)
+    public static IRBank Load(Stream stream, string? basePath, SoundBankLoadOptions options)
     {
         using var reader = new StreamReader(stream);
         string text = reader.ReadToEnd();
@@ -46,7 +47,7 @@ internal static class SfzBankLoader
     /// Samples are pooled and de-duplicated across all files, so a zone's sample
     /// id is global and needs no remapping.
     /// </summary>
-    public static SoundBank LoadCombined(IReadOnlyList<(string Path, int Bank)> files, SoundBankLoadOptions options)
+    public static IRBank LoadCombined(IReadOnlyList<(string Path, int Bank)> files, SoundBankLoadOptions options)
     {
         if (files == null || files.Count == 0)
             throw new SoundBankLoadException("No SFZ files provided");
@@ -171,7 +172,7 @@ internal static class SfzBankLoader
             PitchCorrectionCents = info.FineTuneCents,
         };
 
-        public SoundBank Build(string name, long cacheBudgetBytes, bool blockingDecode = false)
+        public IRBank Build(string name, long cacheBudgetBytes, bool blockingDecode = false)
         {
             if (_placed.Count == 0)
                 throw new SoundBankLoadException(
@@ -212,7 +213,7 @@ internal static class SfzBankLoader
             foreach (var (_, _, _, zone, _) in _placed)
                 if (zone.SustainCc != 64) { sustainCc = zone.SustainCc; break; }
 
-            return new SoundBank
+            return new IRBank
             {
                 Name = name,
                 SourceFormat = SoundBankFormat.Sfz,

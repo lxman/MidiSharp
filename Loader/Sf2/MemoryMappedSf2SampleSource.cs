@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 using MidiSharp.Audio;
 using MidiSharp.SoundBank;
 
-namespace Loader.Sf2;
+namespace MidiSharp.Loader.Sf2;
 
 /// <summary>
 /// Reads SF2 samples and converts int16 → float on the fly.

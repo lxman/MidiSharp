@@ -1,6 +1,6 @@
 using System;
 
-namespace Loader.Sf2.Io;
+namespace MidiSharp.Loader.Sf2.Io;
 
 /// <summary>
 /// Splits a pdta LIST into its nine fixed sub-chunks. The SF2 spec requires that they appear

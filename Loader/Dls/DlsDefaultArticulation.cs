@@ -1,6 +1,6 @@
 using MidiSharp.SoundBank;
 
-namespace Loader.Dls;
+namespace MidiSharp.Loader.Dls;
 
 /// <summary>
 /// The default-articulation set every DLS Level 2 voice carries implicitly,

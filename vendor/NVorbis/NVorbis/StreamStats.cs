@@ -1,6 +1,6 @@
-﻿using NVorbis.Contracts;
+﻿using MidiSharp.Audio.Vorbis.Contracts;
 
-namespace NVorbis
+namespace MidiSharp.Audio.Vorbis
 {
     class StreamStats : IStreamStats
     {

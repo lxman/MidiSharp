@@ -1,4 +1,4 @@
-namespace Loader.Sf2.Enums;
+namespace MidiSharp.Loader.Sf2.Enums;
 
 public enum SFModSource : ushort
 {

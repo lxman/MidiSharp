@@ -1,7 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace Loader.Sf2.Model;
+namespace MidiSharp.Loader.Sf2.Model;
 
 /// <summary>
 /// The 16-bit amount payload of a generator. Interpretation depends on the

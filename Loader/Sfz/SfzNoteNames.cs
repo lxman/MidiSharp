@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace Loader.Sfz;
+namespace MidiSharp.Loader.Sfz;
 
 /// <summary>
 /// Parses SFZ key-opcode values, which may be either a raw MIDI note number

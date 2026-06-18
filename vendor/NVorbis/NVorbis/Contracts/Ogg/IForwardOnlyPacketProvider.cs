@@ -1,4 +1,4 @@
-﻿namespace NVorbis.Contracts.Ogg
+﻿namespace MidiSharp.Audio.Vorbis.Contracts.Ogg
 {
     interface IForwardOnlyPacketProvider : IPacketProvider
     {

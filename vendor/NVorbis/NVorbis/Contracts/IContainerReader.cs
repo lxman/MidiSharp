@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 
-namespace NVorbis.Contracts
+namespace MidiSharp.Audio.Vorbis.Contracts
 {
     /// <summary>
     /// Encapsulates a method that initializes a stream reader, optionally ignoring the stream if desired.

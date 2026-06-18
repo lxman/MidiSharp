@@ -1,4 +1,4 @@
-﻿namespace NVorbis
+﻿namespace MidiSharp.Audio.Vorbis
 {
     static class Utils
     {

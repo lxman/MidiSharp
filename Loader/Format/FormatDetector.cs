@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using MidiSharp.SoundBank;
 
-namespace Loader.Format;
+namespace MidiSharp.Loader.Format;
 
 /// <summary>
 /// Magic-byte sniffing for the four supported sound-bank formats. Extension is

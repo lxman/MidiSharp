@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 
-namespace NVorbis.Contracts
+namespace MidiSharp.Audio.Vorbis.Contracts
 {
     /// <summary>
     /// Describes the interface for <see cref="VorbisReader"/>.

@@ -1,10 +1,10 @@
-﻿using NVorbis.Contracts;
+﻿using MidiSharp.Audio.Vorbis.Contracts;
 using System;
 
-namespace NVorbis
+namespace MidiSharp.Audio.Vorbis
 {
     /// <summary>
-    /// Provides extension methods for NVorbis types.
+    /// Provides extension methods for MidiSharp.Audio.Vorbis types.
     /// </summary>
     public static class Extensions
     {

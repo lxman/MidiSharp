@@ -1,9 +1,9 @@
 using System.Collections.Generic;
-using Loader.Sf2.Enums;
-using Loader.Sf2.Model;
+using MidiSharp.Loader.Sf2.Enums;
+using MidiSharp.Loader.Sf2.Model;
 using MidiSharp.SoundBank;
 
-namespace Loader.Sf2;
+namespace MidiSharp.Loader.Sf2;
 
 /// <summary>
 /// Translates SF2 modulators (the 16-bit source/dest/transform operator triples,

@@ -1,4 +1,4 @@
-namespace Loader.Sf2.Model;
+namespace MidiSharp.Loader.Sf2.Model;
 
 /// <summary>
 /// Decoded contents of the SF2 <c>INFO</c> LIST chunk.

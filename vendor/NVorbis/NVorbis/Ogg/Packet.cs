@@ -1,8 +1,8 @@
-﻿using NVorbis.Contracts.Ogg;
+﻿using MidiSharp.Audio.Vorbis.Contracts.Ogg;
 using System;
 using System.Collections.Generic;
 
-namespace NVorbis.Ogg
+namespace MidiSharp.Audio.Vorbis.Ogg
 {
     internal class Packet : DataPacket
     {

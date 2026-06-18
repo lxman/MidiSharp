@@ -1,9 +1,9 @@
-﻿using NVorbis.Contracts;
+﻿using MidiSharp.Audio.Vorbis.Contracts;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace NVorbis
+namespace MidiSharp.Audio.Vorbis
 {
     internal class TagData : ITagData
     {

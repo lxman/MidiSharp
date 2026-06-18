@@ -1,6 +1,6 @@
 using System;
 
-namespace Loader.Sf2;
+namespace MidiSharp.Loader.Sf2;
 
 /// <summary>
 /// Conversions between SF2's signed-short encodings and the IR's domain-natural

@@ -5,7 +5,7 @@ using System.IO.MemoryMappedFiles;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 
-namespace Loader;
+namespace MidiSharp.Loader;
 
 /// <summary>
 /// A backing store that can warm a byte range ahead of use. Implemented by memory-mapped sources

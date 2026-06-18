@@ -1,4 +1,4 @@
-namespace Loader.Sf2.Model;
+namespace MidiSharp.Loader.Sf2.Model;
 
 public readonly record struct VersionTag(ushort Major, ushort Minor)
 {

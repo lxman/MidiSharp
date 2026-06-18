@@ -1,5 +1,5 @@
-using Loader.Sf2;
-using Loader.Sf2.Model;
+using MidiSharp.Loader.Sf2;
+using MidiSharp.Loader.Sf2.Model;
 
 namespace SF2.Net.Tests;
 

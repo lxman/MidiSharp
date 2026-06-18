@@ -1,4 +1,4 @@
-﻿namespace NVorbis.Ogg
+﻿namespace MidiSharp.Audio.Vorbis.Ogg
 {
     class Crc : Contracts.Ogg.ICrc
     {

@@ -1,7 +1,7 @@
 using System.Collections.Generic;
-using Loader.Sf2.Enums;
+using MidiSharp.Loader.Sf2.Enums;
 
-namespace Loader.Sf2.Model;
+namespace MidiSharp.Loader.Sf2.Model;
 
 /// <summary>
 /// A zone — a container of generators and modulators inside a preset or instrument.

@@ -1,9 +1,9 @@
-﻿using NVorbis.Contracts;
+﻿using MidiSharp.Audio.Vorbis.Contracts;
 using System;
 using System.Collections.Generic;
 using System.IO;
 
-namespace NVorbis
+namespace MidiSharp.Audio.Vorbis
 {
     // Packed LSP values on dB amplittude and Bark frequency scale.  Virtually unused (libvorbis did not use past beta 4).  Probably untested.
     class Floor0 : IFloor

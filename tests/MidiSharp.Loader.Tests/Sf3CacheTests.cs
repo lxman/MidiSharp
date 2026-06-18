@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Loader;
+using MidiSharp.Loader;
 using MidiSharp.SoundBank;
 using Xunit;
 using IRBank = MidiSharp.SoundBank.SoundBank;

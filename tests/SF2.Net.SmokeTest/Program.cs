@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using Loader.Sf2;
+using MidiSharp.Loader.Sf2;
 using SF2.Net;
 using SF2.Net.SmokeTest;
 

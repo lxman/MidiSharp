@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-namespace Loader.Dls;
+namespace MidiSharp.Loader.Dls;
 
 /// <summary>
 /// Reads a DLS Level 1 or Level 2 file into a <see cref="DlsCollection"/>.

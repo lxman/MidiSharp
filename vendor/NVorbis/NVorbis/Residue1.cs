@@ -1,6 +1,6 @@
-﻿using NVorbis.Contracts;
+﻿using MidiSharp.Audio.Vorbis.Contracts;
 
-namespace NVorbis
+namespace MidiSharp.Audio.Vorbis
 {
     // each channel gets its own pass, with the dimensions interleaved
     class Residue1 : Residue0

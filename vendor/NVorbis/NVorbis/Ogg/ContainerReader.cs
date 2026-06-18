@@ -1,10 +1,10 @@
-﻿using NVorbis.Contracts;
-using NVorbis.Contracts.Ogg;
+﻿using MidiSharp.Audio.Vorbis.Contracts;
+using MidiSharp.Audio.Vorbis.Contracts.Ogg;
 using System;
 using System.Collections.Generic;
 using System.IO;
 
-namespace NVorbis.Ogg
+namespace MidiSharp.Audio.Vorbis.Ogg
 {
     /// <summary>
     /// Implements <see cref="Contracts.IContainerReader"/> for Ogg format files for low memory cost.

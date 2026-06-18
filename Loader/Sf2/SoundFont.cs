@@ -2,11 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Loader.Sf2.Enums;
-using Loader.Sf2.Io;
-using Loader.Sf2.Model;
+using MidiSharp.Loader.Sf2.Enums;
+using MidiSharp.Loader.Sf2.Io;
+using MidiSharp.Loader.Sf2.Model;
 
-namespace Loader.Sf2;
+namespace MidiSharp.Loader.Sf2;
 
 /// <summary>
 /// A loaded SoundFont 2 file. Use <see cref="Load(string)"/> or <see cref="Load(byte[])"/>.

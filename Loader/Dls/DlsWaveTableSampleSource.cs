@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using MidiSharp.Audio;
 using MidiSharp.SoundBank;
 
-namespace Loader.Dls;
+namespace MidiSharp.Loader.Dls;
 
 /// <summary>
 /// In-memory sample source for DLS embedded wave-pool data. Each wave's PCM

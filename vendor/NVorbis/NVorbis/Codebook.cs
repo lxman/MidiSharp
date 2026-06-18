@@ -1,14 +1,14 @@
-﻿using NVorbis.Contracts;
+﻿using MidiSharp.Audio.Vorbis.Contracts;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 
-namespace NVorbis
+namespace MidiSharp.Audio.Vorbis
 {
     class Codebook : ICodebook
     {
-        // FastRange is "borrowed" from GitHub: TechnologicalPizza/MonoGame.NVorbis
+        // FastRange is "borrowed" from GitHub: TechnologicalPizza/MonoGame.MidiSharp.Audio.Vorbis
         class FastRange : IReadOnlyList<int>
         {
             [ThreadStatic]

@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using Loader.Dls;
-using Loader.Format;
-using Loader.Sf2;
+using MidiSharp.Loader.Dls;
+using MidiSharp.Loader.Format;
+using MidiSharp.Loader.Sf2;
 using MidiSharp.SoundBank;
 
-namespace Loader;
+using IRBank = MidiSharp.SoundBank.SoundBank;
+namespace MidiSharp.Loader;
 
 /// <summary>
 /// The public entry point for loading any supported sound-bank format into
@@ -26,7 +27,7 @@ public static class SoundBankLoader
     /// The format was recognized but the file is malformed (corrupt chunks,
     /// missing referenced samples, etc.).
     /// </exception>
-    public static SoundBank Load(string path, SoundBankLoadOptions? options = null)
+    public static IRBank Load(string path, SoundBankLoadOptions? options = null)
     {
         if (string.IsNullOrEmpty(path)) throw new ArgumentException("Path must be non-empty", nameof(path));
         if (!File.Exists(path)) throw new FileNotFoundException($"Sound bank file not found: {path}", path);
@@ -55,7 +56,7 @@ public static class SoundBankLoader
     // backed by a read-only memory-mapped view instead of a managed byte[], keeping it off the GC
     // heap. The view's owner is handed to the bank's sample source, which disposes it (after the
     // audio output has stopped). Falls back to a managed read on opt-out or for >2 GB files.
-    private static SoundBank LoadSf2(string path, SoundBankLoadOptions options)
+    private static IRBank LoadSf2(string path, SoundBankLoadOptions options)
     {
         if (options.MemoryMapSamples && new FileInfo(path).Length <= int.MaxValue)
         {
@@ -84,7 +85,7 @@ public static class SoundBankLoader
     /// <c>LoadSfz(new[] {(melodic, 0), (drums, 128)})</c>. Samples are pooled and
     /// de-duplicated across the files.
     /// </summary>
-    public static SoundBank LoadSfz(
+    public static IRBank LoadSfz(
         IReadOnlyList<(string Path, int Bank)> sfzFiles, SoundBankLoadOptions? options = null)
     {
         if (sfzFiles == null || sfzFiles.Count == 0)
@@ -101,7 +102,7 @@ public static class SoundBankLoader
     /// is used by SFZ for resolving relative sample references; ignored by
     /// other formats.
     /// </summary>
-    public static SoundBank Load(
+    public static IRBank Load(
         Stream stream,
         SoundBankFormat format,
         string? basePath = null,

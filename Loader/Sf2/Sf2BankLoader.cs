@@ -1,26 +1,27 @@
 using System;
 using System.Collections.Generic;
-using Loader.Sf2.Enums;
-using Loader.Sf2.Model;
+using MidiSharp.Loader.Sf2.Enums;
+using MidiSharp.Loader.Sf2.Model;
 using MidiSharp.SoundBank;
 
-namespace Loader.Sf2;
+using IRBank = MidiSharp.SoundBank.SoundBank;
+namespace MidiSharp.Loader.Sf2;
 
 /// <summary>
 /// Top-level SF2 → IR translator. Walks the SoundFont's preset/instrument/zone
 /// hierarchy once, applying SF2's instrument-SET / preset-ADD generator
-/// semantics, and emits a flat <see cref="SoundBank"/> the synth can consume
+/// semantics, and emits a flat <see cref="IRBank"/> the synth can consume
 /// without knowing SF2 ever existed.
 /// </summary>
 internal static class Sf2BankLoader
 {
-    public static SoundBank Load(SoundFont sf, SoundBankLoadOptions options,
+    public static IRBank Load(SoundFont sf, SoundBankLoadOptions options,
         IDisposable? sampleMemoryOwner = null)
     {
         var samples = BuildSampleSource(sf, sampleMemoryOwner);
         var patches = BuildPatches(sf);
 
-        return new SoundBank
+        return new IRBank
         {
             Name = sf.Info.BankName,
             Author = sf.Info.Engineer,

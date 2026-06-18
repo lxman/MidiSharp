@@ -1,4 +1,4 @@
-namespace Loader.Sf2.Io;
+namespace MidiSharp.Loader.Sf2.Io;
 
 /// <summary>Raw <c>phdr</c> record (38 bytes).</summary>
 internal sealed class PresetHeaderRecord

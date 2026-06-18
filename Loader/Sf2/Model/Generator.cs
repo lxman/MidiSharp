@@ -1,6 +1,6 @@
-using Loader.Sf2.Enums;
+using MidiSharp.Loader.Sf2.Enums;
 
-namespace Loader.Sf2.Model;
+namespace MidiSharp.Loader.Sf2.Model;
 
 /// <summary>
 /// One generator entry within a preset or instrument zone.

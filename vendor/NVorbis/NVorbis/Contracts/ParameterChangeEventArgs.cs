@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace NVorbis.Contracts
+namespace MidiSharp.Audio.Vorbis.Contracts
 {
     /// <summary>
     /// Contains data for parameter change events.

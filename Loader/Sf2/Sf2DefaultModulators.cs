@@ -1,6 +1,6 @@
 using MidiSharp.SoundBank;
 
-namespace Loader.Sf2;
+namespace MidiSharp.Loader.Sf2;
 
 /// <summary>
 /// The 10 default modulators every SF2 zone implicitly carries (SF2 spec §8.4),

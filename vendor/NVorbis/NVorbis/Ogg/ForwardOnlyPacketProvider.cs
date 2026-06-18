@@ -1,9 +1,9 @@
-﻿using NVorbis.Contracts;
-using NVorbis.Contracts.Ogg;
+﻿using MidiSharp.Audio.Vorbis.Contracts;
+using MidiSharp.Audio.Vorbis.Contracts.Ogg;
 using System;
 using System.Collections.Generic;
 
-namespace NVorbis.Ogg
+namespace MidiSharp.Audio.Vorbis.Ogg
 {
     class ForwardOnlyPacketProvider : DataPacket, IForwardOnlyPacketProvider
     {

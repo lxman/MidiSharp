@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using Loader.Sf2.Enums;
-using Loader.Sf2.Model;
+using MidiSharp.Loader.Sf2.Enums;
+using MidiSharp.Loader.Sf2.Model;
 
-namespace Loader.Sf2.Io;
+namespace MidiSharp.Loader.Sf2.Io;
 
 /// <summary>
 /// Repackages a single preset and its dependencies into a standalone SF2 byte array.

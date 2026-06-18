@@ -1,7 +1,7 @@
-﻿using NVorbis.Contracts;
+﻿using MidiSharp.Audio.Vorbis.Contracts;
 using System;
 
-namespace NVorbis
+namespace MidiSharp.Audio.Vorbis
 {
     /// <summary>
     /// Event data for when a new logical stream is found in a container.

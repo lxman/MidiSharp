@@ -1,4 +1,4 @@
-namespace Loader.Sf2;
+namespace MidiSharp.Loader.Sf2;
 
 /// <summary>
 /// Categories of sample-header defects detected by <see cref="SoundFont.ValidateSamples"/>.

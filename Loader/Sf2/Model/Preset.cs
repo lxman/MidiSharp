@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace Loader.Sf2.Model;
+namespace MidiSharp.Loader.Sf2.Model;
 
 /// <summary>
 /// A SoundFont preset. Each preset belongs to a (Bank, Number) pair and contains one or more zones.

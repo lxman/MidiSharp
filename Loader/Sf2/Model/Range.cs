@@ -1,4 +1,4 @@
-namespace Loader.Sf2.Model;
+namespace MidiSharp.Loader.Sf2.Model;
 
 /// <summary>
 /// A byte range used by key-range and velocity-range generators.

@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using MidiSharp.Audio;
 using MidiSharp.SoundBank;
 
-namespace Loader.Sf3;
+namespace MidiSharp.Loader.Sf3;
 
 /// <summary>
 /// Decodes SF3 Vorbis-encoded samples on demand and serves them through an

@@ -1,11 +1,11 @@
 ﻿using System;
 
-namespace NVorbis
+namespace MidiSharp.Audio.Vorbis
 {
     /// <summary>
     ///  Old interface, current version moved to Contracts.IContainerReader
     /// </summary>
-    [Obsolete("Moved to NVorbis.Contracts.IContainerReader", true)]
+    [Obsolete("Moved to MidiSharp.Audio.Vorbis.Contracts.IContainerReader", true)]
     public interface IContainerReader : Contracts.IContainerReader
     {
         /// <summary>

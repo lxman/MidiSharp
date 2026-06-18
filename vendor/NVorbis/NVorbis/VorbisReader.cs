@@ -1,10 +1,10 @@
-﻿using NVorbis.Contracts;
+﻿using MidiSharp.Audio.Vorbis.Contracts;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace NVorbis
+namespace MidiSharp.Audio.Vorbis
 {
     /// <summary>
     /// Implements an easy to use wrapper around <see cref="Contracts.IContainerReader"/> and <see cref="IStreamDecoder"/>.

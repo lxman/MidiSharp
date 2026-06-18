@@ -2,7 +2,7 @@ using System;
 using System.Buffers.Binary;
 using System.Text;
 
-namespace Loader.Sf2.Io;
+namespace MidiSharp.Loader.Sf2.Io;
 
 internal static class BinaryHelpers
 {

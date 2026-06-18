@@ -1,4 +1,4 @@
-using Loader;
+using MidiSharp.Loader;
 using MidiSharp.IO;
 using MidiSharp.PatchMap;
 using MidiSharp.SoundBank;

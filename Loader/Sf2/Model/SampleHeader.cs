@@ -1,6 +1,6 @@
-using Loader.Sf2.Enums;
+using MidiSharp.Loader.Sf2.Enums;
 
-namespace Loader.Sf2.Model;
+namespace MidiSharp.Loader.Sf2.Model;
 
 /// <summary>
 /// A SHDR record. <see cref="Name"/> is decoded from the 20-byte ASCII field; offsets are in sample frames within the smpl chunk.

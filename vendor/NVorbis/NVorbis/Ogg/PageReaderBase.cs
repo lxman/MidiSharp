@@ -1,9 +1,9 @@
-﻿using NVorbis.Contracts.Ogg;
+﻿using MidiSharp.Audio.Vorbis.Contracts.Ogg;
 using System;
 using System.Collections.Generic;
 using System.IO;
 
-namespace NVorbis.Ogg
+namespace MidiSharp.Audio.Vorbis.Ogg
 {
     abstract class PageReaderBase : IPageReader
     {

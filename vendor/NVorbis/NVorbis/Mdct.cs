@@ -1,8 +1,8 @@
-﻿using NVorbis.Contracts;
+﻿using MidiSharp.Audio.Vorbis.Contracts;
 using System;
 using System.Collections.Generic;
 
-namespace NVorbis
+namespace MidiSharp.Audio.Vorbis
 {
     class Mdct : IMdct
     {

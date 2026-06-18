@@ -1,19 +1,20 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    Vendored copy of NVorbis (https://github.com/NVorbis/NVorbis) v0.10.5.
-    Pristine source — only this .csproj has been replaced to drop the
-    upstream NuGet-packaging metadata. All .cs files are unmodified.
-
-    Original author: Andrew Ward. License: MIT (see ../LICENSE).
+    Maintained fork of NVorbis (https://github.com/NVorbis/NVorbis) v0.10.5.
+    Originally by Andrew Ward (MIT, see ../LICENSE). The decoder logic is the
+    upstream source; only the namespace/assembly were re-identified under
+    MidiSharp.Audio.Vorbis so this fork can never collide with the upstream
+    NVorbis package. Attribution: see THIRD-PARTY-NOTICES.md at the repo root.
   -->
 
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
-    <RootNamespace>NVorbis</RootNamespace>
+    <AssemblyName>MidiSharp.Audio.Vorbis</AssemblyName>
+    <RootNamespace>MidiSharp.Audio.Vorbis</RootNamespace>
     <Nullable>disable</Nullable>
     <LangVersion>latest</LangVersion>
-    <Description>Pure-managed Ogg Vorbis decoder. Vendored from NVorbis v0.10.5.</Description>
+    <Description>Ogg Vorbis decoder — a maintained fork of NVorbis v0.10.5 (© Andrew Ward, MIT).</Description>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591;CS0618</NoWarn>
   </PropertyGroup>

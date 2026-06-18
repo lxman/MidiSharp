@@ -1,4 +1,4 @@
-﻿namespace NVorbis.Contracts
+﻿namespace MidiSharp.Audio.Vorbis.Contracts
 {
     interface IFloorData
     {

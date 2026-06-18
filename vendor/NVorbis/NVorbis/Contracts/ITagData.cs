@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 
-namespace NVorbis.Contracts
+namespace MidiSharp.Audio.Vorbis.Contracts
 {
     /// <summary>
     /// Describes an interface to tag data.

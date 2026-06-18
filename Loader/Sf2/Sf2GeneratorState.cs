@@ -1,8 +1,8 @@
 using System.Collections.Generic;
-using Loader.Sf2.Enums;
-using Loader.Sf2.Model;
+using MidiSharp.Loader.Sf2.Enums;
+using MidiSharp.Loader.Sf2.Model;
 
-namespace Loader.Sf2;
+namespace MidiSharp.Loader.Sf2;
 
 /// <summary>
 /// Mutable accumulator for SF2 generator values during preset-instrument

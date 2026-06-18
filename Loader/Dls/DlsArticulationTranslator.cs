@@ -1,6 +1,6 @@
 using MidiSharp.SoundBank;
 
-namespace Loader.Dls;
+namespace MidiSharp.Loader.Dls;
 
 /// <summary>
 /// Converts a DLS articulator <see cref="ConnectionBlock"/> whose source is an

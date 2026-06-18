@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace Loader.Sf2.Model;
+namespace MidiSharp.Loader.Sf2.Model;
 
 /// <summary>
 /// A SoundFont instrument: a named collection of zones that map MIDI key/velocity space to samples.

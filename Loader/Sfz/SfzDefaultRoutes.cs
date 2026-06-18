@@ -1,6 +1,6 @@
 using MidiSharp.SoundBank;
 
-namespace Loader.Sfz;
+namespace MidiSharp.Loader.Sfz;
 
 /// <summary>
 /// Default MIDI-controller routes applied to every SFZ zone. SFZ — unlike SF2

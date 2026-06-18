@@ -1,8 +1,8 @@
 using System.Collections.Generic;
 using MidiSharp.SoundBank;
-using static Loader.Sf2.Sf2UnitConversions;
+using static MidiSharp.Loader.Sf2.Sf2UnitConversions;
 
-namespace Loader.Sf2;
+namespace MidiSharp.Loader.Sf2;
 
 /// <summary>
 /// Translates a flattened SF2 generator state plus a sample reference into one

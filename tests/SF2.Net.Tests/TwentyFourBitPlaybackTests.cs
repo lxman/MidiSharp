@@ -1,6 +1,6 @@
 using System;
 using System.IO;
-using Loader;
+using MidiSharp.Loader;
 using Xunit;
 
 namespace SF2.Net.Tests;

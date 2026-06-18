@@ -1,8 +1,8 @@
 using System;
 using System.IO;
-using Loader.Sf2.Model;
+using MidiSharp.Loader.Sf2.Model;
 
-namespace Loader.Sf2.Io;
+namespace MidiSharp.Loader.Sf2.Io;
 
 internal static class Assemblers
 {
