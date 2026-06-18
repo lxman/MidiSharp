@@ -44,21 +44,21 @@ MidiSharp.slnx                       Root solution file
 │   ├── MidiSharp.Synth/             Software synthesizer + RealtimePlayer; consumes the IR (netstandard2.1)
 │   ├── MidiSharp.Synth.OwnAudio/    Cross-platform audio output via OwnAudioSharp (net10.0)
 │   └── MidiSharp.PatchMap/          Instrument substitution — composes SoundBanks (netstandard2.1, Core-only)
-├── Loader/                          Soundbank loading → SoundBank IR
-│   ├── Loader/Loader/               Unified loader + format-to-IR translators (SF2/SF3/SFZ/DLS) + sample sources
-│   ├── SF2/SF2.Net/                 SF2 reader — RIFF parsing, presets/instruments/zones, sample access (+ tests)
-│   ├── SF3/SF3.Net/                 SF3 reader (Vorbis-compressed SF2)
-│   ├── SFZ/SFZ.Net/                 SFZ reader (text opcodes + WAV references)
-│   └── DLS/DLS.Net/                 DLS Level 1/2 reader
+├── Loader/                          One project (Loader.csproj): format readers + format-to-IR translators + sample sources
+│   ├── Sf2/                         SF2 reader (RIFF presets/instruments/zones) → IR + memory-mapped sample source
+│   ├── Sf3/                         SF3 reader (Vorbis-compressed SF2) → IR + lazy-decoding sample source
+│   ├── Sfz/                         SFZ reader (text opcodes + sample references) → IR
+│   └── Dls/                         DLS Level 1/2 reader → IR + articulation translation
 ├── samples/
 │   ├── MidiSharp.Demo/              CLI: live playback / WAV render / --patches / --map
 │   └── MidiSharp.Server/            Browser player: file browser + per-patch override UI
-├── tests/                           xUnit — 101 passing (Core, Synth, Loader, Audio, SF2.Net, PatchMap)
-├── docs/                            SoundBank IR + loader design docs
+├── tests/                           xUnit — 209 passing (Core, Synth, Loader, Audio, SF2.Net, PatchMap)
+├── vendor/NVorbis/                  Vendored pure-managed Ogg Vorbis decoder (MIT, v0.10.5)
+├── docs/                            SoundBank IR design doc
 └── MIDI/                            Reference PDFs (MIDI 1.0 / 2.0 / SMF / RPs / Universal SysEx)
 ```
 
-The `<format>.Net` reader projects are intentionally MidiSharp-free — pure-managed, publishable as independent NuGet packages. The bridge between them and the synth is `MidiSharp.Core` (which owns the SoundBank IR) and the unified `Loader/Loader/` project (which translates each format's parsed types into IR); see [`docs/sound-bank-loader.md`](docs/sound-bank-loader.md).
+The `Loader` project is MidiSharp-free apart from `MidiSharp.Core` (which owns the SoundBank IR): each format's reader parses the source bytes and a translator flattens them into the IR, so the synth never sees a source format. Native per-platform audio backends (WinMM / Core Audio, in `src/MidiSharp.Synth.Windows` and `src/MidiSharp.Synth.macOS`) exist alongside the default cross-platform `MidiSharp.Synth.OwnAudio`; the samples use OwnAudio.
 
 Build and test everything from the repo root:
 
@@ -85,9 +85,10 @@ dotnet test  MidiSharp.slnx
 - All 10 SF2 default modulators (velocity → attenuation/filter, CC91/93 sends, CC1/aftertouch/poly-aftertouch → vibrato depth)
 - EMU8k attenuation factor (0.4 scaling) applied to InitialAttenuation
 - 7-point windowed-sinc interpolation
-- Per-voice envelopes (volume + modulation), per-voice LFOs (modulation + vibrato), 2-pole resonant low-pass filter
+- Per-voice envelopes (volume + modulation) and LFOs (modulation + vibrato); 2-pole resonant RBJ biquad in every response type (low/high-pass, band-pass, notch, low/high-shelf, peaking), an optional cascaded second filter, and per-zone peaking-EQ bands
+- For SFZ v2/ARIA fonts: a generic N-LFO subsystem (incl. sample-and-hold and stepped waveforms) and multi-segment flex envelopes, both routable to pitch/volume/cutoff/EQ, run per-voice alongside the SF2 slots
 - FDN reverb (Jot 1991, 8 lines, Hadamard feedback) and stereo chorus
-- Voice retrigger semantics, exclusive class handling, sample looping with loop-until-release
+- Voice retrigger semantics, exclusive class handling, per-region polyphony caps, sample looping with loop-until-release
 - The engine consumes the **format-neutral SoundBank IR** and never branches on source format; `RealtimePlayer` drives it from the audio callback for sample-accurate event timing on every platform
 
 ### Multi-format loading (SoundBank IR)
@@ -96,12 +97,12 @@ Every supported format loads through one in-memory representation. `SoundBankLoa
 
 | Format | Reader | Status |
 |---|---|---|
-| SF2 | `Loader/SF2/SF2.Net/` | Working — the primary, fluidsynth-validated path; memory-mapped sample source |
-| SF3 | `Loader/SF3/SF3.Net/` | Implemented — lazy Vorbis-decoding sample source |
-| SFZ | `Loader/SFZ/SFZ.Net/` | Implemented — text-opcode parser + WAV resolution; supports keyswitch, round-robin, CC gates |
-| DLS | `Loader/DLS/DLS.Net/` | Implemented — Level 1/2 RIFF + articulation translation |
+| SF2 | `Loader/Sf2/` | Working — the primary, fluidsynth-validated path; memory-mapped sample source; 16- and 24-bit (sm24) |
+| SF3 | `Loader/Sf3/` | Implemented — lazy Vorbis-decoding sample source with an LRU cache |
+| SFZ | `Loader/Sfz/` | Implemented — extensive SFZ v1/v2/ARIA opcode coverage (filters incl. shelf/peaking, generic LFOs, flex envelopes, EQ, crossfades, keyswitch, round-robin, CC gates); see below |
+| DLS | `Loader/Dls/` | Implemented — Level 1/2 RIFF + articulation translation (EG1/EG2, mod/vibrato LFO, filter, sends, MIDI routes) |
 
-SF2 is the most thoroughly validated; SF3/SFZ/DLS are newer but render through the same IR and synth path. The contract is documented in [`docs/sound-bank-ir.md`](docs/sound-bank-ir.md) and [`docs/sound-bank-loader.md`](docs/sound-bank-loader.md).
+SF2 is the most thoroughly validated; SF3/SFZ/DLS render through the same IR and synth path. SFZ coverage is data-driven: across a 2027-font test collection, every opcode the collection actually uses is handled. The IR contract is documented in [`docs/sound-bank-ir.md`](docs/sound-bank-ir.md).
 
 ### Recommended Practices
 
@@ -116,7 +117,7 @@ Implemented: RP-001 (SMF 1.0), RP-013 (GM Level 1), RP-014 (Bank Select Response
 | Jump! (post-LFO-generator fix) | -4.26 dB at 10-20 kHz; ≤2 dB elsewhere | -0.99 dB |
 | Jump! with Tyroland (same-soundfont A/B) | -3.45 dB at 500-2000 Hz | -1.67 dB |
 
-101 unit tests across the suite cover MIDI parsing, sequencer timing, tempo map, RP-026 lyric parsing, the SF2 reader, synthesis, the loaders, and patch substitution.
+209 unit tests across the suite cover MIDI parsing, sequencer timing, tempo map, RP-026 lyric parsing, the SF2 reader, synthesis (including the shelf/peaking filters and sample-and-hold/stepped LFOs), the sample decoders and all four loaders, and patch substitution.
 
 ## Instrument substitution (`MidiSharp.PatchMap`)
 
