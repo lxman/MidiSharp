@@ -13,7 +13,7 @@
     <Project Path="src/MidiSharp.PatchMap/MidiSharp.PatchMap.csproj" />
   </Folder>
   <Folder Name="/Loader/">
-    <Project Path="Loader/Loader.csproj" />
+    <Project Path="src/MidiSharp.Loader/MidiSharp.Loader.csproj" />
   </Folder>
   <Folder Name="/Samples/">
     <File Path="samples\MidiSharp.Server\MidiSharp.Server.csproj" />
@@ -25,10 +25,9 @@
   </Folder>
   <Folder Name="/SolutionFiles/">
     <File Path="docs\sound-bank-ir.md" />
-    <File Path="docs\sound-bank-loader.md" />
-    <File Path="docs\synth-genericization.md" />
     <File Path="LICENSE" />
     <File Path="README.md" />
+    <File Path="THIRD-PARTY-NOTICES.md" />
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="tests/MidiSharp.Audio.Tests/MidiSharp.Audio.Tests.csproj" />
