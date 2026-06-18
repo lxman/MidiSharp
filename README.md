@@ -58,7 +58,7 @@ MidiSharp.slnx                       Root solution file
 └── MIDI/                            Reference PDFs (MIDI 1.0 / 2.0 / SMF / RPs / Universal SysEx)
 ```
 
-The `Loader` project is MidiSharp-free apart from `MidiSharp.Core` (which owns the SoundBank IR): each format's reader parses the source bytes and a translator flattens them into the IR, so the synth never sees a source format. Native per-platform audio backends (WinMM / Core Audio, in `src/MidiSharp.Synth.Windows` and `src/MidiSharp.Synth.macOS`) exist alongside the default cross-platform `MidiSharp.Synth.OwnAudio`; the samples use OwnAudio.
+The `Loader` project is MidiSharp-free apart from `MidiSharp.Core` (which owns the SoundBank IR): each format's reader parses the source bytes and a translator flattens them into the IR, so the synth never sees a source format. Audio output goes through `MidiSharp.Synth.OwnAudio`, a single cross-platform backend (OwnAudioSharp) used by both samples.
 
 Build and test everything from the repo root:
 
