@@ -79,7 +79,11 @@ internal static class SfzZoneTranslator
 
         // ── Filter ───────────────────────────────────────────────────
         FilterSettings? filter = BuildFilter(r, out double fileDepthCents);
-        var eqBands = BuildEqBands(r);
+        // Generic LFOs are built first so EQ bands they target (lfoN_eqNgain/freq) get instantiated
+        // even when their static gain is 0 (the LFO oscillates around it).
+        var lfos = BuildGenericLfos(r);
+        var lfoEqBands = CollectLfoEqBands(lfos);
+        var eqBands = BuildEqBands(r, lfoEqBands);
 
         // ── Modulation envelope (filter and/or pitch EG) ─────────────
         double pitchEgDepth = r.GetDouble("pitcheg_depth", 0);
@@ -232,7 +236,7 @@ internal static class SfzZoneTranslator
             AmpKeyCurve = BuildKeyCrossfade(r, control),
             CcCrossfades = BuildCcCrossfades(r),
             WidthNormalized = r.GetDouble("width", 100.0) / 100.0,
-            Lfos = BuildGenericLfos(r),
+            Lfos = lfos,
         };
     }
 
@@ -368,21 +372,36 @@ internal static class SfzZoneTranslator
     /// Collects SFZ peaking-EQ bands (eqN_freq/bw/gain). A band with 0 dB gain or no positive
     /// frequency is inactive and skipped. Probes N=1..8 (banks rarely use more than 3).
     /// </summary>
-    private static IReadOnlyList<EqBand> BuildEqBands(SfzRegion r)
+    /// <summary>Band numbers an LFO modulates (lfoN_eqNgain/freq) — those bands must exist even at gain 0.</summary>
+    private static HashSet<int>? CollectLfoEqBands(GenericLfo[]? lfos)
+    {
+        if (lfos == null) return null;
+        HashSet<int>? set = null;
+        foreach (var lfo in lfos)
+            foreach (var t in lfo.Targets)
+                if (t.Destination is LfoDestination.EqGain or LfoDestination.EqFreq)
+                    (set ??= new HashSet<int>()).Add(t.EqBand);
+        return set;
+    }
+
+    private static IReadOnlyList<EqBand> BuildEqBands(SfzRegion r, HashSet<int>? lfoBands)
     {
         List<EqBand>? bands = null;
         for (int n = 1; n <= 8; n++)
         {
             double gain = r.GetDouble("eq" + n + "_gain", 0);
-            if (gain == 0) continue;
             double freq = r.GetDouble("eq" + n + "_freq", 0);
-            if (freq <= 0) continue;
+            // Keep a band if it has audible static gain, OR an LFO drives it (then a 0-gain band is the
+            // centre the LFO oscillates around). Either way it needs a defined frequency.
+            bool lfoDriven = lfoBands?.Contains(n) == true;
+            if ((gain == 0 && !lfoDriven) || freq <= 0) continue;
             double bw = r.GetDouble("eq" + n + "_bw", 1.0);
             (bands ??= new List<EqBand>()).Add(new EqBand
             {
                 FrequencyHz = freq,
                 BandwidthOctaves = bw,
                 GainDb = gain,
+                BandNumber = n,
             });
         }
         return bands ?? (IReadOnlyList<EqBand>)Array.Empty<EqBand>();
@@ -516,6 +535,19 @@ internal static class SfzZoneTranslator
             AddTarget("pitch", LfoDestination.Pitch);
             AddTarget("volume", LfoDestination.Volume);
             AddTarget("cutoff", LfoDestination.Cutoff);
+
+            // EQ targets: lfoN_eq{band}gain / lfoN_eq{band}freq (+ their _onccN depth).
+            void AddEqTarget(string key, LfoDestination dest, int band)
+            {
+                var depthCc = CcMods(key + "_oncc");
+                if (map.ContainsKey(key) || depthCc != null)
+                    targets.Add(new LfoTarget { Destination = dest, Depth = Get(key, 0), EqBand = band, DepthCc = depthCc });
+            }
+            for (int b = 1; b <= 8; b++)
+            {
+                AddEqTarget("eq" + b + "gain", LfoDestination.EqGain, b);
+                AddEqTarget("eq" + b + "freq", LfoDestination.EqFreq, b);
+            }
 
             var freqCc = CcMods("freq_oncc");
             bool hasFreq = map.ContainsKey("freq");

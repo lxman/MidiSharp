@@ -44,6 +44,13 @@ public sealed class Voice
     private readonly PeakingEqFilter[] _eq;
     private readonly PeakingEqFilter[] _eqRight;
     private int _eqBandCount;
+    // Base EQ-band params retained so an LFO (lfoN_eqNgain/freq) can modulate around them per block.
+    private readonly double[] _eqBaseFreq = new double[MaxEqBands];
+    private readonly double[] _eqBaseBw = new double[MaxEqBands];
+    private readonly double[] _eqBaseGain = new double[MaxEqBands];
+    private readonly int[] _eqBandNumber = new int[MaxEqBands];
+    private readonly bool[] _eqLfoDriven = new bool[MaxEqBands];
+    private bool _hasLfoEq;
 
     // ── Sample addressing ─────────────────────────────────────────────
 
@@ -455,8 +462,25 @@ public sealed class Voice
         for (int i = 0; i < _eqBandCount; i++)
         {
             var band = zone.EqBands[i];
+            _eqBaseFreq[i] = band.FrequencyHz;
+            _eqBaseBw[i] = band.BandwidthOctaves;
+            _eqBaseGain[i] = band.GainDb;
+            _eqBandNumber[i] = band.BandNumber;
+            _eqLfoDriven[i] = false;
             _eq[i].SetParameters(band.FrequencyHz, band.BandwidthOctaves, band.GainDb);
             if (_channels == 2) _eqRight[i].SetParameters(band.FrequencyHz, band.BandwidthOctaves, band.GainDb);
+        }
+
+        // Mark which EQ bands a generic LFO drives (needs both EQ bands and LFO runners configured).
+        _hasLfoEq = false;
+        for (int g = 0; g < _genericLfoCount; g++)
+        {
+            var lfo = _genericLfos[g];
+            for (int e = 0; e < lfo.EqCount; e++)
+            {
+                int idx = EqIndexForBand(lfo.EqTargetBand(e));
+                if (idx >= 0) { _eqLfoDriven[idx] = true; _hasLfoEq = true; }
+            }
         }
 
         // Stash routes (could be the zone-authored list or empty).
@@ -469,6 +493,14 @@ public sealed class Voice
         if (_hasModulationLfo) _modulationLfo.Trigger();
 
         _position = _sampleStart;
+    }
+
+    /// <summary>Maps an SFZ EQ band number (lfoN_eqNgain/freq target) to its active _eq[] index, or -1.</summary>
+    private int EqIndexForBand(int bandNumber)
+    {
+        for (int i = 0; i < _eqBandCount; i++)
+            if (_eqBandNumber[i] == bandNumber) return i;
+        return -1;
     }
 
     // ── Post-Configure mutators (called immediately after NoteOn) ────
@@ -666,6 +698,31 @@ public sealed class Voice
         // within the block) so lfoN_freq_oncc and lfoN_{target}_oncc (mod-wheel vibrato) track live.
         for (int g = 0; g < _genericLfoCount; g++)
             _genericLfos[g].BeginBlock(channelState);
+
+        // LFO → EQ (lfoN_eqNgain/freq): recompute each LFO-driven band's biquad once per block from its
+        // base params plus the LFO deltas. SetParameters only touches coefficients, not filter state.
+        if (_hasLfoEq)
+        {
+            for (int b = 0; b < _eqBandCount; b++)
+            {
+                if (!_eqLfoDriven[b]) continue;
+                double gainDelta = 0.0, freqDelta = 0.0;
+                for (int g = 0; g < _genericLfoCount; g++)
+                {
+                    var lfo = _genericLfos[g];
+                    for (int e = 0; e < lfo.EqCount; e++)
+                    {
+                        if (EqIndexForBand(lfo.EqTargetBand(e)) != b) continue;
+                        if (lfo.EqTargetIsFreq(e)) freqDelta += lfo.EqTargetDelta(e);
+                        else gainDelta += lfo.EqTargetDelta(e);
+                    }
+                }
+                double f = _eqBaseFreq[b] + freqDelta;
+                double gain = _eqBaseGain[b] + gainDelta;
+                _eq[b].SetParameters(f, _eqBaseBw[b], gain);
+                if (_channels == 2) _eqRight[b].SetParameters(f, _eqBaseBw[b], gain);
+            }
+        }
 
         // Effective per-block values: zone base + route contribution.
         double effectiveAttenuationDb = _attenuationDb + contrib.AttenuationDb + extraAttenuationDb;

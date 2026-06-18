@@ -72,4 +72,8 @@ public readonly struct EqBand
 
     /// <summary>Peak gain in dB (positive boosts, negative cuts; 0 = inactive).</summary>
     public double GainDb { get; init; }
+
+    /// <summary>The SFZ band number N (from <c>eqN_*</c>), so an LFO target (lfoN_eqNgain/freq) can
+    /// address this band. 0 when unspecified (SF2/DLS, which don't number EQ bands).</summary>
+    public int BandNumber { get; init; }
 }

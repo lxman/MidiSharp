@@ -35,7 +35,8 @@ internal static class GenericLfoWave
 /// Per-voice runtime for one SFZ v2 generic LFO. Per sample it advances the oscillator (delay → linear
 /// fade-in → full depth); per block <see cref="BeginBlock"/> recomputes the frequency and the
 /// per-destination depths from the live controller values (lfoN_freq_onccN and the
-/// lfoN_{target}_onccN mod-wheel-vibrato depths). Reused across notes to avoid per-NoteOn allocation.
+/// lfoN_{target}_onccN mod-wheel-vibrato depths), plus the EQ-band modulation deltas for the block.
+/// Reused across notes to avoid per-NoteOn allocation.
 /// </summary>
 internal sealed class GenericLfoRunner
 {
@@ -51,10 +52,23 @@ internal sealed class GenericLfoRunner
     private double _basePitch, _baseVolume, _baseCutoff;
     private LfoCcDepth[]? _pitchCc, _volumeCc, _cutoffCc;
 
+    // EQ targets: band number, whether it modulates freq (else gain), base depth + CC depth.
+    private int _eqCount;
+    private int[] _eqBand = [];
+    private bool[] _eqIsFreq = [];
+    private double[] _eqBaseDepth = [];
+    private LfoCcDepth[]?[] _eqDepthCc = [];
+    private double[] _eqDelta = [];   // computed per block = peek × effective depth
+
     // Effective per-block depths the voice reads while iterating samples.
     public double PitchDepthCents { get; private set; }
     public double VolumeDepthDb { get; private set; }
     public double CutoffDepthCents { get; private set; }
+
+    public int EqCount => _eqCount;
+    public int EqTargetBand(int i) => _eqBand[i];
+    public bool EqTargetIsFreq(int i) => _eqIsFreq[i];
+    public double EqTargetDelta(int i) => _eqDelta[i];   // gain dB, or freq Hz, delta for this block
 
     public void Configure(GenericLfo lfo, int sampleRate)
     {
@@ -70,6 +84,20 @@ internal sealed class GenericLfoRunner
         _freqCc = lfo.FreqCc;
         _basePitch = _baseVolume = _baseCutoff = 0;
         _pitchCc = _volumeCc = _cutoffCc = null;
+
+        int eqNeeded = 0;
+        foreach (var t in lfo.Targets)
+            if (t.Destination is LfoDestination.EqGain or LfoDestination.EqFreq) eqNeeded++;
+        if (_eqBand.Length < eqNeeded)
+        {
+            _eqBand = new int[eqNeeded];
+            _eqIsFreq = new bool[eqNeeded];
+            _eqBaseDepth = new double[eqNeeded];
+            _eqDepthCc = new LfoCcDepth[eqNeeded][];
+            _eqDelta = new double[eqNeeded];
+        }
+        _eqCount = 0;
+
         foreach (var t in lfo.Targets)
         {
             switch (t.Destination)
@@ -77,6 +105,14 @@ internal sealed class GenericLfoRunner
                 case LfoDestination.Pitch:  _basePitch += t.Depth;  _pitchCc = Merge(_pitchCc, t.DepthCc); break;
                 case LfoDestination.Volume: _baseVolume += t.Depth; _volumeCc = Merge(_volumeCc, t.DepthCc); break;
                 case LfoDestination.Cutoff: _baseCutoff += t.Depth; _cutoffCc = Merge(_cutoffCc, t.DepthCc); break;
+                case LfoDestination.EqGain:
+                case LfoDestination.EqFreq:
+                    _eqBand[_eqCount] = t.EqBand;
+                    _eqIsFreq[_eqCount] = t.Destination == LfoDestination.EqFreq;
+                    _eqBaseDepth[_eqCount] = t.Depth;
+                    _eqDepthCc[_eqCount] = t.DepthCc;
+                    _eqCount++;
+                    break;
             }
         }
 
@@ -85,15 +121,23 @@ internal sealed class GenericLfoRunner
         PitchDepthCents = _basePitch;
         VolumeDepthDb = _baseVolume;
         CutoffDepthCents = _baseCutoff;
+        for (int i = 0; i < _eqCount; i++) _eqDelta[i] = 0;
     }
 
-    /// <summary>Recomputes frequency and target depths from the channel's current controller values.</summary>
+    /// <summary>Recomputes frequency, target depths and EQ deltas from the channel's current CCs.</summary>
     public void BeginBlock(ChannelState ch)
     {
         _phaseInc = (_baseFreqHz + SumCc(_freqCc, ch)) / _sampleRate;
         PitchDepthCents = _basePitch + SumCc(_pitchCc, ch);
         VolumeDepthDb = _baseVolume + SumCc(_volumeCc, ch);
         CutoffDepthCents = _baseCutoff + SumCc(_cutoffCc, ch);
+
+        if (_eqCount > 0)
+        {
+            double peek = Peek();
+            for (int i = 0; i < _eqCount; i++)
+                _eqDelta[i] = peek * (_eqBaseDepth[i] + SumCc(_eqDepthCc[i], ch));
+        }
     }
 
     /// <summary>Advances one sample and returns the LFO value (-1..1, with delay/fade applied).</summary>
@@ -101,13 +145,7 @@ internal sealed class GenericLfoRunner
     {
         if (_delayCounter > 0) { _delayCounter--; return 0.0; }
 
-        double v = 0.0;
-        for (int s = 0; s < _stages.Length; s++)
-        {
-            var st = _stages[s];
-            v += GenericLfoWave.Eval(st.Wave, _phase * st.Ratio) * st.Scale + st.Offset;
-        }
-
+        double v = StageSum();
         if (_fadeSamples > 0 && _fadeElapsed < _fadeSamples)
         {
             v *= (double)_fadeElapsed / _fadeSamples;
@@ -116,6 +154,27 @@ internal sealed class GenericLfoRunner
 
         _phase += _phaseInc;
         if (_phase >= 1.0) _phase -= Math.Floor(_phase);
+        return v;
+    }
+
+    /// <summary>The LFO value at the current phase without advancing — used for per-block EQ modulation.</summary>
+    private double Peek()
+    {
+        if (_delayCounter > 0) return 0.0;
+        double v = StageSum();
+        if (_fadeSamples > 0 && _fadeElapsed < _fadeSamples)
+            v *= (double)_fadeElapsed / _fadeSamples;
+        return v;
+    }
+
+    private double StageSum()
+    {
+        double v = 0.0;
+        for (int s = 0; s < _stages.Length; s++)
+        {
+            var st = _stages[s];
+            v += GenericLfoWave.Eval(st.Wave, _phase * st.Ratio) * st.Scale + st.Offset;
+        }
         return v;
     }
 

@@ -279,6 +279,26 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Generic_v2_lfo_eq_target_instantiates_band_even_at_zero_gain()
+    {
+        WriteWav("a.wav");
+        // eq2 defined (freq) with no static gain, driven by an LFO whose depth is the mod wheel.
+        var z = SoundBankLoader.Load(WriteSfz(
+            "<region> sample=a.wav key=60 eq2_freq=1500 lfo01_freq=3 lfo01_eq2gain_oncc1=6"))
+            .FindPatch(0, 0)!.Zones[0];
+        // The 0-gain band exists because the LFO drives it, and carries its band number.
+        var band = Assert.Single(z.EqBands);
+        Assert.Equal(2, band.BandNumber);
+        Assert.Equal(1500.0, band.FrequencyHz, 3);
+        Assert.Equal(0.0, band.GainDb, 3);
+        var lfo = Assert.Single(z.Lfos!);
+        var eqT = Assert.Single(lfo.Targets);
+        Assert.Equal(MidiSharp.SoundBank.LfoDestination.EqGain, eqT.Destination);
+        Assert.Equal(2, eqT.EqBand);
+        Assert.Equal(6.0, Assert.Single(eqT.DepthCc!).Amount, 3);
+    }
+
+    [Fact]
     public void Lfo_fade_in_time_parses_for_pitch_and_amp()
     {
         WriteWav("a.wav");
