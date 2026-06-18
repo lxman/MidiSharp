@@ -244,6 +244,23 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Generic_v2_lfo_parses_cc_modulation_of_freq_and_depth()
+    {
+        WriteWav("a.wav");
+        // mod-wheel vibrato: no base pitch depth, CC1 adds up to 50 cents; CC117 adds up to 8 Hz.
+        var z = SoundBankLoader.Load(WriteSfz(
+            "<region> sample=a.wav key=60 lfo01_freq=2 lfo01_freq_oncc117=8 lfo01_pitch_oncc1=50"))
+            .FindPatch(0, 0)!.Zones[0];
+        var lfo = Assert.Single(z.Lfos!);
+        Assert.Equal(117, Assert.Single(lfo.FreqCc!).Cc);
+        Assert.Equal(8.0, lfo.FreqCc![0].Amount, 3);
+        var pitch = Assert.Single(lfo.Targets);   // created from the _oncc alone (no base lfo01_pitch)
+        Assert.Equal(MidiSharp.SoundBank.LfoDestination.Pitch, pitch.Destination);
+        Assert.Equal(0.0, pitch.Depth, 3);
+        Assert.Equal(50.0, Assert.Single(pitch.DepthCc!).Amount, 3);
+    }
+
+    [Fact]
     public void Lfo_fade_in_time_parses_for_pitch_and_amp()
     {
         WriteWav("a.wav");

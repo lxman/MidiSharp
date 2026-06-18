@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using MidiSharp.SoundBank;
 
 namespace MidiSharp.Synth;
@@ -31,45 +32,68 @@ internal static class GenericLfoWave
 }
 
 /// <summary>
-/// Per-voice runtime for one SFZ v2 generic LFO: advances an oscillator each sample (delay, then a
-/// linear fade-in, then full depth) and exposes the per-destination depths so the voice can fold the
-/// LFO's value into the per-sample pitch / attenuation / cutoff. Reused across notes via
-/// <see cref="Configure"/> to avoid per-NoteOn allocation.
+/// Per-voice runtime for one SFZ v2 generic LFO. Per sample it advances the oscillator (delay → linear
+/// fade-in → full depth); per block <see cref="BeginBlock"/> recomputes the frequency and the
+/// per-destination depths from the live controller values (lfoN_freq_onccN and the
+/// lfoN_{target}_onccN mod-wheel-vibrato depths). Reused across notes to avoid per-NoteOn allocation.
 /// </summary>
 internal sealed class GenericLfoRunner
 {
+    private int _sampleRate = 48000;
     private double _phase;          // cycles, 0..1
-    private double _phaseInc;       // cycles per sample
+    private double _phaseInc;       // cycles per sample (set per block)
     private int _delaySamples, _delayCounter, _fadeSamples, _fadeElapsed;
     private LfoStage[] _stages = [];
 
-    // Summed depths across this LFO's targets, in the destination's natural units.
+    // Static config (base value + CC modulations), set at Configure.
+    private double _baseFreqHz;
+    private LfoCcDepth[]? _freqCc;
+    private double _basePitch, _baseVolume, _baseCutoff;
+    private LfoCcDepth[]? _pitchCc, _volumeCc, _cutoffCc;
+
+    // Effective per-block depths the voice reads while iterating samples.
     public double PitchDepthCents { get; private set; }
     public double VolumeDepthDb { get; private set; }
     public double CutoffDepthCents { get; private set; }
 
     public void Configure(GenericLfo lfo, int sampleRate)
     {
+        _sampleRate = sampleRate;
         _phase = lfo.Phase - Math.Floor(lfo.Phase);
-        _phaseInc = lfo.FrequencyHz / sampleRate;
         _delaySamples = lfo.DelaySeconds > 0 ? (int)(lfo.DelaySeconds * sampleRate) : 0;
         _fadeSamples = lfo.FadeSeconds > 0 ? (int)(lfo.FadeSeconds * sampleRate) : 0;
         _delayCounter = _delaySamples;
         _fadeElapsed = 0;
         _stages = lfo.Stages;
 
-        PitchDepthCents = 0;
-        VolumeDepthDb = 0;
-        CutoffDepthCents = 0;
+        _baseFreqHz = lfo.FrequencyHz;
+        _freqCc = lfo.FreqCc;
+        _basePitch = _baseVolume = _baseCutoff = 0;
+        _pitchCc = _volumeCc = _cutoffCc = null;
         foreach (var t in lfo.Targets)
         {
             switch (t.Destination)
             {
-                case LfoDestination.Pitch:  PitchDepthCents += t.Depth; break;
-                case LfoDestination.Volume: VolumeDepthDb += t.Depth; break;
-                case LfoDestination.Cutoff: CutoffDepthCents += t.Depth; break;
+                case LfoDestination.Pitch:  _basePitch += t.Depth;  _pitchCc = Merge(_pitchCc, t.DepthCc); break;
+                case LfoDestination.Volume: _baseVolume += t.Depth; _volumeCc = Merge(_volumeCc, t.DepthCc); break;
+                case LfoDestination.Cutoff: _baseCutoff += t.Depth; _cutoffCc = Merge(_cutoffCc, t.DepthCc); break;
             }
         }
+
+        // Seed effective values with the no-CC case; BeginBlock refines them each block.
+        _phaseInc = _baseFreqHz / sampleRate;
+        PitchDepthCents = _basePitch;
+        VolumeDepthDb = _baseVolume;
+        CutoffDepthCents = _baseCutoff;
+    }
+
+    /// <summary>Recomputes frequency and target depths from the channel's current controller values.</summary>
+    public void BeginBlock(ChannelState ch)
+    {
+        _phaseInc = (_baseFreqHz + SumCc(_freqCc, ch)) / _sampleRate;
+        PitchDepthCents = _basePitch + SumCc(_pitchCc, ch);
+        VolumeDepthDb = _baseVolume + SumCc(_volumeCc, ch);
+        CutoffDepthCents = _baseCutoff + SumCc(_cutoffCc, ch);
     }
 
     /// <summary>Advances one sample and returns the LFO value (-1..1, with delay/fade applied).</summary>
@@ -93,5 +117,23 @@ internal sealed class GenericLfoRunner
         _phase += _phaseInc;
         if (_phase >= 1.0) _phase -= Math.Floor(_phase);
         return v;
+    }
+
+    private static double SumCc(LfoCcDepth[]? mods, ChannelState ch)
+    {
+        if (mods == null) return 0.0;
+        double sum = 0.0;
+        for (int i = 0; i < mods.Length; i++)
+            sum += ch.GetCC(mods[i].Cc) / 127.0 * mods[i].Amount;
+        return sum;
+    }
+
+    private static LfoCcDepth[]? Merge(LfoCcDepth[]? a, LfoCcDepth[]? b)
+    {
+        if (a == null) return b;
+        if (b == null) return a;
+        var list = new List<LfoCcDepth>(a);
+        list.AddRange(b);
+        return list.ToArray();
     }
 }

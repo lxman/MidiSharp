@@ -662,6 +662,11 @@ public sealed class Voice
             for (int x = 0; x < xfades.Length; x++)
                 ccCrossfadeGain *= xfades[x].Gain[channelState.GetCC(xfades[x].Cc) & 0x7F];
 
+        // SFZ v2 generic LFOs: refresh CC-modulated frequency/depths once per block (CC is constant
+        // within the block) so lfoN_freq_oncc and lfoN_{target}_oncc (mod-wheel vibrato) track live.
+        for (int g = 0; g < _genericLfoCount; g++)
+            _genericLfos[g].BeginBlock(channelState);
+
         // Effective per-block values: zone base + route contribution.
         double effectiveAttenuationDb = _attenuationDb + contrib.AttenuationDb + extraAttenuationDb;
         double effectivePan = Math.Clamp(_panNormalized + contrib.PanNormalized, -1.0, 1.0);

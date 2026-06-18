@@ -489,18 +489,37 @@ internal static class SfzZoneTranslator
             int GetI(string key, int def) =>
                 map.TryGetValue(key, out var v) && int.TryParse(v.Trim(), out int d) ? d : def;
 
+            // Collect lfoN_{prefix}{cc} CC modulations (e.g. freq_oncc117, pitch_oncc1).
+            LfoCcDepth[]? CcMods(string prefix)
+            {
+                List<LfoCcDepth>? list = null;
+                foreach (var kv in map)
+                {
+                    if (!kv.Key.StartsWith(prefix, StringComparison.Ordinal)) continue;
+                    if (!int.TryParse(kv.Key.Substring(prefix.Length), out int cc)) continue;
+                    if (!double.TryParse(kv.Value.Trim(), System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture, out double amt)) continue;
+                    (list ??= new List<LfoCcDepth>()).Add(new LfoCcDepth(cc, amt));
+                }
+                return list?.ToArray();
+            }
+
             var targets = new List<LfoTarget>();
             void AddTarget(string key, LfoDestination dest)
             {
-                if (map.ContainsKey(key))
-                    targets.Add(new LfoTarget { Destination = dest, Depth = Get(key, 0) });
+                var depthCc = CcMods(key + "_oncc");
+                // A target exists if it has a base depth OR a CC-driven depth (mod-wheel vibrato:
+                // lfoN_pitch_onccN with no base lfoN_pitch).
+                if (map.ContainsKey(key) || depthCc != null)
+                    targets.Add(new LfoTarget { Destination = dest, Depth = Get(key, 0), DepthCc = depthCc });
             }
             AddTarget("pitch", LfoDestination.Pitch);
             AddTarget("volume", LfoDestination.Volume);
             AddTarget("cutoff", LfoDestination.Cutoff);
 
+            var freqCc = CcMods("freq_oncc");
             bool hasFreq = map.ContainsKey("freq");
-            if (!hasFreq && targets.Count == 0) continue;
+            if (!hasFreq && freqCc == null && targets.Count == 0) continue;
 
             lfos.Add(new GenericLfo
             {
@@ -509,6 +528,7 @@ internal static class SfzZoneTranslator
                 FadeSeconds = Get("fade", 0),
                 Phase = Get("phase", 0),
                 Stages = [new LfoStage(GetI("wave", 1), 1.0, 1.0, 0.0)],   // v2 default wave = sine (1)
+                FreqCc = freqCc,
                 Targets = targets.ToArray(),
             });
         }
