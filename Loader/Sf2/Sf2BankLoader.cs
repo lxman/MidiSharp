@@ -138,6 +138,8 @@ internal static class Sf2BankLoader
         // The ReadOnlyMemory roots its backing (a managed byte[], or an mmap view owned by
         // sampleMemoryOwner), so it outlives this SoundFont safely.
         var smplBytes = sf.RawSampleBytes;
+        // Optional 24-bit extension (sm24). Empty for 16-bit fonts → the source keeps the 16-bit fast path.
+        var sm24Bytes = sf.RawSample24Bytes;
 
         var metadata = new SampleMetadata[sf.SampleHeaders.Count];
         var entries = new (long AbsoluteStart, long LengthFrames)[sf.SampleHeaders.Count];
@@ -166,7 +168,7 @@ internal static class Sf2BankLoader
             };
         }
 
-        return new MemoryMappedSf2SampleSource(smplBytes, metadata, entries, sampleMemoryOwner);
+        return new MemoryMappedSf2SampleSource(smplBytes, metadata, entries, sampleMemoryOwner, sm24Bytes);
     }
 
     private static int? ResolveStereoLink(SampleHeader hdr, IReadOnlyList<SampleHeader> all)

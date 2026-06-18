@@ -50,6 +50,13 @@ public sealed class SoundFont
     /// </summary>
     public ReadOnlyMemory<byte> RawSampleBytes => _sdta.RawBytes;
 
+    /// <summary>
+    /// The optional <c>sm24</c> chunk (one LS byte per frame) for 24-bit SF2 fonts, aligned 1:1 with
+    /// <see cref="RawSampleBytes"/>. Empty for 16-bit fonts and SF3 (whose samples are Vorbis). The
+    /// sample source combines this with the 16-bit data to play back at full 24-bit precision.
+    /// </summary>
+    public ReadOnlyMemory<byte> RawSample24Bytes => _sdta.RawBytes24;
+
     private SoundFont(InfoMetadata info, Preset[] presets, Instrument[] instruments,
         SampleHeader[] sampleHeaders, SdtaChunkReader sdta)
     {

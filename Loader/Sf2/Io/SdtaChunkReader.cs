@@ -26,6 +26,13 @@ internal sealed class SdtaChunkReader
     /// </summary>
     public ReadOnlyMemory<byte> RawBytes => _data16;
 
+    /// <summary>
+    /// The optional <c>sm24</c> chunk: one byte per sample frame, the least-significant byte of each
+    /// 24-bit sample. Empty when the font is 16-bit (or the sm24 length didn't validate). Aligned 1:1
+    /// with the 16-bit frames in <see cref="RawBytes"/>, so frame N's low byte is <c>RawBytes24[N]</c>.
+    /// </summary>
+    public ReadOnlyMemory<byte> RawBytes24 => _data24;
+
     public SdtaChunkReader(ReadOnlyMemory<byte> sdtaList)
     {
         var span = sdtaList.Span;
@@ -55,9 +62,12 @@ internal sealed class SdtaChunkReader
 
         _data16 = smpl;
 
-        // Per SF2 spec §6.2: sm24 length must be ceil(smpl_length_in_frames / 2). If not, ignore it.
-        long expected24 = (_data16.Length / 2 + 1) / 2;
-        _data24 = sm24.Length == expected24 ? sm24 : ReadOnlyMemory<byte>.Empty;
+        // Per SF2 spec §6.2: sm24 holds the least-significant byte of every sample, so its length equals
+        // the sample-frame count (one byte per frame), optionally padded by one to an even size. Anything
+        // else is malformed → ignore it (the font plays as 16-bit). This 1:1 alignment is what GetSamples
+        // and the playback source rely on when indexing sm24 by absolute frame number.
+        long frames = _data16.Length / 2;
+        _data24 = sm24.Length == frames || sm24.Length == frames + 1 ? sm24 : ReadOnlyMemory<byte>.Empty;
     }
 
     /// <summary>

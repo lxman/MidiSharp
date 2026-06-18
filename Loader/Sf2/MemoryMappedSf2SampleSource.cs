@@ -30,6 +30,7 @@ namespace Loader.Sf2;
 internal sealed class MemoryMappedSf2SampleSource : ISampleSource
 {
     private readonly ReadOnlyMemory<byte> _smpl;   // raw smpl-chunk bytes (int16 LE frames)
+    private readonly ReadOnlyMemory<byte> _sm24;   // optional 24-bit LS bytes, 1/frame; empty for 16-bit fonts
     private readonly SampleEntry[] _entries;
     private readonly SampleMetadata[] _metadata;
     private readonly IDisposable? _backingOwner;   // mmap view to release on dispose; null for managed backing
@@ -51,12 +52,16 @@ internal sealed class MemoryMappedSf2SampleSource : ISampleSource
         ReadOnlyMemory<byte> smplBytes,
         IReadOnlyList<SampleMetadata> metadata,
         IReadOnlyList<(long AbsoluteStart, long LengthFrames)> entries,
-        IDisposable? backingOwner = null)
+        IDisposable? backingOwner = null,
+        ReadOnlyMemory<byte> sm24Bytes = default)
     {
         if (metadata.Count != entries.Count)
             throw new ArgumentException("metadata and entries must have the same count");
 
         _smpl = smplBytes;
+        // sm24 carries one low byte per frame (optionally +1 even-pad). Need at least one-per-frame to
+        // index it safely; otherwise ignore it and stay on the 16-bit fast path.
+        _sm24 = sm24Bytes.Length >= smplBytes.Length / 2 ? sm24Bytes : default;
         _backingOwner = backingOwner;
         _metadata = new SampleMetadata[metadata.Count];
         _entries = new SampleEntry[entries.Count];
@@ -82,6 +87,23 @@ internal sealed class MemoryMappedSf2SampleSource : ISampleSource
 
         long sourceStart = entry.AbsoluteStart + frameOffset;   // in int16 frames
         const float Scale = 1.0f / 32768.0f;
+
+        if (!_sm24.IsEmpty)
+        {
+            // 24-bit font (sm24 present): combine the smpl high 16 bits with the sm24 low byte into a
+            // signed 24-bit sample and normalize by 2^23. float32's 24-bit mantissa represents this
+            // exactly. Only taken when the font actually ships 24-bit data, so 16-bit fonts are
+            // byte-identical to the fast path below.
+            const float Scale24 = 1.0f / 8388608.0f;
+            var hi = _smpl.Span.Slice((int)sourceStart * 2, framesToRead * 2);
+            var lo = _sm24.Span.Slice((int)sourceStart, framesToRead);
+            for (int i = 0; i < framesToRead; i++)
+            {
+                int sample24 = (BinaryPrimitives.ReadInt16LittleEndian(hi.Slice(i * 2, 2)) << 8) | lo[i];
+                dest[i] = sample24 * Scale24;
+            }
+            return framesToRead;
+        }
 
         if (BitConverter.IsLittleEndian)
         {

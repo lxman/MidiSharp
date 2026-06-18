@@ -19,7 +19,8 @@ internal static class SyntheticSoundFont
         ushort bank = 0,
         ushort preset = 0,
         uint sampleRate = 22050,
-        string terminalName = "EOP")
+        string terminalName = "EOP",
+        byte[]? sm24 = null)
     {
         // ----- smpl (16-bit LE PCM) ----
         var smpl = new byte[SampleFrames * 2];
@@ -90,7 +91,10 @@ internal static class SyntheticSoundFont
             ("shdr", shdr),
         });
 
-        var sdta = BuildList("sdta", new[] { ("smpl", smpl) });
+        // Optional 24-bit extension (one LS byte per frame), aligned 1:1 with the smpl frames.
+        var sdta = sm24 is { Length: SampleFrames }
+            ? BuildList("sdta", new[] { ("smpl", smpl), ("sm24", sm24) })
+            : BuildList("sdta", new[] { ("smpl", smpl) });
 
         // ----- INFO LIST ----
         var info = BuildInfoList(bankName);
