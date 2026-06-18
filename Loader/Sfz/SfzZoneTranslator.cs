@@ -32,8 +32,9 @@ internal static class SfzZoneTranslator
         var ccGates = BuildCcGates(r);
 
         // ── Tuning ───────────────────────────────────────────────────
-        // tune (a.k.a. pitch) is cents; transpose is semitones.
-        double tuneCents = r.GetDouble("tune", r.GetDouble("pitch", 0));
+        // tune (a.k.a. pitch) is cents; transpose is semitones. group_tune adds a group-level cents
+        // offset on top (the region inherits it through the header hierarchy).
+        double tuneCents = r.GetDouble("tune", r.GetDouble("pitch", 0)) + r.GetDouble("group_tune", 0);
         double transpose = r.GetDouble("transpose", 0);
 
         // ── Level / pan ──────────────────────────────────────────────
@@ -177,10 +178,11 @@ internal static class SfzZoneTranslator
             keySwitch = new KeySwitch((byte)swLo, (byte)swHi, (byte)swSelecting.Value, (byte)swDefault);
         }
 
-        // ── Exclusive group (group / off_by) ─────────────────────────
+        // ── Exclusive group (group / off_by, a.k.a. offby) ───────────
         int? exclusive = null;
         if (r.Has("group")) exclusive = r.GetInt("group", 0);
         else if (r.Has("off_by")) exclusive = r.GetInt("off_by", 0);
+        else if (r.Has("offby")) exclusive = r.GetInt("offby", 0);   // no-underscore alias
         if (exclusive is 0) exclusive = null;
 
         // ── Trigger mode + rt_decay ──────────────────────────────────

@@ -58,7 +58,10 @@ internal static class SfzOpcodes
         "xf_cccurve",
         "sw_last", "sw_down", "sw_lokey", "sw_hikey", "sw_default",
         // grouping, effects, velocity, program routing
-        "group", "off_by", "effect1", "effect2", "amp_veltrack", "loprog", "hiprog",
+        "group", "off_by", "offby", "group_tune", "effect1", "effect2", "amp_veltrack", "loprog", "hiprog",
+        // sustain-pedal threshold (sustain_lo): our channel CC64 sustain already holds notes; this just
+        // tweaks the engage threshold (default ≈64), an inaudible ±1 difference we don't apply per-zone.
+        "sustain_lo",
         // trigger / release
         "trigger", "rt_decay",
         // voice-off (note_polyphony / off_mode / off_time)

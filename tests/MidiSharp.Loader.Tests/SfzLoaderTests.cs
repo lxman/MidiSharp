@@ -409,6 +409,18 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Offby_alias_and_group_tune_parse()
+    {
+        WriteWav("a.wav");
+        // offby = no-underscore off_by (exclusive group); group_tune sums onto the region tune.
+        var z = SoundBankLoader.Load(WriteSfz(
+            "<region> sample=a.wav key=60 offby=4 tune=10 group_tune=5"))
+            .FindPatch(0, 0)!.Zones[0];
+        Assert.Equal(4, z.ExclusiveGroup);
+        Assert.Equal(15.0, z.Sample!.FineTuneCents, 3);   // 10 + 5
+    }
+
+    [Fact]
     public void Second_filter_parses_type_cutoff_and_cc()
     {
         WriteWav("a.wav");
