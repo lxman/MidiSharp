@@ -18,6 +18,7 @@
   <Folder Name="/Samples/">
     <File Path="samples\MidiSharp.Server\MidiSharp.Server.csproj" />
     <Project Path="samples/MidiSharp.Demo/MidiSharp.Demo.csproj" />
+    <Project Path="samples\MidiSharp.Server\MidiSharp.Server.csproj" />
   </Folder>
   <Folder Name="/Vendor/">
     <Project Path="vendor/NVorbis/NVorbis/NVorbis.csproj" />
