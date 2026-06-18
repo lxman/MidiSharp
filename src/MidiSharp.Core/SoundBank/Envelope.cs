@@ -63,4 +63,42 @@ public sealed class EnvelopeSettings
 
     /// <summary>Velocity → sustain level, as a 0..1 offset.</summary>
     public double VelToSustainLevel { get; init; }
+
+    /// <summary>
+    /// SFZ CC modulations of the envelope stages (ampeg_{stage}_oncc / the bare-cc alias), evaluated
+    /// from the LIVE controller at note-on rather than baked at a static seed — this is the
+    /// segment-start evaluation SFZ specifies (and what ampeg_dynamic builds on). Null for SF2/DLS and
+    /// SFZ zones without envelope CC modulation, which keeps those byte-identical.
+    /// </summary>
+    public EnvCcMod[]? CcMods { get; init; }
+
+    /// <summary>
+    /// SFZ <c>ampeg_dynamic=1</c>: the envelope re-reads its CC-modulated durations/sustain while a
+    /// modulating CC moves. We evaluate at note-on (covers the common mod-wheel-set-before-the-note
+    /// case); true mid-note recalculation is not yet done. Default (0) evaluates once at the start.
+    /// </summary>
+    public bool Dynamic { get; init; }
+}
+
+/// <summary>A DAHDSR envelope stage that a CC can modulate (SFZ ampeg_{stage}).</summary>
+public enum EnvStage { Delay, Attack, Hold, Decay, Sustain, Release }
+
+/// <summary>
+/// One CC modulation of an envelope stage: at the live controller value, adds <see cref="Amount"/> ×
+/// curve(cc/127) to the stage — seconds for the time stages, percent for <see cref="EnvStage.Sustain"/>.
+/// </summary>
+public readonly struct EnvCcMod
+{
+    public EnvCcMod(EnvStage stage, int cc, double amount, int curve)
+    {
+        Stage = stage;
+        Cc = cc;
+        Amount = amount;
+        Curve = curve;
+    }
+
+    public EnvStage Stage { get; }
+    public int Cc { get; }
+    public double Amount { get; }
+    public int Curve { get; }
 }

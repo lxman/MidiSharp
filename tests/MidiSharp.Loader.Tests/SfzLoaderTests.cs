@@ -311,6 +311,25 @@ public sealed class SfzLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Ampeg_dynamic_emits_unbaked_cc_mods()
+    {
+        WriteWav("a.wav");
+        // With ampeg_dynamic the attack CC is NOT baked into AttackSeconds (the voice evaluates it live);
+        // it's emitted as a CcMod. Without ampeg_dynamic the same opcode bakes (covered elsewhere).
+        var path = WriteSfz("""
+            <control> set_cc1=64
+            <region> sample=a.wav key=60 ampeg_attack=0.1 ampeg_attackcc1=2 ampeg_dynamic=1
+            """);
+        var ve = SoundBankLoader.Load(path).FindPatch(0, 0)!.Zones[0].VolumeEnvelope;
+        Assert.True(ve.Dynamic);
+        Assert.Equal(0.1, ve.AttackSeconds, 3);   // base only — not baked (would be ~1.1 if baked at cc1=64)
+        var mod = Assert.Single(ve.CcMods!);
+        Assert.Equal(MidiSharp.SoundBank.EnvStage.Attack, mod.Stage);
+        Assert.Equal(1, mod.Cc);
+        Assert.Equal(2.0, mod.Amount, 3);
+    }
+
+    [Fact]
     public void Ampeg_vel2_envelope_modulation_parses()
     {
         WriteWav("a.wav");

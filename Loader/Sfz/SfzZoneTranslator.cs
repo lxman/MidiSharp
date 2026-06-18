@@ -59,15 +59,21 @@ internal static class SfzZoneTranslator
         // curve and evaluated at the seeded initial CC — baked in here like amp_veltrack_oncc. This is
         // what gives Salamander its ~1 s damper release (ampeg_release_oncc72=2, cc72 seeded to 0.5).
         var ic = control.InitialControllers;
+        // ampeg_dynamic=1 re-reads the CC-modulated envelope stages from the LIVE controller (the voice
+        // evaluates CcMods at note-on). Without it, we keep the current behaviour: bake the CC offset at
+        // the static seeded CC here — which is correct for the static-seed case and keeps every existing
+        // font byte-identical (the dynamic path is opt-in, gated on this flag).
+        bool dynamic = r.GetInt("ampeg_dynamic", 0) != 0;
+        double CcBake(string stage) => dynamic ? 0.0 : EnvCcOffset(r, ic, stage);
         var ampEnv = new EnvelopeSettings
         {
-            DelaySeconds = r.GetDouble("ampeg_delay", 0) + EnvCcOffset(r, ic, "ampeg_delay"),
-            AttackSeconds = r.GetDouble("ampeg_attack", 0) + EnvCcOffset(r, ic, "ampeg_attack"),
-            HoldSeconds = r.GetDouble("ampeg_hold", 0) + EnvCcOffset(r, ic, "ampeg_hold"),
-            DecaySeconds = r.GetDouble("ampeg_decay", 0) + EnvCcOffset(r, ic, "ampeg_decay"),
-            SustainLevel = Math.Clamp((r.GetDouble("ampeg_sustain", 100.0) + EnvCcOffset(r, ic, "ampeg_sustain")) / 100.0, 0, 1),
+            DelaySeconds = r.GetDouble("ampeg_delay", 0) + CcBake("ampeg_delay"),
+            AttackSeconds = r.GetDouble("ampeg_attack", 0) + CcBake("ampeg_attack"),
+            HoldSeconds = r.GetDouble("ampeg_hold", 0) + CcBake("ampeg_hold"),
+            DecaySeconds = r.GetDouble("ampeg_decay", 0) + CcBake("ampeg_decay"),
+            SustainLevel = Math.Clamp((r.GetDouble("ampeg_sustain", 100.0) + CcBake("ampeg_sustain")) / 100.0, 0, 1),
             // Floor the release so a NoteOff mid-sample fades instead of clicking.
-            ReleaseSeconds = Math.Max(r.GetDouble("ampeg_release", 0) + EnvCcOffset(r, ic, "ampeg_release"), 0.003),
+            ReleaseSeconds = Math.Max(r.GetDouble("ampeg_release", 0) + CcBake("ampeg_release"), 0.003),
             // Velocity → envelope (ampeg_vel2*): times in seconds, sustain as a 0..1 offset.
             VelToDelaySeconds = r.GetDouble("ampeg_vel2delay", 0),
             VelToAttackSeconds = r.GetDouble("ampeg_vel2attack", 0),
@@ -75,6 +81,8 @@ internal static class SfzZoneTranslator
             VelToDecaySeconds = r.GetDouble("ampeg_vel2decay", 0),
             VelToReleaseSeconds = r.GetDouble("ampeg_vel2release", 0),
             VelToSustainLevel = r.GetDouble("ampeg_vel2sustain", 0) / 100.0,
+            Dynamic = dynamic,
+            CcMods = dynamic ? CollectEnvCcMods(r) : null,
         };
 
         // ── Filter ───────────────────────────────────────────────────
@@ -282,6 +290,40 @@ internal static class SfzZoneTranslator
             sum += value * EvalBuiltinCurve(curveIdx, ccVal / 127.0);
         }
         return sum;
+    }
+
+    /// <summary>
+    /// Collects every envelope-stage CC modulation (ampeg_{stage}_oncc{N} / _cc{N} / the bare-cc alias,
+    /// with its curve) as <see cref="EnvCcMod"/>s for the voice to evaluate live — used only on
+    /// ampeg_dynamic zones. Mirrors <see cref="EnvCcOffset"/>'s matching but keeps the raw terms instead
+    /// of summing at a fixed CC. Returns null when no stage is CC-modulated.
+    /// </summary>
+    private static EnvCcMod[]? CollectEnvCcMods(SfzRegion r)
+    {
+        List<EnvCcMod>? list = null;
+        void Collect(string stageParam, EnvStage stage)
+        {
+            foreach (var (param, cc, value) in r.EnumerateModulations())
+            {
+                if (param != stageParam) continue;
+                int curve = r.GetInt(stageParam + "_curvecc" + cc, 0);
+                (list ??= new List<EnvCcMod>()).Add(new EnvCcMod(stage, cc, value, curve));
+            }
+            foreach (var (cc, raw) in r.EnumerateCc(stageParam + "cc"))
+            {
+                if (!double.TryParse(raw.Trim(), System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out double value)) continue;
+                int curve = r.GetInt(stageParam + "_curvecc" + cc, 0);
+                (list ??= new List<EnvCcMod>()).Add(new EnvCcMod(stage, cc, value, curve));
+            }
+        }
+        Collect("ampeg_delay", EnvStage.Delay);
+        Collect("ampeg_attack", EnvStage.Attack);
+        Collect("ampeg_hold", EnvStage.Hold);
+        Collect("ampeg_decay", EnvStage.Decay);
+        Collect("ampeg_sustain", EnvStage.Sustain);
+        Collect("ampeg_release", EnvStage.Release);
+        return list?.ToArray();
     }
 
     /// <summary>

@@ -260,7 +260,8 @@ public sealed class Voice
         int keyNumber,
         int velocity,
         int channel,
-        int generationId)
+        int generationId,
+        ChannelState channelState)
     {
         Reset();
 
@@ -363,13 +364,34 @@ public sealed class Voice
         // (and bit-identical) there.
         var ve = zone.VolumeEnvelope;
         double velNorm = velocity / 127.0;
+
+        // SFZ ampeg_dynamic: evaluate the envelope's CC-modulated stages from the LIVE controller now,
+        // at note-on. Null for everything else (SF2/DLS, non-dynamic SFZ), so all those stay
+        // byte-identical (every delta below is 0). Sustain offsets are percent (hence /100); times are
+        // seconds. Added alongside the ampeg_vel2* per-note offsets in the exact same way.
+        double envDelayCc = 0, envAttackCc = 0, envHoldCc = 0, envDecayCc = 0, envSustainCc = 0, envReleaseCc = 0;
+        if (ve.CcMods is { } envMods)
+            foreach (var m in envMods)
+            {
+                double o = m.Amount * AriaCurve.Eval(m.Curve, channelState.GetCC(m.Cc) / 127.0);
+                switch (m.Stage)
+                {
+                    case EnvStage.Delay:   envDelayCc += o; break;
+                    case EnvStage.Attack:  envAttackCc += o; break;
+                    case EnvStage.Hold:    envHoldCc += o; break;
+                    case EnvStage.Decay:   envDecayCc += o; break;
+                    case EnvStage.Sustain: envSustainCc += o; break;
+                    case EnvStage.Release: envReleaseCc += o; break;
+                }
+            }
+
         _volumeEnvelope.SetParameters(
-            delaySeconds: Math.Max(0.0, ve.DelaySeconds + velNorm * ve.VelToDelaySeconds),
-            attackSeconds: Math.Max(0.0, ve.AttackSeconds + velNorm * ve.VelToAttackSeconds),
-            holdSeconds: Math.Max(0.0, ve.HoldSeconds + velNorm * ve.VelToHoldSeconds),
-            decaySeconds: Math.Max(0.0, ve.DecaySeconds + velNorm * ve.VelToDecaySeconds),
-            sustainLevel: Math.Clamp(ve.SustainLevel + velNorm * ve.VelToSustainLevel, 0.0, 1.0),
-            releaseSeconds: Math.Max(0.0, ve.ReleaseSeconds + velNorm * ve.VelToReleaseSeconds),
+            delaySeconds: Math.Max(0.0, ve.DelaySeconds + envDelayCc + velNorm * ve.VelToDelaySeconds),
+            attackSeconds: Math.Max(0.0, ve.AttackSeconds + envAttackCc + velNorm * ve.VelToAttackSeconds),
+            holdSeconds: Math.Max(0.0, ve.HoldSeconds + envHoldCc + velNorm * ve.VelToHoldSeconds),
+            decaySeconds: Math.Max(0.0, ve.DecaySeconds + envDecayCc + velNorm * ve.VelToDecaySeconds),
+            sustainLevel: Math.Clamp(ve.SustainLevel + envSustainCc / 100.0 + velNorm * ve.VelToSustainLevel, 0.0, 1.0),
+            releaseSeconds: Math.Max(0.0, ve.ReleaseSeconds + envReleaseCc + velNorm * ve.VelToReleaseSeconds),
             keynumToHoldCentsPerKey: ve.KeynumToHoldCentsPerKey,
             keynumToDecayCentsPerKey: ve.KeynumToDecayCentsPerKey);
 

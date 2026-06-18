@@ -32,6 +32,8 @@ internal static class SfzOpcodes
         // amp envelope velocity modulation (ampeg_vel2*)
         "ampeg_vel2delay", "ampeg_vel2attack", "ampeg_vel2hold", "ampeg_vel2decay",
         "ampeg_vel2release", "ampeg_vel2sustain",
+        // ampeg_dynamic: live (note-on) evaluation of the CC-modulated envelope stages
+        "ampeg_dynamic",
         // filter
         "cutoff", "fil_type", "resonance", "fil_keytrack", "fil_keycenter", "fil_veltrack",
         // filter envelope

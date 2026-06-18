@@ -318,7 +318,7 @@ public sealed class Synthesizer
             if (zone.ExclusiveGroup is int eg && eg > 0)
                 KillVoicesByExclusiveClass(channel, eg);
 
-            voice.Configure(zone, samples, key, velocity, channel, ++_generationCounter);
+            voice.Configure(zone, samples, key, velocity, channel, ++_generationCounter, channelState);
 
             // GM2 CC72/73/75 envelope time scaling.
             if (attackOctaves != 0 || decayOctaves != 0 || releaseOctaves != 0)
