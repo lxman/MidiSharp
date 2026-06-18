@@ -1,5 +1,7 @@
 # MidiSharp
 
+[![CI](https://github.com/lxman/MidiSharp/actions/workflows/ci.yml/badge.svg)](https://github.com/lxman/MidiSharp/actions/workflows/ci.yml)
+
 A cross-platform, pure-managed C# software synthesizer that renders MIDI files through SoundFont presets — **SF2, SF3, SFZ, and DLS**, all loaded into one common in-memory representation (the *SoundBank IR*). Built around a fully spec-compliant MIDI 1.0 / GM / GM2 / GS / XG protocol implementation and an SF2-style generator/modulator engine validated against fluidsynth.
 
 It also ships a patch-level **instrument-substitution** layer: list the instruments a song calls for and swap any of them for an instrument cherry-picked from another font, without altering the song's sequencing.
