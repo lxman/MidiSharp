@@ -115,7 +115,10 @@ internal sealed class LazyVorbisSf3SampleSource : ISampleSource
 
         long frameCount = channels > 0 ? node.Length / channels : 0;
         if (frameOffset < 0 || frameOffset >= frameCount) return 0;
-        int framesAvailable = (int)Math.Min(frameCount - frameOffset, dest.Length);
+        // dest is interleaved floats (channels per frame), so its frame capacity is dest.Length/channels.
+        // Dividing here was missing: a stereo sample would copy framesAvailable*channels floats into a
+        // dest sized for framesAvailable frames — overflowing it (crash) and miscounting frames.
+        int framesAvailable = (int)Math.Min(frameCount - frameOffset, dest.Length / channels);
         node.Data.AsSpan((int)(frameOffset * channels), framesAvailable * channels).CopyTo(dest);
         return framesAvailable;
     }

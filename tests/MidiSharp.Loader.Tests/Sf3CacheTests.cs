@@ -5,6 +5,7 @@ using System.Linq;
 using Loader;
 using MidiSharp.SoundBank;
 using Xunit;
+using IRBank = MidiSharp.SoundBank.SoundBank;
 
 namespace MidiSharp.Loader.Tests;
 
@@ -47,6 +48,64 @@ public class Sf3CacheTests
             off += n;
         }
         return outp.ToArray();
+    }
+
+    [Fact]
+    public void Stereo_sample_reads_full_frames_without_overflow()
+    {
+        // Scan available SF3 fonts for one that actually carries a stereo sample (FluidR3Mono and many
+        // GM banks are all-mono); only that exercises the channel-aware copy. Skips cleanly if none.
+        var (bank, src, stereoId) = FindStereoSf3();
+        using (bank)
+        {
+            if (bank == null) return;   // no SF3 with a stereo sample available — skip
+
+            long expected = src!.Metadata(stereoId).LengthFrames;
+            // Interleaved buffer sized to a quarter of the sample so several reads hit the cap. Pre-fix,
+            // framesAvailable came from dest.Length (floats) instead of dest.Length/channels (frames), so
+            // a capped read copied 2× the buffer and overflowed it (crash) / miscounted frames.
+            int bufFrames = Math.Max(2, (int)(expected / 4));
+            var buf = new float[bufFrames * 2];
+            long total = 0;
+            long off = 0;
+            while (true)
+            {
+                int n = src.ReadFrames(stereoId, off, buf);   // must never write past buf
+                if (n <= 0) break;
+                Assert.True(n <= buf.Length / 2, $"returned {n} frames into a {buf.Length / 2}-frame buffer");
+                total += n;
+                off += n;
+            }
+            Assert.Equal(expected, total);   // every frame readable, exactly once
+        }
+    }
+
+    /// <summary>Loads SF3 fonts until one with a stereo sample is found; returns (null, ...) if none.</summary>
+    private static (IRBank? bank, ISampleSource? src, int stereoId) FindStereoSf3()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var roots = new[] { Path.Combine(home, "soundfonts", "deduped", "sf3"), Path.Combine(home, "soundfonts") };
+        var fonts = roots.Where(Directory.Exists)
+            .SelectMany(r => Directory.EnumerateFiles(r, "*.sf3", SearchOption.AllDirectories))
+            .Select(f => new FileInfo(f))
+            .Where(fi => fi.Length is > 20_000 and < 30_000_000)
+            .OrderBy(fi => fi.Length)
+            .Select(fi => fi.FullName);
+
+        foreach (var path in fonts)
+        {
+            IRBank bank;
+            try { bank = SoundBankLoader.Load(path); }
+            catch { continue; }
+            for (int id = 0; id < bank.Samples.Count; id++)
+            {
+                var m = bank.Samples.Metadata(id);
+                if (m.Channels == 2 && m.LengthFrames > 8)   // a 2-channel sample big enough to span >1 read
+                    return (bank, bank.Samples, id);
+            }
+            bank.Dispose();
+        }
+        return (null, null, -1);
     }
 
     [Fact]
