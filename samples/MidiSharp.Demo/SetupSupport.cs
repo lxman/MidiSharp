@@ -14,9 +14,9 @@ using IRBank = MidiSharp.SoundBank.SoundBank;
 // fields the CLI player acts on are modelled — System.Text.Json ignores any extra fields the server
 // adds later (mixer/EQ/automation), so this stays forward-compatible without code changes.
 
-internal sealed record SetupPatchOverride(int logicalBank, int logicalProgram, string sourcePath, int sourceBank, int sourceProgram);
+internal sealed record SetupPatchOverride(int logicalBank, int logicalProgram, string sourcePath, int sourceBank, int sourceProgram, double gainDb = 0);
 
-internal sealed record SetupTrackOverride(int trackIndex, string? trackName, string sourcePath, int sourceBank, int sourceProgram);
+internal sealed record SetupTrackOverride(int trackIndex, string? trackName, string sourcePath, int sourceBank, int sourceProgram, double gainDb = 0);
 
 internal sealed record SetupFile(
     string name,

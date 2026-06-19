@@ -6,6 +6,8 @@ A cross-platform, pure-managed C# software synthesizer that renders MIDI files t
 
 It also ships a patch-level **instrument-substitution** layer: list the instruments a song calls for and swap any of them for an instrument cherry-picked from another font, without altering the song's sequencing.
 
+On top of that sits a **per-part mixer + effects** layer: each MIDI track gets its own fader, pan, sends, mute/solo and a drag-and-drop **insert rack**, plus a master bus — all driven by `MidiSharp.Dsp`, a small decoupled DSP library (EQ, brickwall limiter, gain, chainable processors) the host wires in caller-side. The browser player is a live mixing console on top of this.
+
 ## Quick start
 
 ```bash
@@ -30,8 +32,9 @@ A browser-based player is also included:
 
 ```bash
 dotnet run --project samples/MidiSharp.Server -- --sf-root ~/soundfonts --midi-root ~/midi
-# then open http://localhost:5005 — a file browser for picking the song and fonts,
-# a "patches used" panel, and per-patch override pickers. Audio plays on the server machine.
+# then open http://localhost:5005 — a live mixing console: one channel strip per MIDI track
+# (source-font substitution, fader/pan/sends/mute/solo, and a drag-and-drop EQ/limiter insert
+# rack), plus a master strip. Saveable per-song setups. Audio plays on the server machine.
 ```
 
 Tested daily against `GeneralUser-GS.sf2` and `TyrolandSFX.sf2`. End-to-end A/B vs fluidsynth on real GS-heavy content stays within ±3.5 dB worst case across the entire spectrum, with bass essentially identical (±1 dB).
@@ -43,19 +46,17 @@ MidiSharp.slnx                       Root solution file
 ├── src/
 │   ├── MidiSharp.Core/              MIDI parsing, sequencing, tempo map, lyrics, AND the SoundBank IR (netstandard2.1)
 │   ├── MidiSharp.Audio/             Sample-file decoders — WAV/AIFF/FLAC/Vorbis/PCM (netstandard2.1)
-│   ├── MidiSharp.Synth/             Software synthesizer + RealtimePlayer; consumes the IR (netstandard2.1)
+│   ├── MidiSharp.Loader/            Format readers (Sf2/Sf3/Sfz/Dls) + format-to-IR translators + sample sources
+│   ├── MidiSharp.Synth/             Synth + RealtimePlayer + per-instrument mixer & insert hook; consumes the IR (netstandard2.1)
 │   ├── MidiSharp.Synth.OwnAudio/    Cross-platform audio output via OwnAudioSharp (net10.0)
-│   └── MidiSharp.PatchMap/          Instrument substitution — composes SoundBanks (netstandard2.1, Core-only)
-├── Loader/                          One project (Loader.csproj): format readers + format-to-IR translators + sample sources
-│   ├── Sf2/                         SF2 reader (RIFF presets/instruments/zones) → IR + memory-mapped sample source
-│   ├── Sf3/                         SF3 reader (Vorbis-compressed SF2) → IR + lazy-decoding sample source
-│   ├── Sfz/                         SFZ reader (text opcodes + sample references) → IR
-│   └── Dls/                         DLS Level 1/2 reader → IR + articulation translation
+│   ├── MidiSharp.PatchMap/          Instrument substitution — composes SoundBanks (netstandard2.1, Core-only)
+│   ├── MidiSharp.Dsp/               Buffer-processing DSP "plugins" — EQ, limiter, gain, chains (netstandard2.1, no synth deps)
+│   └── MidiSharp/                   Umbrella package host → ships the above as MidiSharp.Player on nuget.org
 ├── samples/
-│   ├── MidiSharp.Demo/              CLI: live playback / WAV render / --patches / --map
-│   └── MidiSharp.Server/            Browser player: file browser + per-patch override UI
-├── tests/                           xUnit — 209 passing (Core, Synth, Loader, Audio, SF2.Net, PatchMap)
-├── vendor/NVorbis/                  Vendored pure-managed Ogg Vorbis decoder (MIT, v0.10.5)
+│   ├── MidiSharp.Demo/              CLI: live playback / WAV render / --patches / --map / --limiter
+│   └── MidiSharp.Server/            Browser player: a live per-track mixing console (substitution + mix + EQ/limiter racks)
+├── tests/                           xUnit — 238 passing (Core, Synth, Loader, Audio, SF2.Net, PatchMap, Dsp)
+├── vendor/NVorbis/                  Vendored pure-managed Ogg Vorbis decoder (MIT, v0.10.5; assembly MidiSharp.Audio.Vorbis)
 ├── docs/                            SoundBank IR design doc
 └── MIDI/                            Reference PDFs (MIDI 1.0 / 2.0 / SMF / RPs / Universal SysEx)
 ```
@@ -119,7 +120,16 @@ Implemented: RP-001 (SMF 1.0), RP-013 (GM Level 1), RP-014 (Bank Select Response
 | Jump! (post-LFO-generator fix) | -4.26 dB at 10-20 kHz; ≤2 dB elsewhere | -0.99 dB |
 | Jump! with Tyroland (same-soundfont A/B) | -3.45 dB at 500-2000 Hz | -1.67 dB |
 
-209 unit tests across the suite cover MIDI parsing, sequencer timing, tempo map, RP-026 lyric parsing, the SF2 reader, synthesis (including the shelf/peaking filters and sample-and-hold/stepped LFOs), the sample decoders and all four loaders, and patch substitution.
+238 unit tests across the suite cover MIDI parsing, sequencer timing, tempo map, RP-026 lyric parsing, the SF2 reader, synthesis (including the shelf/peaking filters and sample-and-hold/stepped LFOs), the sample decoders and all four loaders, patch substitution, the per-instrument mixer + insert engine (with bit-identity guards when untouched), and the DSP effects (EQ/limiter/chain).
+
+### Mixing & effects (`MidiSharp.Dsp` + the synth's mix layer)
+
+A complete signal path sits on top of the spec-faithful renderer, **without contaminating it**:
+
+- **Per-instrument mixer (in the synth).** Every voice carries a mix identity; `Synthesizer.GetInstrumentMix(bank, program)` exposes a live `InstrumentMix` (gain trim / pan offset / mute / solo / reverb + chorus sends). Gains *augment* the file's own CC7/CC11 automation rather than replacing it, and an untouched mixer is **bit-identical** to the pre-mixer engine.
+- **Per-instrument inserts (Tier-2).** An instrument with a registered `IInstrumentInsert` is summed into a private stereo bus, run through the insert, then mixed to master; instruments with no insert sum straight to master (bit-identical). The synth stays decoupled from `MidiSharp.Dsp` via this tiny interface — the host adapts a `ProcessorChain` to it.
+- **`MidiSharp.Dsp` — the effects library.** `IAudioProcessor` (interleaved-stereo, in place), `ProcessorChain` (lock-free reorderable rack), a clean-room RBJ `BiquadFilter`, `ParametricEq` (stereo cascade), a stereo-linked brickwall `LimiterProcessor`, and `GainProcessor`. No reference to the synth or MIDI — the host wires it at the audio-callback seam (master bus) and per-instrument inserts.
+- **Track-keyed mixing in the player.** The browser console keys each strip on the source MIDI *track* (the part), so a performer keeps one fader even as their program changes, and two tracks sharing a program get independent faders.
 
 ## Instrument substitution (`MidiSharp.PatchMap`)
 
@@ -135,7 +145,7 @@ Both front-ends use it: the Demo CLI (`--patches`, `--map`) and the web player (
 
 ## Out-of-scope by design
 
-- **Mastering / output EQ / limiting** — the synth renders the spec; mastering belongs in the caller's signal chain (or a separate helper project).
+- **Mastering / EQ / limiting *inside the synth*** — the synth still only renders the spec. Master and per-instrument EQ/limiting now live in **`MidiSharp.Dsp`**, a decoupled DSP library the host wires in caller-side (see *Mixing & effects* above) — kept deliberately out of the synth so the renderer stays pure.
 - **Hardware / OS MIDI-port output** — this renders *audio* from MIDI files; it is not a MIDI router. `RealtimePlayer` drives the in-process synth directly. (The legacy WinMM/CoreMIDI `IMidiOutput` + `MidiPlayer` path has been removed.)
 - **SoundFont authoring / writing** — load-and-render only; the standalone SF2 read/write library has been removed. Recreate it if editing is ever needed.
 - **MIDI 2.0 / UMP** — different wire format; the per-note expression model doesn't map cleanly to SF2's channel-sourced modulators, and there's no real-world content yet. Could revisit when real Clip Files appear (MPE is the lower-cost on-ramp if per-note expression is ever wanted).

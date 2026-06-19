@@ -57,6 +57,10 @@ app.MapGet("/api/soundfont-patches", (string path) =>
 });
 app.MapPost("/api/play", (PlayRequest req) => Results.Json(player.Play(req)));
 app.MapPost("/api/stop", () => { player.Stop(); return Results.Ok(); });
+// Live mixer + master control — applied to the running engine without a restart.
+app.MapPost("/api/mix", (InstrumentMixDto m) => { player.SetInstrumentMix(m); return Results.Ok(); });
+app.MapPost("/api/master", (MasterDto m) => { player.SetMaster(m); return Results.Ok(); });
+app.MapPost("/api/insert", (InstrumentInsertDto m) => { player.SetInstrumentInsert(m); return Results.Ok(); });
 app.MapGet("/api/status", () => Results.Json(player.Status()));
 app.MapPost("/api/exit", () => { player.RequestExit(); return Results.Ok(); });
 

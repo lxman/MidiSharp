@@ -8,7 +8,7 @@
     :root { color-scheme: dark; }
     body { font-family: system-ui, sans-serif; background: #15171c; color: #e6e6e6;
            margin: 0; display: flex; justify-content: center; min-height: 100dvh; }
-    main { width: min(1500px, 97vw); height: 100dvh; box-sizing: border-box;
+    main { width: 98vw; max-width: 2800px; height: 100dvh; box-sizing: border-box;
            padding: 1rem 0; display: flex; flex-direction: row; gap: 1.1rem; }
     /* Two-pane: a fixed control sidebar on the left (transport pinned to its bottom),
        the instrument grid — and future mixer/EQ panels — scrolling on the right. */
@@ -72,6 +72,106 @@
     .patch.silent { opacity: .5; }
     #tracks { margin-top: .6rem; }
     .patchSummary { cursor: pointer; color: #9aa3b2; font-size: .82rem; margin-top: 1.2rem; }
+
+    /* Mixer + master panel */
+    #mixerWrap { margin-bottom: 1.1rem; border: 1px solid #23272f; border-radius: 8px;
+                 background: #161920; padding: .5rem .7rem .7rem; }
+    #mixerWrap > summary { cursor: pointer; list-style: none; display: flex; align-items: center;
+                           justify-content: space-between; gap: .6rem; }
+    #mixerWrap > summary::-webkit-details-marker { display: none; }
+    #mixerWrap > summary label { margin: 0; }
+    .master { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin: .7rem 0 .3rem;
+              padding: .5rem .6rem; background: #1a1d24; border-radius: 6px; }
+    .master .inline { display: flex; align-items: center; gap: .4rem; margin: 0; font-size: .85rem;
+                      text-transform: none; letter-spacing: 0; color: #cdd6e4; cursor: pointer; }
+    .master input[type=checkbox] { width: 1rem; height: 1rem; accent-color: #3b82f6; }
+    .knob { display: flex; align-items: center; gap: .4rem; font-size: .76rem; color: #8b93a1; }
+    .knob input[type=range] { accent-color: #3b82f6; }
+    .knob .val { font-variant-numeric: tabular-nums; min-width: 3.4rem; color: #cdd6e4; font-size: .78rem; }
+    /* Effect rack — draggable effect cards (master bus now; per-instrument inserts later) */
+    .rack { display: flex; flex-direction: column; gap: .5rem; margin: .3rem 0 .2rem; }
+    /* The master rack is a vertical chain; cap its width so cards don't stretch across the whole pane. */
+    #masterRack { max-width: 1100px; }
+    .fxcard { border: 1px solid #2a2f3a; border-radius: 8px; background: #1a1d24; overflow: hidden; }
+    .fxcard.off { opacity: .55; }
+    .fxcard.dragging { opacity: .4; }
+    .fxcard.drop { border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6 inset; }
+    .fxhead { display: flex; align-items: center; gap: .5rem; padding: .4rem .55rem; background: #20242c; }
+    .fxgrip { cursor: grab; color: #6b7280; font-size: 1rem; user-select: none; }
+    .fxgrip:active { cursor: grabbing; }
+    .fxtitle { flex: 1; font-size: .86rem; font-weight: 600; color: #e6e6e6; }
+    .fxbtn { padding: .2rem .5rem; font-size: .76rem; font-weight: 600; background: #2a2f3a; color: #9aa3b2;
+             border: 0; border-radius: 5px; cursor: pointer; }
+    .fxbtn.en { min-width: 2.2rem; }
+    .fxcard:not(.off) .fxbtn.en { background: #284a7a; color: #cfe0ff; }
+    .fxbtn.rm:hover { background: #5a2330; color: #f0c4cc; }
+    .fxbody { padding: .6rem .7rem; }
+    .fxbody.collapsed { display: none; }
+    .fxrow { display: flex; align-items: center; gap: 1.1rem; flex-wrap: wrap; }
+    .fxadd select { width: auto; min-width: 11rem; padding: .35rem .5rem; font-size: .85rem; }
+    .fxadd .hint { color: #6b7280; font-size: .8rem; }
+    /* shared by the EQ widget body */
+    .eq { display: flex; align-items: flex-end; gap: 1.2rem; padding-left: .2rem; }
+    .eq.disabled { opacity: .4; pointer-events: none; }
+    .eqband { display: flex; flex-direction: column; align-items: center; gap: .25rem; font-size: .72rem; }
+    .eqband input[type=range] { writing-mode: vertical-lr; direction: rtl; width: 1.4rem; height: 84px;
+                                accent-color: #3b82f6; }
+    .eqband .g { font-variant-numeric: tabular-nums; color: #cdd6e4; min-width: 2.4rem; text-align: center; }
+    .eqband .lbl { color: #8b93a1; }
+    /* Mixer area: channel strips fill the left and wrap; the master strip is pinned on the right. */
+    .mixer-area { display: flex; align-items: flex-start; gap: 1rem; margin-top: .5rem; }
+    #mixer { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: flex-start; gap: .5rem; }
+    #masterStrip { flex: 0 0 auto; }
+    /* Vertical channel strips (console style) — narrow columns tiled across the width. */
+    .vstrip.master { border-color: #34507e; background: #1b2230; }
+    .vstrip.master .vname { color: #cfe0ff; }
+    .vstrip .vhead button.solo-w { flex: 1; }
+    /* Compact advanced per-track routing rows */
+    #tracks { display: flex; flex-direction: column; gap: .3rem; margin-top: .5rem; }
+    .trow { display: flex; align-items: center; justify-content: space-between; gap: .8rem;
+            padding: .35rem .55rem; border: 1px solid #23272f; border-radius: 6px; background: #181b21; }
+    .trow .tlabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .85rem; }
+    .trow .tsub { color: #8b93a1; font-size: .76rem; font-variant-numeric: tabular-nums; }
+    .trow .ms { flex: 0 0 auto; }
+    .vstrip { width: 124px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center;
+              gap: .45rem; padding: .55rem .4rem .55rem; border: 1px solid #23272f; border-radius: 8px; background: #181b21; }
+    .vstrip.drum { border-color: #3a3324; }
+    .vstrip .vname { width: 100%; text-align: center; font-size: .8rem; font-weight: 600; line-height: 1.15;
+                     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .vstrip .vaddr { display: block; color: #8b93a1; font-size: .67rem; font-weight: 400; font-variant-numeric: tabular-nums; }
+    .vstrip .vhead { display: flex; gap: .3rem; width: 100%; }
+    .vstrip .vhead button { flex: 1; padding: .26rem 0; font-size: .72rem; font-weight: 600; cursor: pointer;
+                            background: #2a2f3a; color: #9aa3b2; border: 0; border-radius: 5px; }
+    .vstrip .vhead button.on { background: #284a7a; color: #cfe0ff; }
+    .vstrip .vsend { display: flex; align-items: center; gap: .25rem; width: 100%; }
+    .vstrip .vsend label { width: 1.7rem; margin: 0; padding: 0; text-transform: none; letter-spacing: 0;
+                           font-size: .64rem; color: #8b93a1; }
+    .vstrip .vsend input[type=range] { flex: 1; min-width: 0; accent-color: #3b82f6; }
+    .vstrip .vsend .v { width: 1.9rem; text-align: right; font-size: .64rem; color: #cdd6e4; font-variant-numeric: tabular-nums; }
+    .vstrip .vms { display: flex; gap: .3rem; }
+    .vstrip .vms .ms { width: 1.8rem; padding: .2rem 0; font-size: .72rem; font-weight: 700; cursor: pointer;
+                       background: #23272f; color: #9aa3b2; border: 0; border-radius: 5px; }
+    .vstrip .vms .ms.on.mute { background: #5a2330; color: #f0c4cc; }
+    .vstrip .vms .ms.on.solo { background: #2f5d3b; color: #cdebd6; }
+    .vstrip .vfader { display: flex; flex-direction: column; align-items: center; gap: .2rem; margin-top: .15rem; }
+    .vstrip .vfader input[type=range] { writing-mode: vertical-lr; direction: rtl; width: 1.7rem; height: 132px; accent-color: #3b82f6; }
+    .vstrip .vgain { font-size: .72rem; font-variant-numeric: tabular-nums; color: #cdd6e4; }
+    /* Floating popovers (source-font picker / FX insert rack) — anchored to the strip header buttons. */
+    .pop { position: fixed; z-index: 100; display: none; background: #1a1d24; border: 1px solid #3a4250;
+           border-radius: 8px; padding: .6rem; box-shadow: 0 10px 34px rgba(0,0,0,.55); }
+    .pop.pop-open { display: block; }
+    .pop.src { width: 320px; }
+    .pop.fxpop { width: 540px; }
+    .pop .ov { display: flex; flex-direction: column; gap: .45rem; align-items: stretch; }
+    .pop .srcbtn { text-align: left; padding: .4rem .55rem; font-size: .85rem; font-weight: 400; background: #1e2128;
+                   color: #e6e6e6; border: 1px solid #333a46; border-radius: 6px; cursor: pointer; }
+    .pop .srcbtn.empty { color: #8b93a1; }
+    .pop select { width: 100%; padding: .4rem .45rem; font-size: .85rem; }
+    .pop .tag { font-size: .8rem; color: #6ee7a8; }
+    .pop .clear { align-self: flex-start; background: none; color: #8b93a1; font-weight: 400; font-size: .8rem;
+                  padding: .2rem .35rem; border: 0; cursor: pointer; }
+    .mixer-bar { display: flex; align-items: center; justify-content: space-between; gap: .6rem; margin: .6rem 0 .2rem; }
+    #mixerHint { color: #8b93a1; font-size: .82rem; margin-top: .5rem; }
 
     /* File browser dialog */
     #browseBackdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55);
@@ -143,16 +243,18 @@
     </aside>
 
     <section class="work">
-      <div class="work-head">
-        <label>Instruments</label>
-        <button id="resetAll" title="Revert every instrument in this song to the base font">Reset all</button>
-      </div>
-      <div id="tracks"></div>
-
-      <details id="patchWrap" hidden>
-        <summary class="patchSummary">Advanced: override by patch (channel + program)</summary>
-        <span id="patchHint" class="sub"></span>
-        <div id="patches"></div>
+      <details id="mixerWrap" open>
+        <summary><label>Parts &amp; master</label>
+          <span class="sub">one strip per track — source · mix · inserts, live</span></summary>
+        <div class="mixer-bar">
+          <span class="sub" id="mixerCount"></span>
+          <button id="resetAll" title="Revert every program to the base font (clears all source overrides)">Reset all</button>
+        </div>
+        <div class="mixer-area">
+          <div id="mixer"></div>
+          <div id="masterStrip"></div>
+        </div>
+        <div id="mixerHint">Analyze a song to load its parts.</div>
       </details>
     </section>
   </main>

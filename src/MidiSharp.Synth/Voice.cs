@@ -207,6 +207,13 @@ public sealed class Voice
     public int ExclusiveGroup => _exclusiveGroup;
     public int GenerationId => _generationId;
 
+    /// <summary>
+    /// The mixer instrument this voice belongs to — the (bank, program) its patch resolved to. Set by
+    /// the synth right after <see cref="Configure"/>; lets <c>Generate</c> look up the per-instrument
+    /// <see cref="InstrumentMix"/> trim. Stable across the piece, so a fader bound to it stays put.
+    /// </summary>
+    public InstrumentId Instrument { get; set; }
+
     /// <summary>The zone this voice was configured from — used to enforce SFZ per-region polyphony.</summary>
     public PatchZone? Zone { get; private set; }
     /// <summary>True when this voice should fade (not hard-cut) if turned off by a retrigger/off_by.</summary>
@@ -813,6 +820,15 @@ public sealed class Voice
     /// <param name="globalReverbFloor">Minimum reverb send applied to every
     /// voice regardless of zone-authored level (mirrors fluidsynth's
     /// <c>synth.reverb.level</c>).</param>
+    /// <param name="instrumentPanOffset">Per-instrument mixer pan trim (-1..+1) added on top of the
+    /// zone/channel pan. 0 = untouched (bit-identical).</param>
+    /// <param name="instrumentReverbAdd">Per-instrument mixer reverb send added to the voice's send.
+    /// 0 = untouched.</param>
+    /// <param name="instrumentChorusAdd">Per-instrument mixer chorus send added to the voice's send.
+    /// 0 = untouched.</param>
+    /// <param name="instrumentGainFactor">Per-instrument mixer mute/solo gate as a linear factor
+    /// (1 = pass, 0 = silence). The instrument's dB gain trim arrives folded into
+    /// <paramref name="extraAttenuationDb"/>, not here. 1 = untouched (bit-identical).</param>
     public void Process(
         Span<float> leftBuffer,
         Span<float> rightBuffer,
@@ -825,7 +841,11 @@ public sealed class Voice
         float balanceRight = 1f,
         double extraVibLfoDepthCents = 0,
         float globalReverbFloor = 0f,
-        float globalChorusFloor = 0f)
+        float globalChorusFloor = 0f,
+        double instrumentPanOffset = 0,
+        float instrumentReverbAdd = 0f,
+        float instrumentChorusAdd = 0f,
+        float instrumentGainFactor = 1f)
     {
         if (_state == VoiceState.Free || _sampleSource == null) return;
 
@@ -925,8 +945,10 @@ public sealed class Voice
         }
 
         // Effective per-block values: zone base + route contribution.
+        // The per-instrument mixer pan is an additive offset (0 = untouched), matching the "trim, not
+        // override" rule — it rides on top of the channel/zone pan rather than replacing it.
         double effectiveAttenuationDb = _attenuationDb + contrib.AttenuationDb + extraAttenuationDb;
-        double effectivePan = Math.Clamp(_panNormalized + contrib.PanNormalized, -1.0, 1.0);
+        double effectivePan = Math.Clamp(_panNormalized + contrib.PanNormalized + instrumentPanOffset, -1.0, 1.0);
         double effectiveVibLfoDepthCents =
             _vibLfoPitchDepthCents + contrib.VibratoLfoPitchDepthCents + extraVibLfoDepthCents;
         double effectiveModLfoPitchDepthCents = _modLfoPitchDepthCents + contrib.ModulationLfoPitchDepthCents;
@@ -935,8 +957,9 @@ public sealed class Voice
         double effectiveModEnvFilterDepthCents = _modEnvFilterDepthCents + contrib.ModulationEnvelopeToFilterCents;
         double effectiveModEnvPitchDepthCents = _modEnvPitchDepthCents + contrib.ModulationEnvelopeToPitchCents;
 
-        double effectiveReverbSend = Math.Max(0.0, _reverbSend + contrib.ReverbSendAmount);
-        double effectiveChorusSend = Math.Max(0.0, _chorusSend + contrib.ChorusSendAmount);
+        // Per-instrument mixer sends are additive on top of the voice's existing send (0 = untouched).
+        double effectiveReverbSend = Math.Max(0.0, _reverbSend + contrib.ReverbSendAmount + instrumentReverbAdd);
+        double effectiveChorusSend = Math.Max(0.0, _chorusSend + contrib.ChorusSendAmount + instrumentChorusAdd);
         float reverbSendScale = Math.Max(globalReverbFloor, (float)effectiveReverbSend);
         float chorusSendScale = Math.Max(globalChorusFloor, (float)effectiveChorusSend);
 
@@ -1079,7 +1102,10 @@ public sealed class Voice
                 _cachedAttenuationDb = totalAttenuationDb;
                 _cachedLinearGain = Math.Pow(10.0, -totalAttenuationDb / 20.0);
             }
-            double gain = _cachedLinearGain * volEnv * _ampVelCurveFactor * ccCrossfadeGain;
+            // instrumentGainFactor is the mixer mute/solo gate (1 = pass, 0 = silence); ×1 is
+            // bit-identical, so an untouched instrument is unaffected. Envelopes still advance above,
+            // so a muted/soloed-out voice keeps correct timing and releases on schedule.
+            double gain = _cachedLinearGain * volEnv * _ampVelCurveFactor * ccCrossfadeGain * instrumentGainFactor;
 
             if (_channels == 1)
             {

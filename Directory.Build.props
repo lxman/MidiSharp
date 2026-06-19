@@ -4,7 +4,7 @@
        (src/MidiSharp and src/MidiSharp.Synth.OwnAudio) set IsPackable=true; everything
        else inherits the IsPackable=false default below. -->
   <PropertyGroup>
-    <Version>0.9.0</Version>
+    <Version>0.10.0</Version>
     <Authors>Michael Jordan</Authors>
     <Product>MidiSharp</Product>
     <Copyright>Copyright (c) 2026 Michael Jordan</Copyright>
@@ -27,5 +27,13 @@
     <!-- Off by default; the package hosts opt in. -->
     <IsPackable>false</IsPackable>
   </PropertyGroup>
+
+  <!-- Shared IsExternalInit shim: one source file compiled into every netstandard2.1 library so each
+       assembly gets its own internal copy (init/records need it; the netstandard2.1 BCL lacks it).
+       net10.0 projects already have it in-box. The vendored NVorbis fork uses no init/records, so it's
+       excluded to keep that assembly's surface a minimal diff from upstream. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1' AND '$(MSBuildProjectName)' != 'NVorbis'">
+    <Compile Include="$(MSBuildThisFileDirectory)build\IsExternalInit.cs" Link="Internal\IsExternalInit.cs" Visible="false" />
+  </ItemGroup>
 
 </Project>

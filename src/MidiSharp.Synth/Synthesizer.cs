@@ -14,6 +14,16 @@ public sealed class Synthesizer
     private const int MaxVoices = 512;
     private const int ChannelCount = 16;
 
+    /// <summary>
+    /// Synthetic bank under which a voice's mixer identity is keyed by its source MIDI track (a note's
+    /// mix id becomes (<see cref="TrackMixBank"/>, trackIndex)). Lets the mixer group by part/track
+    /// rather than by sound, so a performer keeps one fader even as their program changes — and two
+    /// tracks sharing a program get separate faders. Far above any real or track-override bank so it
+    /// never collides. A note with no track (trackIndex &lt; 0, e.g. live input) falls back to keying
+    /// by its resolved (bank, program).
+    /// </summary>
+    public const int TrackMixBank = 2_000_000;
+
     private readonly Voice[] _voices;
     private readonly ChannelState[] _channels;
     private readonly int _sampleRate;
@@ -30,6 +40,23 @@ public sealed class Synthesizer
     private IReadOnlyDictionary<int, (int Bank, int Program)> _trackPatchMap = EmptyTrackPatchMap;
     private static readonly IReadOnlyDictionary<int, (int Bank, int Program)> EmptyTrackPatchMap
         = new Dictionary<int, (int Bank, int Program)>();
+
+    // Tier-1 per-instrument mixer trims, keyed by the (bank, program) a note's patch resolves to.
+    // Empty by default — while empty the voice loop takes the exact pre-mixer path (Generate gates on
+    // Count), so playback is bit-identical until a control is touched. Entries are created lazily and
+    // mutated in place so a live fader move is heard by notes already sounding.
+    private readonly Dictionary<InstrumentId, InstrumentMix> _instrumentMixes = new();
+    private bool _anySolo;   // recomputed once per Generate when any mix exists
+
+    // Tier-2 per-instrument insert effects (host-supplied DSP). Published as an immutable snapshot and
+    // read once per Generate, so a live add/remove from the control thread never tears the audio read.
+    // Empty by default → Generate takes the exact pre-Tier-2 path (no buses), bit-identical.
+    private volatile IReadOnlyDictionary<InstrumentId, IInstrumentInsert> _instrumentInserts = EmptyInserts;
+    private static readonly IReadOnlyDictionary<InstrumentId, IInstrumentInsert> EmptyInserts
+        = new Dictionary<InstrumentId, IInstrumentInsert>();
+    // Private per-instrument bus buffers, allocated lazily for instruments that have an insert. Owned
+    // solely by the audio thread (only Generate touches it), so it needs no synchronization.
+    private readonly Dictionary<InstrumentId, InstrumentBus> _buses = new();
 
     // Temporary buffers for mixing
     private float[] _leftBuffer;
@@ -182,6 +209,59 @@ public sealed class Synthesizer
         => _trackPatchMap = map ?? EmptyTrackPatchMap;
 
     /// <summary>
+    /// The live per-instrument mixer trims, keyed by the (bank, program) a note's patch resolves to.
+    /// Read-only view; obtain a mutable entry with <see cref="GetInstrumentMix"/>. Empty until a mix
+    /// is first requested — while empty, playback is bit-identical to the pre-mixer engine.
+    /// </summary>
+    public IReadOnlyDictionary<InstrumentId, InstrumentMix> InstrumentMixes => _instrumentMixes;
+
+    /// <summary>
+    /// Returns the mutable <see cref="InstrumentMix"/> trim for an instrument, creating a no-op entry
+    /// on first request. Edit the returned object live (gain/pan/mute/solo/sends) — notes already
+    /// sounding for that instrument pick the change up on their next audio block. The default entry is
+    /// a true no-op, so requesting (and not changing) a mix leaves playback bit-identical.
+    /// </summary>
+    public InstrumentMix GetInstrumentMix(int bank, int program)
+    {
+        var id = new InstrumentId(bank, program);
+        if (!_instrumentMixes.TryGetValue(id, out var mix))
+        {
+            mix = new InstrumentMix();
+            _instrumentMixes[id] = mix;
+        }
+        return mix;
+    }
+
+    /// <summary>Gets an existing instrument mix without creating one. Returns false if untouched.</summary>
+    public bool TryGetInstrumentMix(int bank, int program, out InstrumentMix mix)
+        => _instrumentMixes.TryGetValue(new InstrumentId(bank, program), out mix!);
+
+    /// <summary>Removes all per-instrument mixer trims, returning the engine to its bit-identical
+    /// pre-mixer path.</summary>
+    public void ClearInstrumentMixes() => _instrumentMixes.Clear();
+
+    /// <summary>
+    /// Registers (or, with a null <paramref name="insert"/>, removes) a per-instrument insert effect
+    /// for the instrument at (<paramref name="bank"/>, <paramref name="program"/>). The instrument's
+    /// voices are then summed into a private bus, run through <paramref name="insert"/>, and mixed to
+    /// master. Thread-safe vs. the audio thread (publishes a new snapshot). Instruments without an
+    /// insert are unaffected and stay bit-identical.
+    /// </summary>
+    public void SetInstrumentInsert(int bank, int program, IInstrumentInsert? insert)
+    {
+        var id = new InstrumentId(bank, program);
+        var copy = new Dictionary<InstrumentId, IInstrumentInsert>(_instrumentInserts);
+        if (insert == null) copy.Remove(id); else copy[id] = insert;
+        _instrumentInserts = copy;
+    }
+
+    /// <summary>Removes all per-instrument inserts.</summary>
+    public void ClearInstrumentInserts() => _instrumentInserts = EmptyInserts;
+
+    /// <summary>The currently registered per-instrument inserts (read-only snapshot).</summary>
+    public IReadOnlyDictionary<InstrumentId, IInstrumentInsert> InstrumentInserts => _instrumentInserts;
+
+    /// <summary>
     /// Processes a MIDI note on event.
     /// </summary>
     public void NoteOn(int channel, int key, int velocity) => NoteOn(channel, key, velocity, -1);
@@ -324,6 +404,15 @@ public sealed class Synthesizer
                 KillVoicesByExclusiveClass(channel, eg);
 
             voice.Configure(zone, samples, key, velocity, channel, ++_generationCounter, channelState);
+
+            // Tag the voice with its mixer instrument id. With a known source track we key by the TRACK
+            // (so the mixer groups by part — one fader per performer, stable across program changes, and
+            // two tracks sharing a program stay separate). Without a track (live input) we fall back to
+            // the resolved (bank, program). The source patch — native or a per-track/patch override — is
+            // independent of this mix id.
+            voice.Instrument = trackIndex >= 0
+                ? new InstrumentId(TrackMixBank, trackIndex)
+                : new InstrumentId(patch.Bank, patch.Program);
 
             // SFZ polyphony: cap simultaneous voices from this region, stealing the oldest past the limit
             // (the just-allocated voice has the highest generation, so it survives unless the cap is 0).
@@ -1248,6 +1337,22 @@ public sealed class Synthesizer
         reverbSend.Clear();
         chorusSend.Clear();
 
+        // Tier-1 mixer: only do any per-instrument work when at least one trim exists. While the map is
+        // empty this whole layer is skipped and the voice loop is the exact pre-mixer code path.
+        bool mixerActive = _instrumentMixes.Count != 0;
+        if (mixerActive)
+        {
+            _anySolo = false;
+            foreach (var m in _instrumentMixes.Values)
+                if (m.Solo) { _anySolo = true; break; }
+        }
+
+        // Tier-2 inserts: read the immutable snapshot once (stable for this block). When any exist,
+        // instruments with an insert render into a private bus instead of straight into master.
+        var inserts = _instrumentInserts;
+        bool hasInserts = inserts.Count != 0;
+        if (hasInserts) PrepareBuses(inserts, frames);
+
         // Process each voice — writes dry signal to L/R AND mono signal to send buses
         foreach (var voice in _voices)
         {
@@ -1289,19 +1394,55 @@ public sealed class Synthesizer
                 + _masterTuneCents
                 + _masterKeyShiftSemitones * 100.0;
 
+            // Per-instrument mixer trim. gain → an attenuation offset (rides on top of CC7/CC11);
+            // pan/sends → additive offsets; mute/solo → a linear gate factor. All no-ops when the
+            // instrument has no entry, so untouched instruments render bit-identically.
+            double instAttenDb = 0.0, instPan = 0.0;
+            float instReverbAdd = 0f, instChorusAdd = 0f, instGainFactor = 1f;
+            if (mixerActive)
+            {
+                _instrumentMixes.TryGetValue(voice.Instrument, out var mix);
+                if (mix != null)
+                {
+                    instAttenDb = -mix.GainDb;
+                    instPan = mix.Pan;
+                    instReverbAdd = (float)mix.ReverbSend;
+                    instChorusAdd = (float)mix.ChorusSend;
+                }
+                // Solo silences every non-soloed instrument (including ones with no entry); mute
+                // silences unconditionally.
+                if (_anySolo && mix is not { Solo: true }) instGainFactor = 0f;
+                if (mix is { Mute: true }) instGainFactor = 0f;
+            }
+
+            // Tier-2: route this voice's dry signal to its instrument's private bus when that
+            // instrument has an insert; otherwise straight to master (the pre-Tier-2 path). The
+            // reverb/chorus sends stay global — taken pre-insert, as today.
+            Span<float> outL = left, outR = right;
+            if (hasInserts && inserts.ContainsKey(voice.Instrument))
+            {
+                var bus = _buses[voice.Instrument];
+                outL = bus.L.AsSpan(0, frames);
+                outR = bus.R.AsSpan(0, frames);
+            }
+
             voice.Process(
-                left,
-                right,
+                outL,
+                outR,
                 reverbSend,
                 chorusSend,
                 channelState,
-                extraAttenuationDb: softPedalAttenDb + tremoloAttenDb,
+                extraAttenuationDb: softPedalAttenDb + tremoloAttenDb + instAttenDb,
                 nonBendPitchCents: nonBendPitchCents,
                 balanceLeft: balanceLeft,
                 balanceRight: balanceRight,
                 extraVibLfoDepthCents: extraVibCents,
                 globalReverbFloor: GlobalReverbSend,
-                globalChorusFloor: GlobalChorusSend);
+                globalChorusFloor: GlobalChorusSend,
+                instrumentPanOffset: instPan,
+                instrumentReverbAdd: instReverbAdd,
+                instrumentChorusAdd: instChorusAdd,
+                instrumentGainFactor: instGainFactor);
 
             // Check if voice finished
             if (voice.IsFinished)
@@ -1316,6 +1457,10 @@ public sealed class Synthesizer
             _tremoloPhase[c] += tremoloStep;
             if (_tremoloPhase[c] > 2.0 * Math.PI) _tremoloPhase[c] -= 2.0 * Math.PI;
         }
+
+        // Tier-2: run each instrument's insert on its private bus, then sum the result into master.
+        // Done before the global reverb/chorus so the wet tails sit on top of the inserted dry signal.
+        if (hasInserts) MixBusesToMaster(inserts, left, right, frames);
 
         // Mix wet effect output back into the main L/R buffer.
         _reverb.Process(reverbSend, left, right);
@@ -1491,6 +1636,76 @@ public sealed class Synthesizer
         {
             if (voice.Channel == channel)
                 voice.Kill();
+        }
+    }
+
+    // Ensure a sized, cleared private bus exists for every instrument that currently has an insert.
+    // Reuses buffers across blocks; stale buses (for instruments whose insert was removed) are left
+    // alone — they're never read, since routing and MixBusesToMaster both key off the insert snapshot.
+    private void PrepareBuses(IReadOnlyDictionary<InstrumentId, IInstrumentInsert> inserts, int frames)
+    {
+        foreach (var id in inserts.Keys)
+        {
+            if (!_buses.TryGetValue(id, out var bus))
+            {
+                bus = new InstrumentBus(frames);
+                _buses[id] = bus;
+            }
+            else bus.EnsureSize(frames);
+            bus.Clear(frames);
+        }
+    }
+
+    // For each instrument with an insert: interleave its bus, run the insert in place, then sum the
+    // result into master L/R. A bus with no voices this block is all-zeros and contributes nothing.
+    private void MixBusesToMaster(IReadOnlyDictionary<InstrumentId, IInstrumentInsert> inserts,
+        Span<float> left, Span<float> right, int frames)
+    {
+        foreach (var kv in inserts)
+        {
+            if (!_buses.TryGetValue(kv.Key, out var bus)) continue;
+            var interleaved = bus.Interleaved;
+            for (int i = 0; i < frames; i++)
+            {
+                interleaved[i * 2] = bus.L[i];
+                interleaved[i * 2 + 1] = bus.R[i];
+            }
+            kv.Value.Process(interleaved.AsSpan(0, frames * 2));
+            for (int i = 0; i < frames; i++)
+            {
+                left[i] += interleaved[i * 2];
+                right[i] += interleaved[i * 2 + 1];
+            }
+        }
+    }
+
+    // A private stereo bus for one instrument's voices: separate L/R the voices add into, plus an
+    // interleaved scratch for the insert (which takes interleaved stereo). Grows if the block does.
+    private sealed class InstrumentBus
+    {
+        public float[] L;
+        public float[] R;
+        public float[] Interleaved;
+
+        public InstrumentBus(int frames)
+        {
+            L = new float[frames];
+            R = new float[frames];
+            Interleaved = new float[frames * 2];
+        }
+
+        public void EnsureSize(int frames)
+        {
+            if (L.Length >= frames) return;
+            L = new float[frames];
+            R = new float[frames];
+            Interleaved = new float[frames * 2];
+        }
+
+        public void Clear(int frames)
+        {
+            System.Array.Clear(L, 0, frames);
+            System.Array.Clear(R, 0, frames);
         }
     }
 }

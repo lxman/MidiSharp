@@ -13,6 +13,7 @@
     <ProjectReference Include="..\..\src\MidiSharp.PatchMap\MidiSharp.PatchMap.csproj" />
     <ProjectReference Include="..\..\src\MidiSharp.Synth\MidiSharp.Synth.csproj" />
     <ProjectReference Include="..\..\src\MidiSharp.Synth.OwnAudio\MidiSharp.Synth.OwnAudio.csproj" />
+    <ProjectReference Include="..\..\src\MidiSharp.Dsp\MidiSharp.Dsp.csproj" />
   </ItemGroup>
 
 </Project>

@@ -4,6 +4,7 @@ using MidiSharp.PatchMap;
 using MidiSharp.SoundBank;
 using MidiSharp.Synth;
 using MidiSharp.Synth.OwnAudio;
+using MidiSharp.Dsp;
 using IRBank = MidiSharp.SoundBank.SoundBank;
 
 namespace MidiSharp.Server;
@@ -11,9 +12,25 @@ namespace MidiSharp.Server;
 public enum PlayerState { Idle, Playing, Completed }
 
 public sealed record DeviceDto(string id, string name, string engine, bool isDefault);
-public sealed record PatchOverrideDto(int logicalBank, int logicalProgram, string sourcePath, int sourceBank, int sourceProgram);
-public sealed record TrackOverrideDto(int trackIndex, string? trackName, string sourcePath, int sourceBank, int sourceProgram);
-public sealed record PlayRequest(string? deviceId, string midiPath, string soundfontPath, PatchOverrideDto[]? overrides = null, TrackOverrideDto[]? trackOverrides = null);
+public sealed record PatchOverrideDto(int logicalBank, int logicalProgram, string sourcePath, int sourceBank, int sourceProgram, double gainDb = 0);
+public sealed record TrackOverrideDto(int trackIndex, string? trackName, string sourcePath, int sourceBank, int sourceProgram, double gainDb = 0);
+// Per-track mixer strip, keyed by source MIDI track (the engine mixes by track → (TrackMixBank,
+// trackIndex)). All fields default to no-ops. `inserts` is the track's Tier-2 insert rack.
+public sealed record InstrumentMixDto(int trackIndex, double gainDb = 0, double pan = 0, bool mute = false, bool solo = false, double reverbSend = 0, double chorusSend = 0, EffectDto[]? inserts = null);
+// A live per-track insert-rack update.
+public sealed record InstrumentInsertDto(int trackIndex, EffectDto[]? effects = null);
+// One master-EQ band. type is "lowshelf" | "highshelf" | "peaking" (others map to peaking).
+public sealed record EqBandDto(string type, double freqHz, double q, double gainDb);
+// One effect in a rack (ordered insert chain). type = "eq" | "limiter"; only the fields its type uses
+// are read. enabled=false leaves it in the rack's order but out of the signal path.
+public sealed record EffectDto(string type, bool enabled = true, EqBandDto[]? eqBands = null,
+    double ceilingDb = -1.0, double releaseMs = 100.0);
+// Master-bus DSP: an ordered effect rack. The legacy scalar fields are still accepted (older clients /
+// saved setups) and synthesized into an [eq, limiter] rack when `effects` is absent.
+public sealed record MasterDto(EffectDto[]? effects = null, double masterGainDb = 0,
+    bool limiterEnabled = false, double ceilingDb = -1.0, double releaseMs = 100.0,
+    bool eqEnabled = false, EqBandDto[]? eqBands = null);
+public sealed record PlayRequest(string? deviceId, string midiPath, string soundfontPath, PatchOverrideDto[]? overrides = null, TrackOverrideDto[]? trackOverrides = null, InstrumentMixDto[]? mix = null, MasterDto? master = null);
 public sealed record PlayResponse(bool ok, double durationSeconds, string[] defects, string? error);
 public sealed record StatusDto(string state, double positionSeconds, double durationSeconds, string? midi, string? soundfont);
 public sealed record UsedPatchDto(int bank, int program, string? name, bool isDrum, int[] channels);
@@ -38,6 +55,13 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
     private RealtimePlayer? _player;
     private Synthesizer? _synth;
     private PatchMapSession? _session;   // owns the base + override source fonts for the current play
+
+    // Master-bus DSP rack, caller-side (the synth has no reference to MidiSharp.Dsp). Persists across
+    // plays (it's a setting); applied in the audio callback after the synth fills the block.
+    private readonly EffectRack _masterRack = new(SampleRate);
+    // Per-track insert racks, keyed by trackIndex. Rebuilt from the play request and updated live;
+    // a non-empty rack is registered with the synth as that track's IInstrumentInsert.
+    private readonly Dictionary<int, EffectRack> _instrumentRacks = new();
     private PlayerState _state = PlayerState.Idle;
     private string? _midiName;
     private string? _soundfontName;
@@ -121,10 +145,24 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
                 var composite = session.BuildResolved();
                 synth.LoadSoundFont(composite.Bank);
                 synth.SetTrackPatchMap(composite.TrackPatchMap);
+                // Override gainDb seeds the per-instrument gain; the mixer array then takes authority
+                // (gain/pan/mute/solo/sends). Master DSP (limiter) is configured from the request too.
+                ApplyInstrumentGains(synth, req.overrides, req.trackOverrides, composite);
+                ApplyInstrumentMix(synth, req.mix);
+                ApplyInstrumentInserts(synth, req.mix);
+                ConfigureMaster(req.master);
+                _masterRack.Reset();
                 var player = new RealtimePlayer(midi, synth);
                 var output = new OwnAudioOutput(SampleRate, channels: 2,
                     outputDeviceId: string.IsNullOrEmpty(req.deviceId) ? null : req.deviceId);
-                output.SetCallback((buffer, frames) => player.ProcessBlockInterleaved(buffer.AsSpan(0, frames * 2)));
+                // Synth fills the block (per-instrument inserts already applied inside it); the master
+                // rack processes the summed mix caller-side before output.
+                output.SetCallback((buffer, frames) =>
+                {
+                    var span = buffer.AsSpan(0, frames * 2);
+                    player.ProcessBlockInterleaved(span);
+                    _masterRack.Process(span);
+                });
                 output.Start();
 
                 _output = output;
@@ -175,6 +213,111 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
             var src = LoadSource(session, byPath, o.sourcePath);
             session.SetTrackOverride(o.trackIndex, new PatchRef(src, o.sourceBank, o.sourceProgram));
         }
+    }
+
+    // Apply each override's per-instrument gain trim (dB) to the loaded synth. The trim is keyed by the
+    // instrument id a note resolves to: a patch override's logical (bank, program), or a track
+    // override's synthetic address from the composite's track→patch map. This is the orchestration
+    // balance knob — e.g. lifting CC1-dynamics strings (authored ~30 dB down) that a GM file's CC1=0
+    // would otherwise pin to silence. Zero gain is skipped so an all-zero setup leaves the engine on
+    // its bit-identical pre-mixer path.
+    private static void ApplyInstrumentGains(Synthesizer synth, PatchOverrideDto[]? overrides,
+        TrackOverrideDto[]? trackOverrides, CompositeResult composite)
+    {
+        if (overrides != null)
+            foreach (var o in overrides)
+                if (o.gainDb != 0)
+                    synth.GetInstrumentMix(o.logicalBank, o.logicalProgram).GainDb = o.gainDb;
+
+        if (trackOverrides != null)
+            foreach (var o in trackOverrides)
+                if (o.gainDb != 0 && composite.TrackPatchMap.TryGetValue(o.trackIndex, out var addr))
+                    synth.GetInstrumentMix(addr.Bank, addr.Program).GainDb = o.gainDb;
+    }
+
+    // Apply the per-instrument mixer strips to the loaded synth. gainDb here is absolute and supersedes
+    // the override-seeded gain; pan/mute/solo/sends are the rest of the Tier-1 strip.
+    private static void ApplyInstrumentMix(Synthesizer synth, InstrumentMixDto[]? mix)
+    {
+        if (mix == null) return;
+        foreach (var m in mix) ApplyOneMix(synth, m);
+    }
+
+    private static void ApplyOneMix(Synthesizer synth, InstrumentMixDto m)
+    {
+        var im = synth.GetInstrumentMix(Synthesizer.TrackMixBank, m.trackIndex);
+        im.GainDb = m.gainDb;
+        im.Pan = m.pan;
+        im.Mute = m.mute;
+        im.Solo = m.solo;
+        im.ReverbSend = m.reverbSend;
+        im.ChorusSend = m.chorusSend;
+    }
+
+    // Configure the master rack from an ordered effect list (the explicit `effects`, else an
+    // [eq, limiter] rack synthesized from the legacy scalar fields for back-compat).
+    private void ConfigureMaster(MasterDto? master) => _masterRack.Configure(ResolveEffects(master), master?.masterGainDb ?? 0);
+
+    private static EffectDto[] ResolveEffects(MasterDto? m)
+    {
+        if (m == null) return System.Array.Empty<EffectDto>();
+        if (m.effects != null) return m.effects;
+        return new[]
+        {
+            new EffectDto("eq", m.eqEnabled, m.eqBands),
+            new EffectDto("limiter", m.limiterEnabled, null, m.ceilingDb, m.releaseMs),
+        };
+    }
+
+    // Rebuild the per-instrument insert racks from the play request and register the non-empty ones
+    // with the synth (an instrument with no inserts pays nothing — the synth stays on its bypass path).
+    private void ApplyInstrumentInserts(Synthesizer synth, InstrumentMixDto[]? mix)
+    {
+        _instrumentRacks.Clear();
+        if (mix == null) return;
+        foreach (var m in mix)
+        {
+            if (m.inserts == null || m.inserts.Length == 0) continue;
+            var rack = new EffectRack(SampleRate);
+            rack.Configure(m.inserts);
+            _instrumentRacks[m.trackIndex] = rack;
+            if (!rack.IsEmpty) synth.SetInstrumentInsert(Synthesizer.TrackMixBank, m.trackIndex, rack);
+        }
+    }
+
+    /// <summary>
+    /// Live per-instrument insert-rack update — reconfigures (or creates) the instrument's rack and
+    /// registers/unregisters it with the running synth without a restart. The rack instance persists,
+    /// so its DSP state survives edits.
+    /// </summary>
+    public void SetInstrumentInsert(InstrumentInsertDto dto)
+    {
+        lock (_lock)
+        {
+            if (!_instrumentRacks.TryGetValue(dto.trackIndex, out var rack))
+            {
+                rack = new EffectRack(SampleRate);
+                _instrumentRacks[dto.trackIndex] = rack;
+            }
+            rack.Configure(dto.effects);
+            _synth?.SetInstrumentInsert(Synthesizer.TrackMixBank, dto.trackIndex, rack.IsEmpty ? null : rack);
+        }
+    }
+
+    /// <summary>
+    /// Live per-instrument mixer update — applied to the currently-playing synth without a restart.
+    /// No-op (but harmless) when nothing is playing; the browser re-sends the full mixer state on Play.
+    /// </summary>
+    public void SetInstrumentMix(InstrumentMixDto m)
+    {
+        lock (_lock)
+            if (_synth != null) ApplyOneMix(_synth, m);
+    }
+
+    /// <summary>Live master-bus (limiter) update — applied immediately; persists across plays.</summary>
+    public void SetMaster(MasterDto m)
+    {
+        lock (_lock) ConfigureMaster(m);
     }
 
     private static IRBank LoadSource(PatchMapSession session, Dictionary<string, IRBank> byPath, string path)

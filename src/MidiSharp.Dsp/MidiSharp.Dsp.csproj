@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Buffer-processing DSP library — the "plugins" layer. Deliberately has NO reference to
+    MidiSharp.Synth or any MIDI/soundfont code: processors operate purely on interleaved-stereo
+    float blocks. The host (server / live-audio adapter) wires these into the audio-callback seam.
+    Bundled into the MidiSharp.Player umbrella; never a standalone package.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>MidiSharp.Dsp</RootNamespace>
+  </PropertyGroup>
+
+</Project>

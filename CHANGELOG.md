@@ -4,6 +4,45 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.0] - 2026-06-19
+
+A mixing-and-effects layer on top of the renderer — without touching the spec-faithful core.
+
+### Added
+
+- **`MidiSharp.Dsp`** — a new, decoupled buffer-processing DSP library (bundled into `MidiSharp.Player`,
+  no dependency on the synth or MIDI): `IAudioProcessor`, a lock-free reorderable `ProcessorChain`, a
+  clean-room RBJ `BiquadFilter` (6 response types), a stereo `ParametricEq`, a stereo-linked brickwall
+  `LimiterProcessor`, and `GainProcessor`.
+- **Per-instrument mixer in the synth** — `Synthesizer.GetInstrumentMix(bank, program)` exposes a live
+  `InstrumentMix` (gain trim / pan offset / mute / solo / reverb + chorus sends). The gain *augments* the
+  file's own CC7/CC11 automation rather than replacing it; an untouched mixer is **bit-identical** to the
+  previous engine.
+- **Per-instrument insert effects (Tier-2)** — `IInstrumentInsert` lets the host shape one instrument's
+  signal (its voices sum into a private bus → the insert → master). Instruments with no insert are
+  bit-identical. The synth stays decoupled from `MidiSharp.Dsp` through this hook.
+- **Web player is now a live mixing console** — one channel strip per MIDI **track** (source-font
+  substitution + fader/pan/sends/mute/solo + a drag-and-drop EQ/limiter insert rack), a master strip with
+  its own EQ/limiter rack and output fader, all live over `/api/mix`, `/api/insert`, `/api/master`.
+  Setups now persist per-track mix + inserts + master.
+- **`MidiSharp.Demo --limiter [ceilingDb]`** — inserts a master brickwall limiter on the WAV-render path.
+
+### Changed
+
+- The web mixer keys each strip on the source MIDI **track** (the part), so a performer keeps one fader as
+  their program changes and two tracks sharing a program get independent faders.
+- Consolidated the per-assembly `IsExternalInit` shim into a single shared source file compiled across the
+  netstandard2.1 libraries (`build/IsExternalInit.cs` via `Directory.Build.props`).
+- 238 unit tests (up from 209), including the mixer/insert engine and the DSP effects; CI green on Linux,
+  Windows, and macOS; 0 build warnings.
+
+### Notes
+
+- The synth itself is unchanged in what it renders — all mixing/EQ/limiting is caller-side DSP, kept out of
+  the renderer on purpose.
+- Setups saved by 0.9.0 still load: their instrument substitutions apply, but pre-existing per-program
+  gains don't carry to the new per-track faders (re-balance on the strips).
+
 ## [0.9.0] - 2026-06-19
 
 First public release. 🎹
@@ -78,4 +117,5 @@ The Ogg Vorbis decoder (`MidiSharp.Audio.Vorbis`) is a maintained fork of
 
 **License:** MIT.
 
+[0.10.0]: https://github.com/lxman/MidiSharp/releases/tag/v0.10.0
 [0.9.0]: https://github.com/lxman/MidiSharp/releases/tag/v0.9.0

@@ -12,6 +12,9 @@
   <Folder Name="/PatchMap/">
     <Project Path="src/MidiSharp.PatchMap/MidiSharp.PatchMap.csproj" />
   </Folder>
+  <Folder Name="/Dsp/">
+    <Project Path="src/MidiSharp.Dsp/MidiSharp.Dsp.csproj" />
+  </Folder>
   <Folder Name="/Loader/">
     <Project Path="src/MidiSharp.Loader/MidiSharp.Loader.csproj" />
   </Folder>
@@ -34,6 +37,7 @@
   <Folder Name="/Tests/">
     <Project Path="tests/MidiSharp.Audio.Tests/MidiSharp.Audio.Tests.csproj" />
     <Project Path="tests/MidiSharp.Core.Tests/MidiSharp.Core.Tests.csproj" />
+    <Project Path="tests/MidiSharp.Dsp.Tests/MidiSharp.Dsp.Tests.csproj" />
     <Project Path="tests/MidiSharp.Loader.Tests/MidiSharp.Loader.Tests.csproj" />
     <Project Path="tests/MidiSharp.PatchMap.Tests/MidiSharp.PatchMap.Tests.csproj" />
     <Project Path="tests/MidiSharp.Synth.Tests/MidiSharp.Synth.Tests.csproj" />

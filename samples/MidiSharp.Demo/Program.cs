@@ -12,6 +12,7 @@ using MidiSharp.PatchMap;
 using MidiSharp.SoundBank;
 using MidiSharp.Synth;
 using MidiSharp.Synth.OwnAudio;
+using MidiSharp.Dsp;
 using IRBank = MidiSharp.SoundBank.SoundBank;
 
 // Flags may appear anywhere; everything else is positional (<midi> <sf2> [out.wav]).
@@ -21,6 +22,7 @@ var listPatches = false;
 string? sfzReportTarget = null;
 string? setupSpec = null;
 var sampleRate = 48000;   // default = PipeWire/JACK graph rate; --rate overrides (WAV export / live engine rate)
+double? limiterCeilingDb = null;   // --limiter [ceilingDb] inserts a brickwall master limiter
 for (var i = 0; i < args.Length; i++)
 {
     switch (args[i])
@@ -41,6 +43,13 @@ for (var i = 0; i < args.Length; i++)
         case "--rate":
             if (i + 1 >= args.Length || !int.TryParse(args[++i], out sampleRate) || sampleRate is < 8000 or > 384000)
             { Console.WriteLine("--rate needs a sample rate in Hz (8000-384000), e.g. --rate 44100"); return 1; }
+            break;
+        case "--limiter":
+            // Optional numeric ceiling in dBFS follows; default -1.0. A dense mix can overshoot 0 dBFS
+            // and clip on export — this brickwalls the master output so it never does.
+            limiterCeilingDb = -1.0;
+            if (i + 1 < args.Length && double.TryParse(args[i + 1], System.Globalization.CultureInfo.InvariantCulture, out var parsedCeil))
+            { limiterCeilingDb = parsedCeil; i++; }
             break;
         default: positionals.Add(args[i]); break;
     }
@@ -195,13 +204,38 @@ var synth = new Synthesizer(sampleRate);
 synth.LoadSoundFont(playBank);
 if (trackPatchMap != null) synth.SetTrackPatchMap(trackPatchMap);
 
+// Per-instrument gain trims from the setup (the orchestration balance knob). A patch override's trim
+// keys on its logical (bank, program); a track override's on the synthetic address it resolved to.
+// Zero is skipped so an all-zero setup stays on the synth's bit-identical pre-mixer path.
+if (setup != null)
+{
+    foreach (var o in setup.overrides ?? [])
+        if (o.gainDb != 0)
+            synth.GetInstrumentMix(o.logicalBank, o.logicalProgram).GainDb = o.gainDb;
+    if (trackPatchMap != null)
+        foreach (var o in setup.trackOverrides ?? [])
+            if (o.gainDb != 0 && trackPatchMap.TryGetValue(o.trackIndex, out var addr))
+                synth.GetInstrumentMix(addr.Bank, addr.Program).GainDb = o.gainDb;
+}
+
+// Optional master DSP chain (caller-side, outside the synth). --limiter inserts a brickwall limiter
+// so a dense mix can't overshoot 0 dBFS on export. The synth has no reference to MidiSharp.Dsp; this
+// is wired here in the host, at the seam between the rendered block and the output.
+ProcessorChain? masterChain = null;
+if (limiterCeilingDb is { } ceil)
+{
+    masterChain = new ProcessorChain();
+    masterChain.Add(new LimiterProcessor(sampleRate) { CeilingDb = ceil });
+    Console.WriteLine($"  master limiter: ceiling {ceil:F1} dBFS");
+}
+
 // One player, two modes — the same RealtimePlayer drives both live audio and
 // offline rendering. The render path pulls blocks synchronously in a loop;
 // the live path lets the audio backend pull blocks via its callback.
 var player = new RealtimePlayer(midiFile, synth);
 
 var exitCode = renderPath != null
-    ? RenderToWav(player, renderPath, sampleRate)
+    ? RenderToWav(player, renderPath, sampleRate, masterChain)
     : PlayLive(player, sampleRate);
 session?.Dispose();   // releases the base + override source fonts (no-op if no overrides)
 return exitCode;
@@ -370,7 +404,7 @@ static int PlayLive(RealtimePlayer player, int sampleRate)
     return 0;
 }
 
-static int RenderToWav(RealtimePlayer player, string outPath, int sampleRate)
+static int RenderToWav(RealtimePlayer player, string outPath, int sampleRate, IAudioProcessor? master = null)
 {
     // Render the sequence plus a 2-second tail so envelope releases finish cleanly.
     var totalFrames = (long)((player.Duration.TotalSeconds + 2.0) * sampleRate);
@@ -388,6 +422,7 @@ static int RenderToWav(RealtimePlayer player, string outPath, int sampleRate)
     const int blockFrames = 1024;
     var left = new float[blockFrames];
     var right = new float[blockFrames];
+    var inter = new float[blockFrames * 2];   // interleaved scratch for the optional master chain
     var pcm = new byte[blockFrames * 4]; // stereo int16
     long renderedFrames = 0;
     var sw = Stopwatch.StartNew();
@@ -396,6 +431,14 @@ static int RenderToWav(RealtimePlayer player, string outPath, int sampleRate)
     {
         var n = (int)Math.Min(blockFrames, totalFrames - renderedFrames);
         player.ProcessBlock(left.AsSpan(0, n), right.AsSpan(0, n));
+
+        // Master DSP (e.g. the limiter) runs on the interleaved block, caller-side, after the synth.
+        if (master != null)
+        {
+            for (var i = 0; i < n; i++) { inter[i * 2] = left[i]; inter[i * 2 + 1] = right[i]; }
+            master.Process(inter.AsSpan(0, n * 2));
+            for (var i = 0; i < n; i++) { left[i] = inter[i * 2]; right[i] = inter[i * 2 + 1]; }
+        }
 
         for (var i = 0; i < n; i++)
         {

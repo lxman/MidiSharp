@@ -26,6 +26,9 @@
     <ProjectReference Include="..\MidiSharp.Loader\MidiSharp.Loader.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\MidiSharp.Synth\MidiSharp.Synth.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\MidiSharp.PatchMap\MidiSharp.PatchMap.csproj" PrivateAssets="all" />
+    <!-- DSP "plugins" layer (EQ etc.). No project references it transitively (it's decoupled from the
+         synth on purpose), so it's listed here directly to get bundled into the package. -->
+    <ProjectReference Include="..\MidiSharp.Dsp\MidiSharp.Dsp.csproj" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
