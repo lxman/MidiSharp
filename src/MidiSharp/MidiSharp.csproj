@@ -11,7 +11,9 @@
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
     <IsPackable>true</IsPackable>
-    <PackageId>MidiSharp</PackageId>
+    <!-- The bare 'MidiSharp' ID is taken on nuget.org by an unrelated library, so the package ships
+         as MidiSharp.Player (assemblies/namespaces stay MidiSharp.*). -->
+    <PackageId>MidiSharp.Player</PackageId>
     <Description>Cross-platform, pure-managed C# MIDI synthesizer: render Standard MIDI Files through SF2/SF3/SFZ/DLS soundfonts (one common SoundBank IR), with patch-level instrument substitution. Renders to float buffers / WAV — pair with MidiSharp.OwnAudio for live audio output. Self-contained, no external dependencies.</Description>
     <!-- The umbrella assembly is intentionally empty. -->
     <IncludeBuildOutput>true</IncludeBuildOutput>
