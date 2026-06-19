@@ -1,0 +1,42 @@
+name: Publish
+
+# Releases both packages to nuget.org via Trusted Publishing (OIDC) — no stored API key.
+# Push a v* tag (e.g. v0.9.0) to trigger. Requires a matching Trusted Publishing policy on
+# nuget.org for the package IDs MidiSharp and MidiSharp.OwnAudio.
+on:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: read
+  id-token: write          # required for OIDC trusted publishing
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: nuget       # must match the environment in the nuget.org policy (remove if the policy has none)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Pack
+        run: |
+          dotnet pack src/MidiSharp/MidiSharp.csproj -c Release -o artifacts
+          dotnet pack src/MidiSharp.Synth.OwnAudio/MidiSharp.Synth.OwnAudio.csproj -c Release -o artifacts
+
+      - name: NuGet trusted-publishing login
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}   # repo variable: your nuget.org username
+
+      - name: Push
+        run: >
+          dotnet nuget push "artifacts/*.nupkg"
+          --api-key ${{ steps.login.outputs.NUGET_API_KEY }}
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
