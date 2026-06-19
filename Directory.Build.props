@@ -1,0 +1,31 @@
+<Project>
+
+  <!-- Shared NuGet/package metadata for the whole repo. Only the two package hosts
+       (src/MidiSharp and src/MidiSharp.Synth.OwnAudio) set IsPackable=true; everything
+       else inherits the IsPackable=false default below. -->
+  <PropertyGroup>
+    <Version>0.9.0</Version>
+    <Authors>Michael Jordan</Authors>
+    <Product>MidiSharp</Product>
+    <Copyright>Copyright (c) 2026 Michael Jordan</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/lxman/MidiSharp</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/lxman/MidiSharp</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>midi;soundfont;sf2;sf3;sfz;dls;synthesizer;audio;general-midi;gm2;vorbis</PackageTags>
+
+    <!-- Reproducible builds + SourceLink (the .NET SDK ships SourceLink in-box). Debug info is embedded
+         in each assembly (DebugType=embedded), so the DLLs bundled into the MidiSharp package are
+         self-debugging — no separate symbol package needed, which sidesteps multi-assembly snupkg quirks. -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <Deterministic>true</Deterministic>
+    <DebugType>embedded</DebugType>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <!-- Off by default; the package hosts opt in. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+</Project>

@@ -15,10 +15,12 @@
   <Folder Name="/Loader/">
     <Project Path="src/MidiSharp.Loader/MidiSharp.Loader.csproj" />
   </Folder>
+  <Folder Name="/Package/">
+    <Project Path="src/MidiSharp/MidiSharp.csproj" />
+  </Folder>
   <Folder Name="/Samples/">
-    <File Path="samples\MidiSharp.Server\MidiSharp.Server.csproj" />
     <Project Path="samples/MidiSharp.Demo/MidiSharp.Demo.csproj" />
-    <Project Path="samples\MidiSharp.Server\MidiSharp.Server.csproj" />
+    <Project Path="samples/MidiSharp.Server/MidiSharp.Server.csproj" />
   </Folder>
   <Folder Name="/Vendor/">
     <Project Path="vendor/NVorbis/NVorbis/NVorbis.csproj" />
