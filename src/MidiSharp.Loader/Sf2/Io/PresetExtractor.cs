@@ -10,17 +10,8 @@ namespace MidiSharp.Loader.Sf2.Io;
 /// Repackages a single preset and its dependencies into a standalone SF2 byte array.
 /// Port of <c>SFont::extract()</c> from sflib.
 /// </summary>
-internal sealed class PresetExtractor
+internal sealed class PresetExtractor(SoundFont sf, SdtaChunkReader sdta)
 {
-    private readonly SoundFont _sf;
-    private readonly SdtaChunkReader _sdta;
-
-    public PresetExtractor(SoundFont sf, SdtaChunkReader sdta)
-    {
-        _sf = sf;
-        _sdta = sdta;
-    }
-
     public byte[] Extract(Preset preset)
     {
         var smpl = new MemoryStream();
@@ -40,7 +31,7 @@ internal sealed class PresetExtractor
             if (z.InstrumentIndex >= 0) instRefs.Add(z.InstrumentIndex);
 
         // Build inst/ibag/igen/imod/shdr/smpl chunks by walking each referenced instrument.
-        foreach (var instrument in _sf.Instruments)
+        foreach (var instrument in sf.Instruments)
         {
             if (!instRefs.Contains(instrument.Index)) continue;
 
@@ -73,7 +64,7 @@ internal sealed class PresetExtractor
                     continue;
                 }
 
-                var raw = _sdta.GetRawBytes(z.Sample.Start, z.Sample.End).ToArray();
+                var raw = sdta.GetRawBytes(z.Sample.Start, z.Sample.End).ToArray();
 
                 if (raw.Length == 0) return [];
 
@@ -303,7 +294,7 @@ internal sealed class PresetExtractor
         // Build sdta LIST.
         if ((smpl.Length & 1) != 0) smpl.WriteByte(0);
         var smplBytes = smpl.ToArray();
-        var sdta = WrapList("sdta", [("smpl", smplBytes)]);
+        var sdta1 = WrapList("sdta", [("smpl", smplBytes)]);
 
         // Build pdta LIST.
         var pdtaParts = new (string, byte[])[]
@@ -321,11 +312,11 @@ internal sealed class PresetExtractor
         var pdta = WrapList("pdta", pdtaParts);
 
         // Build INFO LIST.
-        var infoBody = InfoAssembler.Build(_sf.Info, overrideBankName: preset.Name);
+        var infoBody = InfoAssembler.Build(sf.Info, overrideBankName: preset.Name);
         var info = WrapList("INFO", [((string)null!, infoBody)], infoBodyRaw: true);
 
         // Final RIFF/sfbk.
-        return BuildRiffSfbk(info, sdta, pdta);
+        return BuildRiffSfbk(info, sdta1, pdta);
     }
 
     private static SampleHeader CloneAndRebaseHeader(SampleHeader src)

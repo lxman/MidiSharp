@@ -90,7 +90,7 @@ foreach (var path in files)
         failed++;
         var code = string.Join(",", ex.Codes);
         byCode[code] = byCode.GetValueOrDefault(code) + 1;
-        if (!sample.ContainsKey(code)) sample[code] = path;
+        sample.TryAdd(code, path);
         if (Environment.GetEnvironmentVariable("LIST_FAILURES") == "1" && code != "FileBroken")
             Console.WriteLine($"  [{code}] {path}");
         if (Environment.GetEnvironmentVariable("LIST_BROKEN") == "1" && code == "FileBroken")

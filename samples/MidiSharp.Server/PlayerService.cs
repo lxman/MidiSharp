@@ -27,12 +27,11 @@ public sealed record SoundfontCatalogDto(string name, SoundfontPatchDto[] patche
 /// When a piece completes the server stays up and returns to "completed" (ready for the
 /// next song); the process only exits on an explicit <see cref="RequestExit"/>.
 /// </summary>
-public sealed class PlayerService : IDisposable
+public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposable
 {
     private const int SampleRate = 48000;   // match PipeWire/JACK graph rate → no resampling
     private const double TailSeconds = 2.0;   // render this long past the last event before "done"
 
-    private readonly IHostApplicationLifetime _lifetime;
     private readonly object _lock = new();
 
     private OwnAudioOutput? _output;
@@ -43,8 +42,6 @@ public sealed class PlayerService : IDisposable
     private string? _midiName;
     private string? _soundfontName;
     private int _generation;   // bumped on every start/stop so stale completion monitors no-op
-
-    public PlayerService(IHostApplicationLifetime lifetime) => _lifetime = lifetime;
 
     public IReadOnlyList<DeviceDto> GetDevices() =>
         OwnAudioOutput.GetOutputDevices()
@@ -249,7 +246,7 @@ public sealed class PlayerService : IDisposable
         }
     }
 
-    public void RequestExit() => _lifetime.StopApplication();
+    public void RequestExit() => lifetime.StopApplication();
 
     public void Dispose() => Stop();
 }

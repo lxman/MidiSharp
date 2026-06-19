@@ -5,14 +5,13 @@ using System.Collections.Generic;
 
 namespace MidiSharp.Audio.Vorbis.Ogg
 {
-    class ForwardOnlyPacketProvider : DataPacket, IForwardOnlyPacketProvider
+    class ForwardOnlyPacketProvider(IPageReader reader, int streamSerial) : DataPacket, IForwardOnlyPacketProvider
     {
         private int _lastSeqNo;
         private readonly Queue<(byte[] buf, bool isResync)> _pageQueue = new Queue<(byte[] buf, bool isResync)>();
 
-        private readonly IPageReader _reader;
         private byte[] _pageBuf;
-        private int _packetIndex;
+        private int _packetIndex = int.MaxValue;
         private bool _isEndOfStream;
         private int _dataStart;
         private bool _lastWasPeek;
@@ -21,18 +20,11 @@ namespace MidiSharp.Audio.Vorbis.Ogg
 
         private int _dataIndex;
 
-        public ForwardOnlyPacketProvider(IPageReader reader, int streamSerial)
-        {
-            _reader = reader;
-            StreamSerial = streamSerial;
-
-            // force the first page to read
-            _packetIndex = int.MaxValue;
-        }
+        // force the first page to read
 
         public bool CanSeek => false;
 
-        public int StreamSerial { get; }
+        public int StreamSerial { get; } = streamSerial;
 
         public bool AddPage(byte[] buf, bool isResync)
         {
@@ -255,7 +247,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
         {
             while (_pageQueue.Count == 0)
             {
-                if (_isEndOfStream || !_reader.ReadNextPage())
+                if (_isEndOfStream || !reader.ReadNextPage())
                 {
                     // we must be done
                     pageBuf = null;

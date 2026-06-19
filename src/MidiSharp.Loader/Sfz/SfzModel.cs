@@ -43,17 +43,13 @@ internal sealed class SfzControl
 /// Opcode lookups are case-insensitive (the spec treats opcode names as
 /// lowercase; values keep their original case for paths).
 /// </summary>
-internal sealed class SfzRegion
+internal sealed class SfzRegion(Dictionary<string, string> opcodes)
 {
-    private readonly Dictionary<string, string> _opcodes;
+    public bool Has(string key) => opcodes.ContainsKey(key);
 
-    public SfzRegion(Dictionary<string, string> opcodes) => _opcodes = opcodes;
+    public string? Get(string key) => opcodes.TryGetValue(key, out var v) ? v : null;
 
-    public bool Has(string key) => _opcodes.ContainsKey(key);
-
-    public string? Get(string key) => _opcodes.TryGetValue(key, out var v) ? v : null;
-
-    public IReadOnlyDictionary<string, string> Opcodes => _opcodes;
+    public IReadOnlyDictionary<string, string> Opcodes => opcodes;
 
     public int GetInt(string key, int fallback)
     {
@@ -84,7 +80,7 @@ internal sealed class SfzRegion
     /// </summary>
     public IEnumerable<(int Cc, string Value)> EnumerateCc(string prefix)
     {
-        foreach (var kv in _opcodes)
+        foreach (var kv in opcodes)
         {
             if (kv.Key.Length > prefix.Length &&
                 kv.Key.StartsWith(prefix, StringComparison.Ordinal) &&
@@ -105,7 +101,7 @@ internal sealed class SfzRegion
     /// </summary>
     public IEnumerable<(string Param, int Cc, double Value)> EnumerateModulations()
     {
-        foreach (var kv in _opcodes)
+        foreach (var kv in opcodes)
         {
             string key = kv.Key;
             int marker = key.IndexOf("_oncc", StringComparison.Ordinal);

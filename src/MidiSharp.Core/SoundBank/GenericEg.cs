@@ -4,16 +4,10 @@ namespace MidiSharp.SoundBank;
 /// One segment of an SFZ v2 flex envelope (egN_timeX / egN_levelX): ramp to <see cref="Level"/> over
 /// <see cref="TimeSeconds"/> from the previous segment's level.
 /// </summary>
-public readonly struct EgStage
+public readonly struct EgStage(double timeSeconds, double level)
 {
-    public EgStage(double timeSeconds, double level)
-    {
-        TimeSeconds = timeSeconds;
-        Level = level;
-    }
-
-    public double TimeSeconds { get; }
-    public double Level { get; }
+    public double TimeSeconds { get; } = timeSeconds;
+    public double Level { get; } = level;
 }
 
 /// <summary>A destination an SFZ flex EG drives (egN_pitch / egN_cutoff / egN_volume), with a depth.</summary>

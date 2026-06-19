@@ -94,18 +94,10 @@ public enum EnvStage { Delay, Attack, Hold, Decay, Sustain, Release }
 /// One CC modulation of an envelope stage: at the live controller value, adds <see cref="Amount"/> ×
 /// curve(cc/127) to the stage — seconds for the time stages, percent for <see cref="EnvStage.Sustain"/>.
 /// </summary>
-public readonly struct EnvCcMod
+public readonly struct EnvCcMod(EnvStage stage, int cc, double amount, int curve)
 {
-    public EnvCcMod(EnvStage stage, int cc, double amount, int curve)
-    {
-        Stage = stage;
-        Cc = cc;
-        Amount = amount;
-        Curve = curve;
-    }
-
-    public EnvStage Stage { get; }
-    public int Cc { get; }
-    public double Amount { get; }
-    public int Curve { get; }
+    public EnvStage Stage { get; } = stage;
+    public int Cc { get; } = cc;
+    public double Amount { get; } = amount;
+    public int Curve { get; } = curve;
 }

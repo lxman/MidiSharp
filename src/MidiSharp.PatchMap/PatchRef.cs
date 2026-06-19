@@ -7,21 +7,14 @@ namespace MidiSharp.PatchMap;
 /// font <see cref="Source"/> that should answer in place of the base font's patch at some
 /// logical address.
 /// </summary>
-public readonly struct PatchRef
+public readonly struct PatchRef(IRBank source, int bank, int program)
 {
-    public PatchRef(IRBank source, int bank, int program)
-    {
-        Source = source;
-        Bank = bank;
-        Program = program;
-    }
-
     /// <summary>The preloaded source font this instrument comes from.</summary>
-    public IRBank Source { get; }
+    public IRBank Source { get; } = source;
 
     /// <summary>The source patch's bank within <see cref="Source"/>.</summary>
-    public int Bank { get; }
+    public int Bank { get; } = bank;
 
     /// <summary>The source patch's program within <see cref="Source"/>.</summary>
-    public int Program { get; }
+    public int Program { get; } = program;
 }

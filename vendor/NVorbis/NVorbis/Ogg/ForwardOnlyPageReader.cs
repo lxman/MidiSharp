@@ -5,18 +5,15 @@ using System.IO;
 
 namespace MidiSharp.Audio.Vorbis.Ogg
 {
-    class ForwardOnlyPageReader : PageReaderBase
+    class ForwardOnlyPageReader(
+        Stream stream,
+        bool closeOnDispose,
+        Func<Contracts.IPacketProvider, bool> newStreamCallback)
+        : PageReaderBase(stream, closeOnDispose)
     {
         internal static Func<IPageReader, int, IForwardOnlyPacketProvider> CreatePacketProvider { get; set; } = (pr, ss) => new ForwardOnlyPacketProvider(pr, ss);
 
         private readonly Dictionary<int, IForwardOnlyPacketProvider> _packetProviders = new Dictionary<int, IForwardOnlyPacketProvider>();
-        private readonly Func<Contracts.IPacketProvider, bool> _newStreamCallback;
-
-        public ForwardOnlyPageReader(Stream stream, bool closeOnDispose, Func<Contracts.IPacketProvider, bool> newStreamCallback)
-            : base(stream, closeOnDispose)
-        {
-            _newStreamCallback = newStreamCallback;
-        }
 
         protected override bool AddPage(int streamSerial, byte[] pageBuf, bool isResync)
         {
@@ -44,7 +41,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
             if (pp.AddPage(pageBuf, isResync))
             {
                 _packetProviders.Add(streamSerial, pp);
-                if (_newStreamCallback(pp))
+                if (newStreamCallback(pp))
                 {
                     return true;
                 }

@@ -3,29 +3,22 @@ namespace MidiSharp.Model;
 /// <summary>
 /// Represents the header chunk (MThd) of a MIDI file.
 /// </summary>
-public sealed class MidiHeader
+public sealed class MidiHeader(MidiFormat format, int trackCount, TimeDivision division)
 {
-    public MidiHeader(MidiFormat format, int trackCount, TimeDivision division)
-    {
-        Format = format;
-        TrackCount = trackCount;
-        Division = division;
-    }
-
     /// <summary>
     /// The MIDI file format (0, 1, or 2).
     /// </summary>
-    public MidiFormat Format { get; }
+    public MidiFormat Format { get; } = format;
 
     /// <summary>
     /// The number of track chunks in the file.
     /// </summary>
-    public int TrackCount { get; }
+    public int TrackCount { get; } = trackCount;
 
     /// <summary>
     /// The time division specifying delta-time meaning.
     /// </summary>
-    public TimeDivision Division { get; }
+    public TimeDivision Division { get; } = division;
 }
 
 /// <summary>

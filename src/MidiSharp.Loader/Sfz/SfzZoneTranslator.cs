@@ -391,8 +391,8 @@ internal static class SfzZoneTranslator
         }
         if (points.Count == 0) return null;
 
-        if (!points.ContainsKey(0)) points[0] = 0.0;
-        if (!points.ContainsKey(127)) points[127] = 1.0;
+        points.TryAdd(0, 0.0);
+        points.TryAdd(127, 1.0);
 
         var curve = new double[128];
         var keys = new List<int>(points.Keys);

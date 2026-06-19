@@ -192,8 +192,9 @@ internal static class SfzBankLoader
                     if (!byKey.TryGetValue(key, out var list))
                         byKey[key] = list = new List<PatchZone>();
                     list.Add(zone);
-                    if (label != null && !labelByKey.ContainsKey(key))
-                        labelByKey[key] = label;   // first label wins for this program
+                    if (label != null)
+                        labelByKey.TryAdd(key, label);
+                    // first label wins for this program
                 }
             }
 

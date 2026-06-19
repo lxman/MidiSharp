@@ -8,11 +8,16 @@ namespace MidiSharp.Loader.Dls;
 /// with transform and scale. Maps directly to an SF2-style modulator and (later)
 /// to the IR's <c>ModulationRoute</c>.
 /// </summary>
-public readonly struct ConnectionBlock
+public readonly struct ConnectionBlock(
+    ConnectionSource src,
+    ushort ctrl,
+    ConnectionDestination dst,
+    ushort xform,
+    int scale)
 {
-    public readonly ConnectionSource Source;
-    public readonly ushort Control;
-    public readonly ConnectionDestination Destination;
+    public readonly ConnectionSource Source = src;
+    public readonly ushort Control = ctrl;
+    public readonly ConnectionDestination Destination = dst;
     /// <summary>
     /// Raw 16-bit transform word. Decode via:
     /// bits 0-3 = source curve (<see cref="ConnectionTransform"/>),
@@ -20,13 +25,8 @@ public readonly struct ConnectionBlock
     /// bit 5 = source direction (1 = inverted, i.e. high source → low output),
     /// bits 8-15 = destination-side curve/polarity/direction (unused by the IR mapping today).
     /// </summary>
-    public readonly ushort Transform;
-    public readonly int Scale;
-
-    public ConnectionBlock(ConnectionSource src, ushort ctrl, ConnectionDestination dst, ushort xform, int scale)
-    {
-        Source = src; Control = ctrl; Destination = dst; Transform = xform; Scale = scale;
-    }
+    public readonly ushort Transform = xform;
+    public readonly int Scale = scale;
 
     public ConnectionTransform SourceCurve => (ConnectionTransform)(Transform & 0x000F);
     public bool SourceBipolar => (Transform & 0x0010) != 0;
@@ -37,16 +37,11 @@ public readonly struct ConnectionBlock
 /// One sample loop point inside a wsmp chunk. DLS allows multiple loops per
 /// sample, though the common case is exactly one.
 /// </summary>
-public readonly struct SampleLoop
+public readonly struct SampleLoop(DlsLoopType type, uint start, uint length)
 {
-    public readonly DlsLoopType LoopType;
-    public readonly uint StartFrame;
-    public readonly uint LengthFrames;
-
-    public SampleLoop(DlsLoopType type, uint start, uint length)
-    {
-        LoopType = type; StartFrame = start; LengthFrames = length;
-    }
+    public readonly DlsLoopType LoopType = type;
+    public readonly uint StartFrame = start;
+    public readonly uint LengthFrames = length;
 }
 
 /// <summary>
@@ -86,16 +81,12 @@ public sealed class DlsWave
 /// Wave-link record (wlnk chunk) — points a region to a specific wave in the
 /// pool.
 /// </summary>
-public readonly struct WaveLink
+public readonly struct WaveLink(ushort opt, ushort phase, uint ch, uint idx)
 {
-    public readonly ushort Options;
-    public readonly ushort PhaseGroup;
-    public readonly uint Channel;
-    public readonly uint TableIndex;
-    public WaveLink(ushort opt, ushort phase, uint ch, uint idx)
-    {
-        Options = opt; PhaseGroup = phase; Channel = ch; TableIndex = idx;
-    }
+    public readonly ushort Options = opt;
+    public readonly ushort PhaseGroup = phase;
+    public readonly uint Channel = ch;
+    public readonly uint TableIndex = idx;
 }
 
 /// <summary>

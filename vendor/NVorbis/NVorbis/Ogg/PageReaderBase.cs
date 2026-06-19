@@ -5,7 +5,7 @@ using System.IO;
 
 namespace MidiSharp.Audio.Vorbis.Ogg
 {
-    abstract class PageReaderBase : IPageReader
+    abstract class PageReaderBase(Stream stream, bool closeOnDispose) : IPageReader
     {
         internal static Func<ICrc> CreateCrc { get; set; } = () => new Crc();
 
@@ -15,14 +15,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
         private byte[] _overflowBuf;
         private int _overflowBufIndex;
 
-        private Stream _stream;
-        private bool _closeOnDispose;
-
-        protected PageReaderBase(Stream stream, bool closeOnDispose)
-        {
-            _stream = stream;
-            _closeOnDispose = closeOnDispose;
-        }
+        private Stream _stream = stream;
 
         protected long StreamPosition => _stream?.Position ?? throw new ObjectDisposedException(nameof(PageReaderBase));
 
@@ -297,7 +290,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
         {
             SetEndOfStreams();
 
-            if (_closeOnDispose)
+            if (closeOnDispose)
             {
                 _stream?.Dispose();
             }

@@ -37,12 +37,11 @@ internal sealed class LazyVorbisSf3SampleSource : ISampleSource
     private long _cachedBytes;
     private bool _disposed;
 
-    private readonly struct Entry
+    private readonly struct Entry(int s, int l, int c)
     {
-        public readonly int ByteStart;
-        public readonly int ByteLength;
-        public readonly int Channels;
-        public Entry(int s, int l, int c) { ByteStart = s; ByteLength = l; Channels = c; }
+        public readonly int ByteStart = s;
+        public readonly int ByteLength = l;
+        public readonly int Channels = c;
     }
 
     private sealed class CacheNode

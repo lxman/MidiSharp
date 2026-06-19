@@ -226,19 +226,13 @@ public sealed class PatchZone
 /// each block, so sweeping controller <see cref="Cc"/> fades the layer in/out. The 128-entry table
 /// is precomputed by the loader from the xfin/xfout thresholds and xf_cccurve shape.
 /// </summary>
-public readonly struct CcCrossfade
+public readonly struct CcCrossfade(int cc, double[] gain)
 {
-    public CcCrossfade(int cc, double[] gain)
-    {
-        Cc = cc;
-        Gain = gain;
-    }
-
     /// <summary>The MIDI controller number driving this crossfade.</summary>
-    public int Cc { get; }
+    public int Cc { get; } = cc;
 
     /// <summary>128-entry linear-gain table indexed by the controller's current value (0..127).</summary>
-    public double[] Gain { get; }
+    public double[] Gain { get; } = gain;
 }
 
 /// <summary>SFZ <c>trigger=</c> mode — when a zone fires relative to the note event.</summary>

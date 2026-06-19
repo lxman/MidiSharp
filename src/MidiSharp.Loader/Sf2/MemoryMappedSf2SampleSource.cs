@@ -36,16 +36,10 @@ internal sealed class MemoryMappedSf2SampleSource : ISampleSource
     private readonly IDisposable? _backingOwner;   // mmap view to release on dispose; null for managed backing
     private bool _disposed;
 
-    private readonly struct SampleEntry
+    private readonly struct SampleEntry(long absoluteStart, long lengthFrames)
     {
-        public readonly long AbsoluteStart;
-        public readonly long LengthFrames;
-
-        public SampleEntry(long absoluteStart, long lengthFrames)
-        {
-            AbsoluteStart = absoluteStart;
-            LengthFrames = lengthFrames;
-        }
+        public readonly long AbsoluteStart = absoluteStart;
+        public readonly long LengthFrames = lengthFrames;
     }
 
     public MemoryMappedSf2SampleSource(

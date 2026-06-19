@@ -42,20 +42,12 @@ public enum SampleValidationCode
 /// <summary>
 /// One defect found on one sample header during <see cref="SoundFont.ValidateSamples"/>.
 /// </summary>
-public sealed class SampleValidationIssue
+public sealed class SampleValidationIssue(int index, string name, SampleValidationCode code, string message)
 {
-    public int SampleIndex { get; }
-    public string SampleName { get; }
-    public SampleValidationCode Code { get; }
-    public string Message { get; }
-
-    public SampleValidationIssue(int index, string name, SampleValidationCode code, string message)
-    {
-        SampleIndex = index;
-        SampleName = name;
-        Code = code;
-        Message = message;
-    }
+    public int SampleIndex { get; } = index;
+    public string SampleName { get; } = name;
+    public SampleValidationCode Code { get; } = code;
+    public string Message { get; } = message;
 
     public override string ToString() => $"[{SampleIndex}] '{SampleName}': {Code} — {Message}";
 }

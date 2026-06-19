@@ -18,16 +18,10 @@ public enum LfoDestination
 }
 
 /// <summary>A CC that scales a value (an LFO frequency or a target depth) by <see cref="Amount"/> at full CC.</summary>
-public readonly struct LfoCcDepth
+public readonly struct LfoCcDepth(int cc, double amount)
 {
-    public LfoCcDepth(int cc, double amount)
-    {
-        Cc = cc;
-        Amount = amount;
-    }
-
-    public int Cc { get; }
-    public double Amount { get; }
+    public int Cc { get; } = cc;
+    public double Amount { get; } = amount;
 }
 
 /// <summary>
@@ -35,21 +29,14 @@ public readonly struct LfoCcDepth
 /// main waveform (ratio 1, scale 1, offset 0); stages 1..6 are sub-waveforms summed onto it, each at a
 /// frequency multiple (<see cref="Ratio"/>), amplitude (<see cref="Scale"/>) and DC <see cref="Offset"/>.
 /// </summary>
-public readonly struct LfoStage
+public readonly struct LfoStage(int wave, double ratio, double scale, double offset)
 {
-    public LfoStage(int wave, double ratio, double scale, double offset)
-    {
-        Wave = wave;
-        Ratio = ratio;
-        Scale = scale;
-        Offset = offset;
-    }
-
     /// <summary>Waveform number (0=triangle, 1=sine, 2..5=pulse widths, 6=saw up, 7=saw down, 12=S&amp;H, 13=stepped).</summary>
-    public int Wave { get; }
-    public double Ratio { get; }
-    public double Scale { get; }
-    public double Offset { get; }
+    public int Wave { get; } = wave;
+
+    public double Ratio { get; } = ratio;
+    public double Scale { get; } = scale;
+    public double Offset { get; } = offset;
 
     /// <summary>
     /// SFZ v2 stepped-LFO staircase (<c>lfoN_steps</c> + <c>lfoN_stepX</c>): the step values normalized to

@@ -5,16 +5,10 @@ namespace MidiSharp.IO;
 /// <summary>
 /// A lightweight reader for parsing binary data from a ReadOnlySpan.
 /// </summary>
-internal ref struct SpanReader
+internal ref struct SpanReader(ReadOnlySpan<byte> data)
 {
-    private readonly ReadOnlySpan<byte> _data;
-    private int _position;
-
-    public SpanReader(ReadOnlySpan<byte> data)
-    {
-        _data = data;
-        _position = 0;
-    }
+    private readonly ReadOnlySpan<byte> _data = data;
+    private int _position = 0;
 
     public int Position => _position;
     public int Remaining => _data.Length - _position;

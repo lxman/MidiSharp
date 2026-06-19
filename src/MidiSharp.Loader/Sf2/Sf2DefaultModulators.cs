@@ -16,22 +16,18 @@ internal static class Sf2DefaultModulators
     /// operator quadruple that defines its identity (SF2 §9.5.1) for override /
     /// additive matching against a zone's explicit modulators.
     /// </summary>
-    internal readonly struct DefaultModulator
+    internal readonly struct DefaultModulator(
+        ushort srcOp,
+        ushort destOp,
+        ushort amtSrcOp,
+        ushort transOp,
+        ModulationRoute route)
     {
-        public readonly ushort SrcOp;
-        public readonly ushort DestOp;
-        public readonly ushort AmtSrcOp;
-        public readonly ushort TransOp;
-        public readonly ModulationRoute Route;
-
-        public DefaultModulator(ushort srcOp, ushort destOp, ushort amtSrcOp, ushort transOp, ModulationRoute route)
-        {
-            SrcOp = srcOp;
-            DestOp = destOp;
-            AmtSrcOp = amtSrcOp;
-            TransOp = transOp;
-            Route = route;
-        }
+        public readonly ushort SrcOp = srcOp;
+        public readonly ushort DestOp = destOp;
+        public readonly ushort AmtSrcOp = amtSrcOp;
+        public readonly ushort TransOp = transOp;
+        public readonly ModulationRoute Route = route;
 
         public ulong Identity => Sf2ModulatorTranslator.Identity(SrcOp, DestOp, AmtSrcOp, TransOp);
     }

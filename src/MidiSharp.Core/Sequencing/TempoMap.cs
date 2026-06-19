@@ -188,29 +188,22 @@ public sealed class TempoMap
 /// <summary>
 /// Represents a tempo change at a specific tick position.
 /// </summary>
-public readonly struct TempoChange
+public readonly struct TempoChange(long tick, int microsecondsPerBeat, double realTimeMicroseconds = 0)
 {
-    public TempoChange(long tick, int microsecondsPerBeat, double realTimeMicroseconds = 0)
-    {
-        Tick = tick;
-        MicrosecondsPerBeat = microsecondsPerBeat;
-        RealTimeMicroseconds = realTimeMicroseconds;
-    }
-
     /// <summary>
     /// The tick position of this tempo change.
     /// </summary>
-    public long Tick { get; }
+    public long Tick { get; } = tick;
 
     /// <summary>
     /// Microseconds per quarter note (beat).
     /// </summary>
-    public int MicrosecondsPerBeat { get; }
+    public int MicrosecondsPerBeat { get; } = microsecondsPerBeat;
 
     /// <summary>
     /// The real-time position in microseconds (calculated).
     /// </summary>
-    public double RealTimeMicroseconds { get; }
+    public double RealTimeMicroseconds { get; } = realTimeMicroseconds;
 
     /// <summary>
     /// Beats per minute.

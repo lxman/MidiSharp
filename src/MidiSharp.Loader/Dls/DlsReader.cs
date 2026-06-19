@@ -397,14 +397,11 @@ public static class DlsReader
 
     // ── RIFF chunk traversal ────────────────────────────────────────
 
-    private struct ChunkReader
+    private struct ChunkReader(ReadOnlyMemory<byte> data)
     {
-        private readonly ReadOnlyMemory<byte> _data;
-        public ChunkReader(ReadOnlyMemory<byte> data) { _data = data; }
-
         public void ExpectRiff(string formType)
         {
-            var span = _data.Span;
+            var span = data.Span;
             if (span.Length < 12) throw new InvalidDataException("Truncated RIFF");
             if (ReadFourCc(span, 0) != "RIFF") throw new InvalidDataException("Not a RIFF file");
             if (ReadFourCc(span, 8) != formType)
@@ -416,7 +413,7 @@ public static class DlsReader
             // For top-level RIFF, body starts after "RIFF<size><formType>" = 12 bytes.
             // For sub-LISTs, body starts after "<formType>" = 4 bytes (caller pre-slices).
             int start = 0;
-            var span = _data.Span;
+            var span = data.Span;
             if (span.Length >= 12 && ReadFourCc(span, 0) == "RIFF") start = 12;
 
             int pos = start;
@@ -426,7 +423,7 @@ public static class DlsReader
                 uint size = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(pos + 4));
                 int bodyStart = pos + 8;
                 if (bodyStart + size > span.Length) break;
-                handler(tag, _data.Slice(bodyStart, (int)size));
+                handler(tag, data.Slice(bodyStart, (int)size));
                 pos = bodyStart + (int)size;
                 if ((size & 1) != 0) pos++;     // pad byte on odd sizes
             }

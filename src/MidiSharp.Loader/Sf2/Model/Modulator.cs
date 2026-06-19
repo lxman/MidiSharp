@@ -21,21 +21,17 @@ public sealed class Modulator
 /// <summary>
 /// Decoded view of a modulator's 16-bit source operator field (SF2 spec §8.2).
 /// </summary>
-public readonly struct ModulatorSource
+public readonly struct ModulatorSource(ushort raw)
 {
-    private readonly ushort _value;
-
-    public ModulatorSource(ushort raw) => _value = raw;
-
-    public ushort Raw => _value;
+    public ushort Raw => raw;
 
     /// <summary>Controller index. For General controllers this is an <see cref="SFModSource"/>; for MIDI it's a CC number.</summary>
-    public byte Index => (byte)(_value & 0x7F);
+    public byte Index => (byte)(raw & 0x7F);
 
-    public SFModSrcCC ContinuousController => (SFModSrcCC)((_value >> 7) & 0x1);
-    public SFModSrcDirection Direction => (SFModSrcDirection)((_value >> 8) & 0x1);
-    public SFModSrcPolarity Polarity => (SFModSrcPolarity)((_value >> 9) & 0x1);
-    public SFModSrcType Type => (SFModSrcType)((_value >> 10) & 0x3F);
+    public SFModSrcCC ContinuousController => (SFModSrcCC)((raw >> 7) & 0x1);
+    public SFModSrcDirection Direction => (SFModSrcDirection)((raw >> 8) & 0x1);
+    public SFModSrcPolarity Polarity => (SFModSrcPolarity)((raw >> 9) & 0x1);
+    public SFModSrcType Type => (SFModSrcType)((raw >> 10) & 0x3F);
 
     /// <summary>Returns the <see cref="SFModSource"/> name when this is a General controller.</summary>
     public SFModSource? AsGeneralController => ContinuousController == SFModSrcCC.General ? (SFModSource)Index : null;

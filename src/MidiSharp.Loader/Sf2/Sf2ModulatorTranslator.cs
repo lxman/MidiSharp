@@ -63,11 +63,10 @@ internal static class Sf2ModulatorTranslator
 
     private static bool IsEmpty(IReadOnlyList<Modulator>? mods) => mods == null || mods.Count == 0;
 
-    private readonly struct Entry
+    private readonly struct Entry(ulong identity, ModulationRoute route)
     {
-        public readonly ulong Identity;
-        public readonly ModulationRoute Route;
-        public Entry(ulong identity, ModulationRoute route) { Identity = identity; Route = route; }
+        public readonly ulong Identity = identity;
+        public readonly ModulationRoute Route = route;
     }
 
     private static void ApplyOverwrite(List<Entry> entries, IReadOnlyList<Modulator>? mods)

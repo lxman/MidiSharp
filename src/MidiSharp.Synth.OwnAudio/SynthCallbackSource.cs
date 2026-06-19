@@ -11,9 +11,13 @@ namespace MidiSharp.Synth.OwnAudio;
 /// <see cref="AudioCallback"/>. The mixer calls <see cref="ReadSamples"/>; we
 /// hand off to the synth's callback and copy the result into the output span.
 /// </summary>
-internal sealed class SynthCallbackSource : BaseAudioSource
+internal sealed class SynthCallbackSource(int sampleRate, int channels) : BaseAudioSource
 {
-    private readonly AudioConfig _config;
+    private readonly AudioConfig _config = new()
+    {
+        SampleRate = sampleRate,
+        Channels = channels,
+    };
     private float[] _temp = [];
 
     public AudioCallback? Callback { get; set; }
@@ -31,15 +35,6 @@ internal sealed class SynthCallbackSource : BaseAudioSource
     public override double Duration => 0;
 
     public override bool IsEndOfStream => false;
-
-    public SynthCallbackSource(int sampleRate, int channels)
-    {
-        _config = new AudioConfig
-        {
-            SampleRate = sampleRate,
-            Channels = channels,
-        };
-    }
 
     public override int ReadSamples(Span<float> buffer, int frameCount)
     {

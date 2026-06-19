@@ -6,23 +6,17 @@ using System.Threading;
 
 namespace MidiSharp.Audio.Vorbis.Ogg
 {
-    class PageReader : PageReaderBase, IPageData
+    class PageReader(Stream stream, bool closeOnDispose, Func<Contracts.IPacketProvider, bool> newStreamCallback)
+        : PageReaderBase(stream, closeOnDispose), IPageData
     {
         internal static Func<IPageData, int, IStreamPageReader> CreateStreamPageReader { get; set; } = (pr, ss) => new StreamPageReader(pr, ss);
 
         private readonly Dictionary<int, IStreamPageReader> _streamReaders = new Dictionary<int, IStreamPageReader>();
-        private readonly Func<Contracts.IPacketProvider, bool> _newStreamCallback;
         private readonly object _readLock = new object();
 
         private long _nextPageOffset;
         private ushort _pageSize;
         Memory<byte>[] _packets;
-
-        public PageReader(Stream stream, bool closeOnDispose, Func<Contracts.IPacketProvider, bool> newStreamCallback)
-            : base(stream, closeOnDispose)
-        {
-            _newStreamCallback = newStreamCallback;
-        }
 
         private ushort ParsePageHeader(byte[] pageBuf, int? streamSerial, bool? isResync)
         {
@@ -148,7 +142,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
                 var streamReader = CreateStreamPageReader(this, StreamSerial);
                 streamReader.AddPage();
                 _streamReaders.Add(StreamSerial, streamReader);
-                if (!_newStreamCallback(streamReader.PacketProvider))
+                if (!newStreamCallback(streamReader.PacketProvider))
                 {
                     _streamReaders.Remove(StreamSerial);
                     return false;

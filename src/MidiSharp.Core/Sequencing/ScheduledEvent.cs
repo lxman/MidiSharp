@@ -6,36 +6,33 @@ namespace MidiSharp.Sequencing;
 /// <summary>
 /// An event scheduled at a specific time in the sequence.
 /// </summary>
-public readonly struct ScheduledEvent : IComparable<ScheduledEvent>
+public readonly struct ScheduledEvent(
+    long absoluteTicks,
+    TimeSpan absoluteTime,
+    MidiEvent midiEvent,
+    int trackIndex,
+    long sequenceIndex = 0)
+    : IComparable<ScheduledEvent>
 {
-    public ScheduledEvent(long absoluteTicks, TimeSpan absoluteTime, MidiEvent midiEvent, int trackIndex, long sequenceIndex = 0)
-    {
-        AbsoluteTicks = absoluteTicks;
-        AbsoluteTime = absoluteTime;
-        Event = midiEvent;
-        TrackIndex = trackIndex;
-        SequenceIndex = sequenceIndex;
-    }
-
     /// <summary>
     /// The absolute tick position in the sequence.
     /// </summary>
-    public long AbsoluteTicks { get; }
+    public long AbsoluteTicks { get; } = absoluteTicks;
 
     /// <summary>
     /// The absolute real-time position in the sequence.
     /// </summary>
-    public TimeSpan AbsoluteTime { get; }
+    public TimeSpan AbsoluteTime { get; } = absoluteTime;
 
     /// <summary>
     /// The MIDI event.
     /// </summary>
-    public MidiEvent Event { get; }
+    public MidiEvent Event { get; } = midiEvent;
 
     /// <summary>
     /// The index of the track this event came from.
     /// </summary>
-    public int TrackIndex { get; }
+    public int TrackIndex { get; } = trackIndex;
 
     /// <summary>
     /// The order in which this event was appended to the merged timeline (file order:
@@ -43,7 +40,7 @@ public readonly struct ScheduledEvent : IComparable<ScheduledEvent>
     /// final, total-ordering tiebreaker so the sort is deterministic and stable even though
     /// <see cref="List{T}.Sort"/> is an unstable introsort.
     /// </summary>
-    public long SequenceIndex { get; }
+    public long SequenceIndex { get; } = sequenceIndex;
 
     /// <summary>
     /// Compares events by absolute tick, then track index, then original append order.

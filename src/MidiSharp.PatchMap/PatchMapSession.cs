@@ -15,18 +15,15 @@ namespace MidiSharp.PatchMap;
 /// Composites returned by <see cref="BuildComposite"/> are lightweight borrowed views whose own
 /// disposal does not touch the fonts, so a fresh composite can be built for each playback.
 /// </remarks>
-public sealed class PatchMapSession : IDisposable
+public sealed class PatchMapSession(IRBank baseBank) : IDisposable
 {
     private readonly List<IRBank> _sources = new();
     private readonly Dictionary<(int Bank, int Program), PatchRef> _overrides = new();
     private readonly Dictionary<int, PatchRef> _trackOverrides = new();
     private bool _disposed;
 
-    public PatchMapSession(IRBank baseBank)
-        => Base = baseBank ?? throw new ArgumentNullException(nameof(baseBank));
-
     /// <summary>The base font supplying defaults for every patch the song requests.</summary>
-    public IRBank Base { get; }
+    public IRBank Base { get; } = baseBank ?? throw new ArgumentNullException(nameof(baseBank));
 
     /// <summary>Preloaded source fonts the user can pick override patches from.</summary>
     public IReadOnlyList<IRBank> Sources => _sources;

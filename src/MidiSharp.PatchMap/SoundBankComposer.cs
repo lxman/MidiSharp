@@ -11,19 +11,13 @@ namespace MidiSharp.PatchMap;
 /// lives at. Hand the map to <c>Synthesizer.SetTrackPatchMap</c> so notes from that track route
 /// to the override regardless of the channel/program they carry.
 /// </summary>
-public readonly struct CompositeResult
+public readonly struct CompositeResult(IRBank bank, IReadOnlyDictionary<int, (int Bank, int Program)> trackPatchMap)
 {
-    public CompositeResult(IRBank bank, IReadOnlyDictionary<int, (int Bank, int Program)> trackPatchMap)
-    {
-        Bank = bank;
-        TrackPatchMap = trackPatchMap;
-    }
-
     /// <summary>The composite bank to load into the synth.</summary>
-    public IRBank Bank { get; }
+    public IRBank Bank { get; } = bank;
 
     /// <summary>trackIndex → synthetic (bank, program) for each resolved per-track override.</summary>
-    public IReadOnlyDictionary<int, (int Bank, int Program)> TrackPatchMap { get; }
+    public IReadOnlyDictionary<int, (int Bank, int Program)> TrackPatchMap { get; } = trackPatchMap;
 }
 
 /// <summary>
@@ -79,8 +73,7 @@ public static class SoundBankComposer
         var running = baseBank.Samples.Count;
         void Reserve(PatchRef pref)
         {
-            if (offsetOf.ContainsKey(pref.Source)) return;
-            offsetOf[pref.Source] = running;
+            if (!offsetOf.TryAdd(pref.Source, running)) return;
             extraSources.Add(pref.Source);
             running += pref.Source.Samples.Count;
         }
@@ -130,6 +123,17 @@ public static class SoundBankComposer
         var sampleSources = new List<ISampleSource>(1 + extraSources.Count) { baseBank.Samples };
         sampleSources.AddRange(extraSources.Select(s => s.Samples));
 
+        // Merge the initial CC seeds (SFZ <control> set_ccN) from the base font AND every contributing
+        // override/source font. Without the OVERRIDES' seeds, an instrument substituted in from another
+        // font that relies on a seeded controller plays at its silent floor — e.g. the SSO/VPO performance
+        // strings author their samples ~29 dB down and seed CC1≈96 to lift them, so dropping that seed
+        // makes a substituted string section inaudible while a non-CC-driven instrument (a harpsichord) is
+        // fine. Overrides win on conflict, since the seed that matters is the substituted instrument's.
+        var initialControllers = new Dictionary<int, int>(baseBank.InitialControllers);
+        foreach (var src in extraSources)
+            foreach (var kv in src.InitialControllers)
+                initialControllers[kv.Key] = kv.Value;
+
         var bank = new IRBank
         {
             Name = baseBank.Name,
@@ -137,11 +141,7 @@ public static class SoundBankComposer
             Copyright = baseBank.Copyright,
             Comment = baseBank.Comment,
             SourceFormat = baseBank.SourceFormat,
-            // Carry the base font's initial controller seeds (SFZ <control> set_ccN) into the composite.
-            // Without this, compositing — which the web player always does, even with no overrides —
-            // drops them, so a library that sets its dynamics from a seeded CC (e.g. SSO/VPO seed
-            // CC1≈96 and author the samples ~30 dB down) plays at its silent floor.
-            InitialControllers = baseBank.InitialControllers,
+            InitialControllers = initialControllers,
             // Carry the base font's sustain-pedal reassignment (SFZ sustain_cc) so half-pedal fonts hold
             // notes correctly through the composite the web player always builds.
             SustainCc = baseBank.SustainCc,
