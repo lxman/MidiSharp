@@ -14,7 +14,6 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    environment: nuget       # must match the environment in the nuget.org policy (remove if the policy has none)
     steps:
       - uses: actions/checkout@v4
 
