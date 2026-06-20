@@ -256,7 +256,23 @@ list; VST2 takes `processEvents` before `process`).
 **Acceptance gate:** a param automation lane and a MIDI stream both land sample-accurately (measured:
 the change occurs at the expected sample offset, not block-quantized).
 
-### Phase 4 — CLAP instruments
+### Phase 4 — CLAP instruments  — ✅ CORE VERIFIED 2026-06-20  (live player wiring = 4b, pending)
+
+`HostedInstrument` hosts a CLAP instrument as an event-driven sound source: queue note/param events,
+`Render` writes its stereo output. `ClapPlugin` gained 0-audio-input support (instruments) and mono-output
+support (the mono channel is duplicated to the stereo bus). Driven by the Phase-3 timed `HostEvent` stream
+(note on/off via `clap_event_midi`). Measured against the monophonic sine fixture
+(`midisharp.test.synth`): silent with no notes; A4 sounds at **439.5 Hz** (want 440); a note queued at
+sample 256 is strictly silent before it and sounds from exactly 256 (sample-accurate onset); note-off
+silences; and the instrument's output run through a hosted **gain insert** is halved exactly (the
+"inserts on top" half of the gate). Real-world: DISTRHO **Nekobi** (a mono TB-303-style synth, 8 params)
+loads and sounds through the host.
+
+**Remaining (Phase 4b):** wire `HostedInstrument` into the server/`RealtimePlayer` as a mixer source so a
+MIDI file plays through a hosted synth with per-part gain/pan from the existing mixer — the live-playback
+integration. The hosting capability it needs is done and measured; this is engine plumbing (route the
+file's events to the instrument with sample offsets, sum its block into the mix).
+
 
 `HostedInstrument` feeds a mixer part/bus as an alternative to `Synthesizer`. `isInstrument` plugins get
 note events via Phase 3; their stereo output sums into the part the same way synth voices do.
@@ -339,9 +355,9 @@ through a `ProcessorChain`, with the loader, struct/function-pointer marshaling,
 kernel, no-GC hot path, and `IAudioProcessor` drop-in all validated by measurement. Every cross-cutting
 concern the rest of the plan rests on is proven.
 
-**Phases 0–3 are done and verified** — LADSPA spike, CLAP effects, discovery/rack/UI/persistence, and
-sample-accurate event plumbing, all measured against real native plugins. **Next: Phase 4 — CLAP
-instruments**: a `HostedInstrument` that feeds a mixer part/bus, driven by the Phase-3 timed `HostEvent`
-stream (note on/off via `clap_event_midi` or `clap_event_note`), its stereo output summed like synth
-voices. Needs a CLAP instrument to verify against (e.g. the installed DISTRHO Nekobi, or a built
-fixture).
+**Phases 0–3 done and verified; Phase 4 core done and verified** — LADSPA spike, CLAP effects,
+discovery/rack/UI/persistence, sample-accurate events, and CLAP instrument hosting (`HostedInstrument`,
+0-input + mono support), all measured against real native plugins. **Next: Phase 4b** — wire
+`HostedInstrument` into the live player/mixer (a MIDI file through a hosted synth with per-part
+gain/pan) — then **Phase 5 (VST2)** and **Phase 6 (VST3)**, which reuse the whole
+`PlanarBridge`/`HostedEffect`/`HostedInstrument`/event stack as adapters.

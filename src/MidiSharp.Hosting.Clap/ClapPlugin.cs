@@ -26,6 +26,8 @@ public sealed unsafe class ClapPlugin : IHostedPlugin
     private ClapAbi.ClapPlugin* _plugin;
 
     private ClapPluginParams* _params;
+    private int _inputPortCount = 1;    // effects have one audio input; instruments typically zero
+    private int _outputChannels = 2;    // 1 (mono, duplicated to the stereo bus) or 2
     private readonly List<uint> _paramIds = [];
     private readonly List<PluginParameter> _parameters = [];
 
@@ -70,7 +72,7 @@ public sealed unsafe class ClapPlugin : IHostedPlugin
         if (_active) return;
         var max = (uint)config.MaxBlockFrames;
 
-        ValidateStereo();
+        QueryPorts();
         BuildParameters();
 
         if (_plugin->Activate(_plugin, config.SampleRate, 1, max) == 0)
@@ -84,7 +86,7 @@ public sealed unsafe class ClapPlugin : IHostedPlugin
         _inBuf = Alloc<ClapAudioBuffer>();
         _outBuf = Alloc<ClapAudioBuffer>();
         _inBuf->Data32 = _inData32; _inBuf->ChannelCount = 2;
-        _outBuf->Data32 = _outData32; _outBuf->ChannelCount = 2;
+        _outBuf->Data32 = _outData32; _outBuf->ChannelCount = (uint)_outputChannels;
 
         // Time-ordered event scratch: live param sets (≤ one per param) plus a generous per-block cap.
         // Every slot is the size of the largest event (param-value) so offsets stay 8-aligned for its double.
@@ -107,7 +109,7 @@ public sealed unsafe class ClapPlugin : IHostedPlugin
         _process = Alloc<ClapProcess>();
         _process->AudioInputs = _inBuf;
         _process->AudioOutputs = _outBuf;
-        _process->AudioInputsCount = 1;
+        _process->AudioInputsCount = (uint)_inputPortCount;   // 0 for a typical instrument
         _process->AudioOutputsCount = 1;
         _process->InEvents = _inEvents;
         _process->OutEvents = _outEvents;
@@ -160,6 +162,10 @@ public sealed unsafe class ClapPlugin : IHostedPlugin
         _plugin->Process(_plugin, _process);
         _evState->Count = 0;
         _liveCount = 0;
+
+        // A mono plugin wrote only channel 0; mirror it to channel 1 to fill the stereo bus.
+        if (_outputChannels == 1)
+            new ReadOnlySpan<float>(output.Channel(0), output.Frames).CopyTo(new Span<float>(output.Channel(1), output.Frames));
     }
 
     private void WriteParamSlot(int slot, uint paramId, double value, uint time)
@@ -277,14 +283,21 @@ public sealed unsafe class ClapPlugin : IHostedPlugin
         if (_lib != IntPtr.Zero) NativeLibrary.Free(_lib);
     }
 
-    private void ValidateStereo()
+    // Read the plugin's audio-port shape: record the input-port count (0 for a typical instrument) and
+    // the main-output channel count (1 = mono, duplicated to the stereo bus; 2 = stereo). No port info →
+    // assume one stereo in/out.
+    private void QueryPorts()
     {
         var ext = (ClapAudioPorts*)_plugin->GetExtension(_plugin, FixedConst(ExtAudioPorts));
-        if (ext == null) return;   // no port info → assume the conventional stereo in/out
+        if (ext == null) { _inputPortCount = 1; return; }
+        _inputPortCount = (int)ext->Count(_plugin, 1);
         var info = default(ClapAudioPortInfo);
-        if (ext->Count(_plugin, 0) >= 1 && ext->Get(_plugin, 0, 0, &info) != 0 && info.ChannelCount != 2)
-            throw new NotSupportedException(
-                $"CLAP '{Descriptor.Name}' main output is {info.ChannelCount}ch; only stereo is supported for now.");
+        if (ext->Count(_plugin, 0) >= 1 && ext->Get(_plugin, 0, 0, &info) != 0)
+        {
+            if (info.ChannelCount is 1 or 2) _outputChannels = (int)info.ChannelCount;
+            else throw new NotSupportedException(
+                $"CLAP '{Descriptor.Name}' main output is {info.ChannelCount}ch; only mono and stereo are supported.");
+        }
     }
 
     private void BuildParameters()
