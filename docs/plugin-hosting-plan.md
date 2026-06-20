@@ -412,10 +412,23 @@ fixture into the master rack, `/api/plugins/editor/open` returns ok and `xwininf
 at the editor's 320×240, which close removes. VST3 (`IPlugView`) and VST2 (`effEditOpen`) editors landed
 2026-06-20 too — each verified by headless size query, live in-process embed (`XQueryTree` confirms the
 attached child), and (VST3) end-to-end from the web API: loading the VST3 gain into the master rack and
-`/api/plugins/editor/open` maps a WM-managed window at the view's 300×200. Fixtures:
-`~/.clap/midisharp_gui.clap`, the VST3/VST2 gain fixtures extended with X11 editor windows (all paint via
-`background_pixel`, so no fixture event loop). **Remaining:** Win32/Cocoa windowing, and host timer/run-loop
-callbacks for plugins that redraw via a timer (the fixtures need none).
+`/api/plugins/editor/open` maps a WM-managed window at the view's 300×200.
+
+**Single UI thread + host run loop landed 2026-06-20** — what makes *real* plugin editors (not just the
+fixtures) work. The editor's whole lifecycle now runs on one UI thread (`EditorWindow`): for VST3 even
+`createView` happens there, not the worker load thread. That thread runs a real run loop (`EditorRunLoop`,
+`poll()` over the host window's X11 fd + the plugin's registered fds, timeout = nearest timer) so editors can
+drive themselves: VST3 `Linux::IRunLoop` on a per-editor `IPlugFrame` (`Vst3PlugFrame`), CLAP
+`clap.timer-support` + `clap.posix-fd-support` (`ClapHost`), VST2 `effEditIdle` ticks. VST3 params marshal
+onto that thread while the editor is open (the controller is then touched from one thread only). Verified
+measurably: each format's fixture registers a 20 ms timer via its run-loop API and counts ticks (exposed
+via state) — the host fires it repeatedly while open. **And the real-world proof:** the lsp-plugins
+"Trigger Mono" VST3 editor (its own toolkit, ~1114×681) opens out-of-process from the web API and renders
+fully — graph, VU meters, preset bar, every knob — driven by our `IRunLoop`, worker alive.
+
+Fixtures: `~/.clap/midisharp_gui.clap` (clap.gui + clap.timer-support), the VST3/VST2 gain fixtures with
+X11 editor windows + run-loop timers. **Remaining:** Win32/Cocoa windowing, and host services some plugins
+want beyond the run loop (content-scale, message handling) — discovered iteratively per plugin.
 
 ### Phase 8 — Out-of-process sandboxing  *(stability hardening)*  — ✅ CORE VERIFIED 2026-06-20
 
