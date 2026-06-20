@@ -39,6 +39,40 @@ public sealed class Vst2Tests
     }
 
     [Fact]
+    public void Reports_its_editor_and_size_through_eff_edit_get_rect()
+    {
+        var plugin = LoadGain();
+        Assert.SkipWhen(plugin == null, "VST2 gain fixture not installed.");
+        using var _ = plugin;
+
+        var gui = plugin!.Gui;
+        Assert.NotNull(gui);
+        Assert.True(gui!.HasEditor, "the fixture sets effFlagsHasEditor.");
+        Assert.True(gui.IsApiSupported("x11", floating: false));
+        Assert.True(gui.TryGetSize(out var w, out var h));
+        Assert.Equal(300, w);
+        Assert.Equal(200, h);
+    }
+
+    [Fact]
+    public void Embeds_its_editor_in_a_native_window()
+    {
+        Assert.SkipWhen(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")), "no X display.");
+        var plugin = LoadGain();
+        Assert.SkipWhen(plugin == null, "VST2 gain fixture not installed.");
+        using var _ = plugin;
+
+        using var window = MidiSharp.Hosting.EditorHost.EditorWindow.Open(plugin!.Gui, "VST2 editor test");
+        Assert.NotNull(window);
+        Assert.True(window!.IsOpen, $"editor window should open (error: {window.Error}).");
+
+        uint children = 0;
+        for (var i = 0; i < 20 && children == 0; i++) { children = window.EmbeddedChildCount; if (children == 0) System.Threading.Thread.Sleep(50); }
+        Assert.True(children >= 1, "effEditOpen should have created a child window in the host window.");
+        window.Close();
+    }
+
+    [Fact]
     public void Loads_the_vst2_fixture_and_reads_its_metadata()
     {
         var plugin = LoadGain();

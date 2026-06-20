@@ -22,6 +22,7 @@ internal static unsafe class Vst3Abi
     public const int kNoteOnEvent = 0;
     public const int kNoteOffEvent = 1;
     public const int kIBSeekSet = 0;   // IBStream seek modes
+    public const string PlatformTypeX11 = "X11EmbedWindowID";
 
     // ── IIDs (non-Windows UID layout: each of the four uint32 stored big-endian) ──
     public static readonly byte[] IidFUnknown = Uid(0x00000000, 0x00000000, 0xC0000000, 0x00000046);
@@ -35,6 +36,8 @@ internal static unsafe class Vst3Abi
     public static readonly byte[] IidBStream = Uid(0xC3BF6EA2, 0x30994752, 0x9B6BF990, 0x1EE33E9B);
     public static readonly byte[] IidEventList = Uid(0x3A2C4214, 0x346349FE, 0xB2C4F397, 0xB9695A44);
     public static readonly byte[] IidConnectionPoint = Uid(0x70A4156F, 0x6E6E4026, 0x989148BF, 0xAA60D8D1);
+    public static readonly byte[] IidPlugView = Uid(0x5BC32507, 0xD06049EA, 0xA6151B52, 0x2B755B29);
+    public static readonly byte[] IidPlugFrame = Uid(0x367FAF01, 0xAFA94693, 0x8D4DA2A0, 0xED0882A3);
 
     public static byte[] Uid(uint a, uint b, uint c, uint d) =>
     [
@@ -100,7 +103,27 @@ internal static unsafe class Vst3Abi
         public delegate* unmanaged[Cdecl]<void*, uint, double> GetParamNormalized;
         public delegate* unmanaged[Cdecl]<void*, uint, double, int> SetParamNormalized;
         public delegate* unmanaged[Cdecl]<void*, void*, int> SetComponentHandler;
-        public IntPtr CreateView;
+        public delegate* unmanaged[Cdecl]<void*, byte*, void*> CreateView;   // returns IPlugView*
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ViewRect { public int Left, Top, Right, Bottom; }
+
+    // IPlugView, in vtable order. Editor calls are main-thread.
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PlugViewVtbl
+    {
+        public IntPtr QueryInterface, AddRef;
+        public delegate* unmanaged[Cdecl]<void*, uint> Release;
+        public delegate* unmanaged[Cdecl]<void*, byte*, int> IsPlatformTypeSupported;
+        public delegate* unmanaged[Cdecl]<void*, void*, byte*, int> Attached;
+        public delegate* unmanaged[Cdecl]<void*, int> Removed;
+        public IntPtr OnWheel, OnKeyDown, OnKeyUp;
+        public delegate* unmanaged[Cdecl]<void*, ViewRect*, int> GetSize;
+        public delegate* unmanaged[Cdecl]<void*, ViewRect*, int> OnSize;
+        public IntPtr OnFocus;
+        public delegate* unmanaged[Cdecl]<void*, void*, int> SetFrame;
+        public IntPtr CanResize, CheckSizeConstraint;
     }
 
     // IPluginFactory2 — adds getClassInfo2 (PClassInfo2 carries subCategories, where "Instrument" lives).

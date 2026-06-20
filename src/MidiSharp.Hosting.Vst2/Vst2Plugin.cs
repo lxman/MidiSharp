@@ -18,10 +18,11 @@ namespace MidiSharp.Hosting.Vst2;
 /// <see cref="HostEventKind.Param"/> event is applied immediately via <c>setParameter</c>; MIDI events are
 /// sample-accurate through <c>deltaFrames</c>. Only mono/stereo main I/O is supported.
 /// </remarks>
-public sealed unsafe class Vst2Plugin : IHostedPlugin
+public sealed unsafe class Vst2Plugin : IHostedPlugin, IPluginGui
 {
     private readonly IntPtr _lib;
     private AEffect* _eff;
+    private bool _editorOpen;
 
     private int _numIn, _numOut;
     private readonly List<PluginParameter> _parameters = [];
@@ -151,10 +152,48 @@ public sealed unsafe class Vst2Plugin : IHostedPlugin
             _eff->Dispatcher(_eff, EffSetChunk, 0, (IntPtr)state.Length, p, 0);
     }
 
+    // ── Editor (effEditOpen) ────────────────────────────────────────────────────────────────────────
+    public IPluginGui? Gui => (_eff->Flags & FlagsHasEditor) != 0 ? this : null;
+
+    bool IPluginGui.HasEditor => (_eff->Flags & FlagsHasEditor) != 0;
+
+    bool IPluginGui.IsApiSupported(string windowApi, bool floating)
+        => (_eff->Flags & FlagsHasEditor) != 0 && windowApi == "x11";   // VST2 on Linux embeds via X11
+
+    bool IPluginGui.Create(string windowApi, bool floating) => (_eff->Flags & FlagsHasEditor) != 0;
+    bool IPluginGui.SetScale(double scale) => true;
+
+    bool IPluginGui.TryGetSize(out int width, out int height)
+    {
+        width = height = 0;
+        ERect* rect = null;
+        _eff->Dispatcher(_eff, EffEditGetRect, 0, IntPtr.Zero, &rect, 0);   // plugin writes an ERect* here
+        if (rect == null) return false;
+        width = rect->Right - rect->Left; height = rect->Bottom - rect->Top;
+        return width > 0 && height > 0;
+    }
+
+    bool IPluginGui.SetParent(string windowApi, ulong windowHandle)
+    {
+        if ((_eff->Flags & FlagsHasEditor) == 0 || windowApi != "x11") return false;
+        _eff->Dispatcher(_eff, EffEditOpen, 0, IntPtr.Zero, (void*)(nuint)windowHandle, 0);
+        _editorOpen = true;
+        return true;
+    }
+
+    bool IPluginGui.Show() => true;    // VST2 has no separate show; the editor draws once opened + mapped
+    bool IPluginGui.Hide() => true;
+
+    void IPluginGui.Destroy()
+    {
+        if (_editorOpen) { _eff->Dispatcher(_eff, EffEditClose, 0, IntPtr.Zero, null, 0); _editorOpen = false; }
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
+        if (_editorOpen && _eff != null) { _eff->Dispatcher(_eff, EffEditClose, 0, IntPtr.Zero, null, 0); _editorOpen = false; }
         Deactivate();
         if (_eff != null) { _eff->Dispatcher(_eff, EffClose, 0, IntPtr.Zero, null, 0); _eff = null; }
         if (_lib != IntPtr.Zero) NativeLibrary.Free(_lib);

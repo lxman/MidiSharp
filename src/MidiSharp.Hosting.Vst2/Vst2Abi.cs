@@ -25,6 +25,10 @@ internal static class Vst2Abi
     public const int EffSetSampleRate = 10;
     public const int EffSetBlockSize = 11;
     public const int EffMainsChanged = 12;   // value: 1 = resume, 0 = suspend
+    public const int EffEditGetRect = 13;    // ptr ← ERect** : the editor's size
+    public const int EffEditOpen = 14;       // ptr = parent window handle (X11 window id on Linux)
+    public const int EffEditClose = 15;
+    public const int EffEditIdle = 19;
     public const int EffGetChunk = 23;
     public const int EffSetChunk = 24;
     public const int EffProcessEvents = 25;
@@ -36,9 +40,14 @@ internal static class Vst2Abi
     public const int EffGetVstVersion = 58;
 
     // AEffect.flags
+    public const int FlagsHasEditor = 1 << 0;      // 1
     public const int FlagsCanReplacing = 1 << 4;   // 16
     public const int FlagsProgramChunks = 1 << 5;  // 32
     public const int FlagsIsSynth = 1 << 8;        // 256
+
+    // The editor rectangle returned by effEditGetRect (short coordinates).
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ERect { public short Top, Left, Bottom, Right; }
 
     // Host callback opcodes (audioMasterXxx).
     public const int AmVersion = 1;

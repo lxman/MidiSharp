@@ -14,13 +14,14 @@ namespace MidiSharp.Hosting.Vst3;
 /// (a plugin with an event input bus) is fed note-on/off through an <see cref="Vst3EventList"/>; component
 /// and controller state round-trip through <see cref="Vst3BStream"/>.
 /// </summary>
-public sealed unsafe class Vst3Plugin : IHostedPlugin
+public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
 {
     private readonly IntPtr _lib;
     private void* _factory;
     private void* _component;
     private void* _processor;
     private void* _controller;
+    private void* _view;            // IPlugView, created lazily from the controller
     private bool _controllerSeparate;
 
     private int _outputChannels = 2;
@@ -40,6 +41,7 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin
     private ComponentVtbl* Comp => (ComponentVtbl*)*(void**)_component;
     private AudioProcessorVtbl* Proc => (AudioProcessorVtbl*)*(void**)_processor;
     private EditControllerVtbl* Ctrl => (EditControllerVtbl*)*(void**)_controller;
+    private PlugViewVtbl* View => (PlugViewVtbl*)*(void**)_view;
 
     internal Vst3Plugin(IntPtr lib, void* factory, void* component, PluginDescriptor descriptor, AudioConfig config)
     {
@@ -284,10 +286,77 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin
         }
     }
 
+    // ── Editor (IPlugView) ──────────────────────────────────────────────────────────────────────────
+    public IPluginGui? Gui => _controller != null ? this : null;
+
+    // Create the editor view on first need (cached). The controller owns it; we release on destroy/dispose.
+    private void EnsureView()
+    {
+        if (_view != null || _controller == null) return;
+        Span<byte> name = stackalloc byte[8];
+        AsciiZ("editor", name);
+        fixed (byte* p = name) _view = Ctrl->CreateView(_controller, p);
+    }
+
+    bool IPluginGui.HasEditor { get { EnsureView(); return _view != null; } }
+
+    bool IPluginGui.IsApiSupported(string windowApi, bool floating)
+    {
+        EnsureView();
+        if (_view == null || windowApi != "x11") return false;
+        Span<byte> t = stackalloc byte[20];
+        AsciiZ(PlatformTypeX11, t);
+        fixed (byte* p = t) return Ok(View->IsPlatformTypeSupported(_view, p));
+    }
+
+    bool IPluginGui.Create(string windowApi, bool floating)
+    {
+        EnsureView();
+        if (_view == null) return false;
+        View->SetFrame(_view, Vst3Host.PlugFrame);   // so the plugin can request resizes
+        return true;
+    }
+
+    bool IPluginGui.SetScale(double scale) => true;   // VST3 content scaling is a separate interface; skip
+
+    bool IPluginGui.TryGetSize(out int width, out int height)
+    {
+        width = height = 0;
+        if (_view == null) return false;
+        ViewRect r;
+        if (!Ok(View->GetSize(_view, &r))) return false;
+        width = r.Right - r.Left; height = r.Bottom - r.Top;
+        return width > 0 && height > 0;
+    }
+
+    bool IPluginGui.SetParent(string windowApi, ulong windowHandle)
+    {
+        if (_view == null || windowApi != "x11") return false;
+        Span<byte> t = stackalloc byte[20];
+        AsciiZ(PlatformTypeX11, t);
+        fixed (byte* p = t) return Ok(View->Attached(_view, (void*)(nuint)windowHandle, p));
+    }
+
+    bool IPluginGui.Show() => true;    // VST3 has no show; the view is visible once attached + window mapped
+    bool IPluginGui.Hide() => true;
+
+    void IPluginGui.Destroy()
+    {
+        if (_view != null) { View->Removed(_view); Release(_view); _view = null; }
+    }
+
+    private static void AsciiZ(string s, Span<byte> dst)
+    {
+        var n = Math.Min(s.Length, dst.Length - 1);
+        for (var i = 0; i < n; i++) dst[i] = (byte)s[i];
+        dst[n] = 0;
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
+        if (_view != null) { View->Removed(_view); Release(_view); _view = null; }
         Deactivate();
         if (_controllerSeparate && _controller != null) { Ctrl->Terminate(_controller); }
         if (_controller != null && _controller != _component) Release(_controller);
