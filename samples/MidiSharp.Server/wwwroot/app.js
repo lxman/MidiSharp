@@ -18,6 +18,9 @@ let loadedPartOverrides = null;   // "track:channel" -> override DTO  (the per-p
 let loadedTrackOverrides = null;  // trackIndex -> legacy whole-track override (migrated onto its part)
 let lastSetupName = '';
 let availablePlugins = [];        // discovered hosted effect plugins (CLAP/LADSPA), for the rack picker
+let availableInstruments = [];    // discovered hosted instrument plugins, for the per-part `src` picker
+const instrumentBindings = new Map();   // channel -> { channel, format, id }  (part played by a plugin synth)
+let loadedInstruments = null;     // a loaded setup's bindings, migrated onto the working map as strips render
 
 // Mixer (per-instrument, keyed "bank:program") + master limiter. Only non-default strips are kept in
 // mixMap so an untouched mixer stays empty; the browser is the source of truth and re-sends on Play.
@@ -151,6 +154,7 @@ function addRow(list, icon, label, cls, onClick) {
 function resetAnalysis() {
   overrides.clear();
   partOverrides.clear();
+  instrumentBindings.clear();
   mixMap.clear();
   $('mixer').innerHTML = '';
   $('masterStrip').innerHTML = '';
@@ -438,6 +442,32 @@ function buildStrip(p, e) {
     'revert this part to its original sound',
     loadedSub));
   if (loadedSub) srcBtn.classList.add('on');
+
+  // …or play the part with a hosted plugin instrument instead of the SoundFont. Bound per channel: the
+  // synth is muted on that channel and the plugin renders its notes. Applied on the next Play.
+  if (availableInstruments.length) {
+    const hint = document.createElement('div'); hint.className = 'hint'; hint.textContent = '— or play with a plugin instrument —';
+    const isel = document.createElement('select'); isel.className = 'instsel';
+    isel.innerHTML = '<option value="">(SoundFont)</option>'
+      + availableInstruments.map((x, i) => `<option value="${i}">${escapeHtml(x.name)} · ${x.format}</option>`).join('');
+    // A loaded setup's binding lives in loadedInstruments until its strip renders; migrate it onto the
+    // working map here so Play/Save include it even if the user never touches the selector.
+    let bound = instrumentBindings.get(p.channel);
+    if (!bound && loadedInstruments && loadedInstruments.has(p.channel)) {
+      bound = loadedInstruments.get(p.channel);
+      instrumentBindings.set(p.channel, bound);
+    }
+    if (bound) {
+      const idx = availableInstruments.findIndex(x => x.format === bound.format && x.id === bound.id);
+      if (idx >= 0) { isel.value = String(idx); srcBtn.classList.add('inst'); }
+    }
+    isel.addEventListener('change', () => {
+      if (isel.value === '') { instrumentBindings.delete(p.channel); srcBtn.classList.remove('inst'); }
+      else { const x = availableInstruments[+isel.value]; instrumentBindings.set(p.channel, { channel: p.channel, format: x.format, id: x.id }); srcBtn.classList.add('inst'); }
+    });
+    srcPop.append(hint, isel);
+  }
+
   srcBtn.onclick = () => togglePopover(srcBtn, srcPop);
 
   // insert-rack popover (the SAME buildRack/widgets as the master bus)
@@ -755,6 +785,7 @@ async function play() {
     soundfontPath: selectedSoundfont.path,
     overrides: [...overrides.values()],
     partOverrides: [...partOverrides.values()],
+    instruments: [...instrumentBindings.values()],
     mix: [...mixMap.values()].filter(isNonDefaultMix),
     master,
   };
@@ -789,6 +820,7 @@ async function saveSetup() {
     name, midiPath: selectedMidi.path, midiName: selectedMidi.name,
     soundfontPath: selectedSoundfont.path, soundfontName: selectedSoundfont.name,
     overrides: [...overrides.values()], partOverrides: [...partOverrides.values()],
+    instruments: [...instrumentBindings.values()],
     mix: [...mixMap.values()].filter(isNonDefaultMix), master,
   };
   let res;
@@ -818,6 +850,9 @@ async function loadSetup(id) {
   for (const o of setup.overrides || []) overrides.set(`${o.logicalBank}:${o.logicalProgram}`, o);
   loadedPartOverrides = new Map((setup.partOverrides || []).map(o => [`${o.trackIndex}:${o.channel}`, o]));
   loadedTrackOverrides = new Map((setup.trackOverrides || []).map(o => [o.trackIndex, o]));
+  // Per-part plugin-instrument bindings (channel -> binding). Staged in loadedInstruments; analyze()
+  // clears the working map and each strip migrates its loaded binding back as it renders.
+  loadedInstruments = new Map((setup.instruments || []).map(b => [b.channel, b]));
   // Per-part mix, keyed (track:channel). Older setups stored mix by trackIndex only (no channel) — key
   // those by the bare trackIndex so renderMixer can migrate them onto the matching part.
   loadedMix = new Map((setup.mix || []).map(m =>
@@ -829,7 +864,7 @@ async function loadSetup(id) {
 
   lastSetupName = setup.name || lastSetupName;
   await analyze();
-  loadedOverrides = null; loadedPartOverrides = null; loadedTrackOverrides = null; loadedMix = null;
+  loadedOverrides = null; loadedPartOverrides = null; loadedTrackOverrides = null; loadedMix = null; loadedInstruments = null;
 }
 
 async function deleteSetup() {
@@ -844,7 +879,7 @@ function resetAll() {
   if (!selectedMidi || !selectedSoundfont) return;
   overrides.clear();
   partOverrides.clear();
-  loadedOverrides = null; loadedPartOverrides = null; loadedTrackOverrides = null;
+  loadedOverrides = null; loadedPartOverrides = null; loadedTrackOverrides = null; loadedInstruments = null;
   analyze();
 }
 
@@ -891,5 +926,6 @@ loadDevices().catch(e => $('error').textContent = 'Failed to load devices: ' + e
 // Discover hosted effect plugins (instruments can't be inserts) for the rack picker.
 fetch('/api/plugins').then(r => r.json()).then(list => {
   availablePlugins = (list || []).filter(p => !p.isInstrument);
+  availableInstruments = (list || []).filter(p => p.isInstrument);
 }).catch(() => {});
 connectStatus();

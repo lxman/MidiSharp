@@ -276,9 +276,13 @@ can bind a channel to a hosted plugin (`InstrumentBindingDto`); `PlayerService` 
 the dispatch hook, and renders+sums the plugin in the audio callback before the master rack. Measured
 offline (`ClapPlayerIntegrationTests`): a programmatic MIDI (A4 held on channel 0) plays through the
 hosted sine synth — the summed render carries 440 Hz with the synth's channel muted. Live smoke: a play
-request binding channel 0 of a real MIDI to the synth fixture plays without error. **Remaining for full
-productization:** a UI affordance to bind a plugin as a part's instrument (the part strip's `src` →
-hosted instrument), and applying per-part gain/pan to the summed instrument (currently unity).
+request binding channel 0 of a real MIDI to the synth fixture plays without error. **Bind UI shipped
+2026-06-20:** the part strip's `src` popover now carries an instrument selector (`(SoundFont)` or any
+discovered `isInstrument` plugin); choosing one records a per-channel `InstrumentBindingDto` sent on
+Play and persisted in the setup (`SetupDto.Instruments`, round-tripped through Save/Load). Verified live:
+`/api/plugins` reports the synth fixture `isInstrument=true`, and a setup carrying `{channel 2 → CLAP
+midisharp.test.synth}` saves and loads back intact. **Remaining for full productization:** applying
+per-part gain/pan to the summed instrument (currently unity).
 
 
 `HostedInstrument` feeds a mixer part/bus as an alternative to `Synthesizer`. `isInstrument` plugins get
@@ -447,7 +451,8 @@ VST2, and VST3 all host through one `PlanarBridge`/`HostedEffect`/`HostedInstrum
 discovered in the web rack, measured against real or clean-room native plugins; out-of-process sandboxing
 (both discovery and load, with per-file scan resume, a hung-plugin watchdog, and state proxying) gives full
 crash isolation, wired into the live server; and stateful plugins' state is captured into saved setups and
-restored on load. The four major formats are covered (AU is macOS-only, deferred; AAX is parked). **No
-robustness or persistence gaps remain — all remaining work is pure feature depth:** the
-bind-a-plugin-as-instrument UI; per-part gain/pan on summed instruments; and VST3 separate-controller /
-event-list / IBStream state.
+restored on load. The four major formats are covered (AU is macOS-only, deferred; AAX is parked). The
+bind-a-plugin-as-instrument UI shipped 2026-06-20 (part-strip `src` selector → per-channel binding, sent
+on Play and persisted in `SetupDto.Instruments`). **No robustness or persistence gaps remain — all
+remaining work is pure feature depth:** per-part gain/pan on summed instruments; and VST3
+separate-controller / event-list / IBStream state.
