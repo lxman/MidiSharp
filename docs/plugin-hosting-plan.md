@@ -142,7 +142,14 @@ timestamped events, so instrument hosting reuses that scheduling.
 Each phase is independently shippable and gated by a **measured** acceptance test (matching the project's
 A/B-with-measurement discipline — RMS/LUFS/spectral, not "trust me").
 
-### Phase 0 — LADSPA interop spike  *(de-risk the native RT boundary)*
+### Phase 0 — LADSPA interop spike  *(de-risk the native RT boundary)*  — ✅ VERIFIED 2026-06-19
+
+Done and measured against real native plugins (Tom Szilagyi's TAP-plugins, built from source): scan
+discovered all 19 plugins with correct UniqueIDs/ports; TAP Tremolo loaded with its exact parameter
+ranges; the bridge is transparent at bypass (flat RMS 0.28277 vs input 0.28284) and full-depth tremolo
+measurably drops the level (RMS 0.18164, −14.82 dBFS); the realtime path allocates zero managed bytes
+per block. Self-skipping live test in `MidiSharp.Hosting.Tests` (`LadspaLiveTests`).
+
 
 The whole point is to prove the hardest cross-cutting concern against the simplest ABI before CLAP.
 LADSPA is one C struct of function pointers; no MIDI, no state, no GUI.
@@ -285,10 +292,14 @@ plumbing exists; Linux-only, so additive rather than foundational.
   window host (Phase 7) is worth it.
 - **Crash safety** in-process — accepted short-term, Phase 8 is the real fix.
 
-## 9. Immediate next step
+## 9. Status & next step
 
-Build **Phase 0**: `MidiSharp.Hosting` core (`PlanarBridge`, `HostedEffect`, `IHostedPlugin`,
-unmanaged-buffer helpers) + `MidiSharp.Hosting.Ladspa`, and run a known LADSPA effect through a
-`ProcessorChain` in a test, hitting all four Phase-0 acceptance gates. That single spike validates the
-loader, the struct/function-pointer marshaling, the interleave↔planar kernel, the no-GC hot path, and
-the `IAudioProcessor` drop-in — i.e. every cross-cutting concern the rest of the plan rests on.
+**Phase 0 is done and verified** (see above): the core (`PlanarBridge`, `HostedEffect`, `IHostedPlugin`,
+unmanaged-buffer helpers) and the `MidiSharp.Hosting.Ladspa` adapter load and run real native plugins
+through a `ProcessorChain`, with the loader, struct/function-pointer marshaling, interleave↔planar
+kernel, no-GC hot path, and `IAudioProcessor` drop-in all validated by measurement. Every cross-cutting
+concern the rest of the plan rests on is proven.
+
+**Next: Phase 1 — CLAP effects.** Promote the concrete spike pieces into the format-agnostic abstraction
+(already largely in place) and write the first cross-platform adapter (`MidiSharp.Hosting.Clap`),
+reusing `PlanarBridge`/`HostedEffect` verbatim. Acceptance gate as in Phase 1 above.

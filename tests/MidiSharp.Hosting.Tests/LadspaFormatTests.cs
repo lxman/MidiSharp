@@ -31,13 +31,15 @@ public sealed class LadspaFormatTests
     }
 
     [Fact]
-    public void Registry_routes_load_by_format_name()
+    public void Registry_registers_a_format_and_rescans_without_throwing()
     {
         var registry = new PluginRegistry().Register(new LadspaFormat());
         Assert.Single(registry.Formats);
         Assert.Equal("LADSPA", registry.Formats[0].Name);
-        // Rescan over no real paths is harmless and leaves the catalog empty.
+        // Rescan walks the format's default paths plus any extras; the plugin count is
+        // environment-dependent (0 in CI, non-zero where LADSPA plugins are installed), so we only
+        // assert it runs cleanly and that any results belong to the registered format.
         registry.Rescan([Path.Combine(Path.GetTempPath(), "midisharp-no-ladspa-here")]);
-        Assert.Empty(registry.Plugins);
+        Assert.All(registry.Plugins, p => Assert.Equal("LADSPA", p.Format));
     }
 }
