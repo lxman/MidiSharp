@@ -82,13 +82,17 @@ app.MapGet("/api/setups/{id}", (string id) =>
 app.MapDelete("/api/setups/{id}", (string id) => setups.Delete(id) ? Results.Ok() : Results.NotFound());
 
 // One-directional status push so the UI sees the playhead and the completion event live.
+// Serialize with Web defaults (camelCase) to match the HTTP /api/* responses (Results.Json) and the
+// client's field names — a bare JsonSerializer.Serialize would emit the DTO's PascalCase names and the
+// browser would read every field as undefined (state never "playing", playhead frozen).
+var wsJson = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 app.Map("/ws", async context =>
 {
     if (!context.WebSockets.IsWebSocketRequest) { context.Response.StatusCode = 400; return; }
     using var ws = await context.WebSockets.AcceptWebSocketAsync();
     while (ws.State == WebSocketState.Open)
     {
-        var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(player.Status()));
+        var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(player.Status(), wsJson));
         try { await ws.SendAsync(bytes, WebSocketMessageType.Text, true, context.RequestAborted); }
         catch { break; }
         try { await Task.Delay(250, context.RequestAborted); } catch { break; }
