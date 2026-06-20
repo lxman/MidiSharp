@@ -88,9 +88,20 @@ public sealed class PlayerService : IDisposable
     // a non-empty rack is registered with the synth as that track's IInstrumentInsert.
     private readonly Dictionary<int, EffectRack> _instrumentRacks = new();
     // Hosted plugin instruments bound to channels for the current play; rendered and summed in the
-    // audio callback. Torn down on stop.
-    private readonly List<HostedInstrument> _hostedInstruments = [];
+    // audio callback. Torn down on stop. Each carries the part's mixer trim so gain/pan/mute/solo apply
+    // to the summed plugin output the same way they do to synth voices.
+    private readonly List<HostedVoice> _hostedInstruments = [];
     private float[] _instScratch = [];
+
+    // A hosted instrument paired with the live mixer trim of the part it plays. The InstrumentMix is the
+    // same mutable instance the synth holds for that part, so live fader moves (SetInstrumentMix) flow
+    // through with no extra wiring. A part with no mixer strip gets a no-op identity mix → unity sum
+    // (bit-identical to the pre-trim path).
+    private sealed class HostedVoice(HostedInstrument inst, InstrumentMix mix)
+    {
+        public HostedInstrument Inst { get; } = inst;
+        public InstrumentMix Mix { get; } = mix;
+    }
     private PlayerState _state = PlayerState.Idle;
     private string? _midiName;
     private string? _soundfontName;
@@ -210,7 +221,7 @@ public sealed class PlayerService : IDisposable
                 ConfigureMaster(req.Master);
                 _masterRack.Reset();
                 var player = new RealtimePlayer(midi, synth);
-                ApplyInstrumentBindings(req.Instruments, synth, player);
+                ApplyInstrumentBindings(req.Instruments, req.Mix, synth, player);
                 var output = new OwnAudioOutput(SampleRate, channels: 2,
                     outputDeviceId: string.IsNullOrEmpty(req.DeviceId) ? null : req.DeviceId);
                 // Synth fills the block (per-instrument inserts already applied inside it); any hosted
@@ -225,10 +236,16 @@ public sealed class PlayerService : IDisposable
                         var nn = frames * 2;
                         if (_instScratch.Length < nn) _instScratch = new float[nn];
                         var sc = _instScratch.AsSpan(0, nn);
-                        foreach (var hi in _hostedInstruments)
+                        var anySolo = synth.AnySolo;
+                        foreach (var hv in _hostedInstruments)
                         {
-                            hi.Render(sc);
-                            for (var i = 0; i < nn; i++) span[i] += sc[i];
+                            // Always render (keeps the plugin's clock and event queue advancing) even when
+                            // gated to silence, so resuming a mute/solo doesn't skip the plugin's timeline.
+                            hv.Inst.Render(sc);
+                            var mix = hv.Mix;
+                            // mute/solo gate the whole part; gain/pan trim the summed stereo output.
+                            if (mix.Mute || (anySolo && !mix.Solo)) continue;
+                            StereoTrim.Add(span, sc, mix.GainDb, mix.Pan);
                         }
                     }
                     _masterRack.Process(span);
@@ -330,7 +347,8 @@ public sealed class PlayerService : IDisposable
     // Bind hosted plugin instruments to channels: load each, mute its channel on the synth, and route
     // that channel's note/CC events (sample-accurately, via the player's EventDispatched hook) to the
     // plugin. The plugins are rendered and summed in the audio callback.
-    private void ApplyInstrumentBindings(InstrumentBindingDto[]? bindings, Synthesizer synth, RealtimePlayer player)
+    private void ApplyInstrumentBindings(InstrumentBindingDto[]? bindings, InstrumentMixDto[]? mix,
+        Synthesizer synth, RealtimePlayer player)
     {
         if (bindings == null) return;
         foreach (var b in bindings)
@@ -340,6 +358,14 @@ public sealed class PlayerService : IDisposable
             catch { continue; }   // missing/incompatible plugin → leave the channel on the synth
 
             var channel = b.Channel;
+            // The bind is per-channel (the synth mutes the whole channel); the mixer is per-(track,channel)
+            // part. Pair the instrument with the mix strip for its channel — the SAME InstrumentMix
+            // instance the synth holds, so a live fader move updates both. No strip → a no-op identity
+            // mix, leaving the summed output at unity (bit-identical to before per-part trim existed).
+            var strip = mix?.FirstOrDefault(m => m.Channel == channel);
+            var partMix = strip != null
+                ? synth.GetInstrumentMix(Synthesizer.TrackMixBank, Synthesizer.TrackPart(strip.TrackIndex, channel))
+                : new InstrumentMix();
             synth.MuteChannel(channel, true);
             player.EventDispatched += (se, offset) =>
             {
@@ -357,7 +383,7 @@ public sealed class PlayerService : IDisposable
                         break;
                 }
             };
-            _hostedInstruments.Add(inst);
+            _hostedInstruments.Add(new HostedVoice(inst, partMix));
         }
     }
 
@@ -529,7 +555,7 @@ public sealed class PlayerService : IDisposable
         _player = null;
         _synth = null;
         // Hosted instruments outlived the audio callback (now stopped); dispose their native plugins.
-        foreach (var hi in _hostedInstruments) { try { hi.Dispose(); } catch { } }
+        foreach (var hv in _hostedInstruments) { try { hv.Inst.Dispose(); } catch { } }
         _hostedInstruments.Clear();
         // Dispose after the audio output is stopped: the composite the synth held borrowed
         // these fonts' samples, so they must outlive the audio callback.

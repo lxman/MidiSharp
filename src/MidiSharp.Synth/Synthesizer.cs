@@ -272,6 +272,18 @@ public sealed class Synthesizer
     public bool TryGetInstrumentMix(int bank, int program, out InstrumentMix mix)
         => _instrumentMixes.TryGetValue(new InstrumentId(bank, program), out mix!);
 
+    /// <summary>True when any instrument is soloed (so non-soloed parts are silenced). Computed from the
+    /// live mix entries — the same condition the voice loop uses — so a caller summing its own sources
+    /// (e.g. hosted plugin instruments on muted channels) can honor the global solo state consistently.</summary>
+    public bool AnySolo
+    {
+        get
+        {
+            foreach (var m in _instrumentMixes.Values) if (m.Solo) return true;
+            return false;
+        }
+    }
+
     /// <summary>Removes all per-instrument mixer trims, returning the engine to its bit-identical
     /// pre-mixer path.</summary>
     public void ClearInstrumentMixes() => _instrumentMixes.Clear();

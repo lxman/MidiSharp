@@ -281,15 +281,23 @@ request binding channel 0 of a real MIDI to the synth fixture plays without erro
 discovered `isInstrument` plugin); choosing one records a per-channel `InstrumentBindingDto` sent on
 Play and persisted in the setup (`SetupDto.Instruments`, round-tripped through Save/Load). Verified live:
 `/api/plugins` reports the synth fixture `isInstrument=true`, and a setup carrying `{channel 2 → CLAP
-midisharp.test.synth}` saves and loads back intact. **Remaining for full productization:** applying
-per-part gain/pan to the summed instrument (currently unity).
+midisharp.test.synth}` saves and loads back intact. **Per-part gain/pan/mute/solo shipped 2026-06-20:**
+each hosted instrument is paired with its part's `InstrumentMix` (the same mutable instance the synth
+holds for that part, matched by channel), so the mixer fader rides the summed plugin output exactly as it
+rides synth voices — gain (dB→linear), pan (stereo balance offset), mute, and a global-solo gate
+(`Synthesizer.AnySolo`) that silences a non-soloed plugin part when anything is soloed, and live fader
+moves flow through with no extra wiring. The trim math is a tested unit (`StereoTrim.Add`, called by the
+audio callback): measured ×0.5/×1/×2 gain proportionality, ±1 hard-pan channel isolation, and a
+bit-identical plain add at 0 dB / pan 0. Live smoke: channel 0 bound to the synth with a `{−6 dB, pan
++0.5, solo}` strip plays `ok`, and a mid-play `/api/mix` move is applied without restart.
 
 
 `HostedInstrument` feeds a mixer part/bus as an alternative to `Synthesizer`. `isInstrument` plugins get
 note events via Phase 3; their stereo output sums into the part the same way synth voices do.
 
-**Acceptance gate:** a CLAP synth plays a MIDI file through MidiSharp's mixer, with per-part gain/pan and
-inserts applied on top — measured against the plugin's standalone render.
+**Acceptance gate:** ✅ a CLAP synth plays a MIDI file through MidiSharp's mixer, with per-part
+gain/pan/mute/solo applied on top (trim math measured in `StereoTrimTests`); per-part *inserts* on a
+hosted instrument remain future work (they need the Tier-2 bus path, which today wraps synth voices).
 
 ### Phase 5 — VST2 adapter  — ✅ VERIFIED 2026-06-20
 
@@ -453,6 +461,7 @@ discovered in the web rack, measured against real or clean-room native plugins; 
 crash isolation, wired into the live server; and stateful plugins' state is captured into saved setups and
 restored on load. The four major formats are covered (AU is macOS-only, deferred; AAX is parked). The
 bind-a-plugin-as-instrument UI shipped 2026-06-20 (part-strip `src` selector → per-channel binding, sent
-on Play and persisted in `SetupDto.Instruments`). **No robustness or persistence gaps remain — all
-remaining work is pure feature depth:** per-part gain/pan on summed instruments; and VST3
-separate-controller / event-list / IBStream state.
+on Play and persisted in `SetupDto.Instruments`), and per-part gain/pan/mute/solo on summed instruments
+shipped the same day (`StereoTrim.Add` + the part's shared `InstrumentMix` + `Synthesizer.AnySolo`). **No
+robustness or persistence gaps remain — all remaining work is pure feature depth:** per-part *inserts* on
+a hosted instrument (needs the Tier-2 bus path); and VST3 separate-controller / event-list / IBStream state.
