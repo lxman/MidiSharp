@@ -148,7 +148,9 @@ if (listPatches)
 var playBank = soundBank;
 PatchMapSession? session = null;
 IReadOnlyDictionary<int, (int Bank, int Program)>? trackPatchMap = null;
-if (setup != null && ((setup.Overrides?.Length ?? 0) > 0 || (setup.TrackOverrides?.Length ?? 0) > 0))
+IReadOnlyDictionary<int, (int Bank, int Program)>? partPatchMap = null;
+if (setup != null && ((setup.Overrides?.Length ?? 0) > 0 || (setup.TrackOverrides?.Length ?? 0) > 0
+                      || (setup.PartOverrides?.Length ?? 0) > 0))
 {
     try
     {
@@ -156,11 +158,15 @@ if (setup != null && ((setup.Overrides?.Length ?? 0) > 0 || (setup.TrackOverride
         var resolved = session.BuildResolved();
         playBank = resolved.Bank;
         trackPatchMap = resolved.TrackPatchMap;
+        partPatchMap = resolved.PartPatchMap;
         foreach (var o in setup.Overrides ?? [])
             Console.WriteLine($"  override prog {o.LogicalProgram} → {Path.GetFileName(o.SourcePath)} " +
                               $"(bank {o.SourceBank}, prog {o.SourceProgram})");
         foreach (var o in setup.TrackOverrides ?? [])
             Console.WriteLine($"  track {o.TrackIndex} ({o.TrackName ?? "?"}) → {Path.GetFileName(o.SourcePath)} " +
+                              $"(bank {o.SourceBank}, prog {o.SourceProgram})");
+        foreach (var o in setup.PartOverrides ?? [])
+            Console.WriteLine($"  part t{o.TrackIndex} ch{o.Channel} ({o.PartName ?? "?"}) → {Path.GetFileName(o.SourcePath)} " +
                               $"(bank {o.SourceBank}, prog {o.SourceProgram})");
     }
     catch (Exception ex)
@@ -205,6 +211,7 @@ else if (maps.Count > 0)
 var synth = new Synthesizer(sampleRate);
 synth.LoadSoundFont(playBank);
 if (trackPatchMap != null) synth.SetTrackPatchMap(trackPatchMap);
+if (partPatchMap != null) synth.SetPartPatchMap(partPatchMap);
 
 // Per-instrument gain trims from the setup (the orchestration balance knob). A patch override's trim
 // keys on its logical (bank, program); a track override's on the synthetic address it resolved to.
@@ -218,6 +225,11 @@ if (setup != null)
         foreach (var o in setup.TrackOverrides ?? [])
             if (o.GainDb != 0 && trackPatchMap.TryGetValue(o.TrackIndex, out var addr))
                 synth.GetInstrumentMix(addr.Bank, addr.Program).GainDb = o.GainDb;
+    // A part override's trim lands on the part's mixer bucket — the (TrackMixBank, TrackPart) id the
+    // voice is tagged with — matching the web player.
+    foreach (var o in setup.PartOverrides ?? [])
+        if (o.GainDb != 0)
+            synth.GetInstrumentMix(Synthesizer.TrackMixBank, Synthesizer.TrackPart(o.TrackIndex, o.Channel)).GainDb = o.GainDb;
 }
 
 // Optional master DSP chain (caller-side, outside the synth). --limiter inserts a brickwall limiter

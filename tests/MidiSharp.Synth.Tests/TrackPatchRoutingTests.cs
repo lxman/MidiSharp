@@ -50,6 +50,45 @@ public sealed class TrackPatchRoutingTests
         Assert.True(RenderPeak(synth) > 0.1f);
     }
 
+    [Fact]
+    public void NoteOn_withMappedPart_usesPartOverridePatch()
+    {
+        var synth = NewSynth();
+        // Part (track 11, channel 0) → the silent override patch.
+        synth.SetPartPatchMap(new Dictionary<int, (int Bank, int Program)>
+            { [Synthesizer.TrackPart(11, 0)] = (TrackBank, TrackProgram) });
+
+        synth.NoteOn(0, 60, 100, trackIndex: 11);              // matches the mapped part → silent
+        Assert.Equal(1, synth.ActiveVoiceCount);
+        Assert.True(RenderPeak(synth) < 0.01f);
+    }
+
+    [Fact]
+    public void NoteOn_onAnotherChannelOfTheSameTrack_isUnaffected()
+    {
+        var synth = NewSynth();
+        // Only channel 0 of track 11 is overridden; channel 1 of the same track must resolve normally.
+        synth.SetPartPatchMap(new Dictionary<int, (int Bank, int Program)>
+            { [Synthesizer.TrackPart(11, 0)] = (TrackBank, TrackProgram) });
+
+        synth.NoteOn(1, 60, 100, trackIndex: 11);              // channel 1 → unmapped part → loud channel patch
+        Assert.True(RenderPeak(synth) > 0.1f);
+    }
+
+    [Fact]
+    public void PartOverride_takesPrecedenceOverTrackOverride()
+    {
+        var synth = NewSynth();
+        // The whole track is forced to the silent patch, but channel 0's part points back at the loud
+        // channel patch. The part map is consulted first, so the note sounds loud.
+        synth.SetTrackPatchMap(new Dictionary<int, (int Bank, int Program)> { [11] = (TrackBank, TrackProgram) });
+        synth.SetPartPatchMap(new Dictionary<int, (int Bank, int Program)>
+            { [Synthesizer.TrackPart(11, 0)] = (ChannelBank, ChannelProgram) });
+
+        synth.NoteOn(0, 60, 100, trackIndex: 11);
+        Assert.True(RenderPeak(synth) > 0.1f);
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────
 
     private static Synthesizer NewSynth()

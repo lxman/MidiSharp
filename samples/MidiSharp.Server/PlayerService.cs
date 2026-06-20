@@ -12,6 +12,9 @@ public enum PlayerState { Idle, Playing, Completed }
 public sealed record DeviceDto(string Id, string Name, string Engine, bool IsDefault);
 public sealed record PatchOverrideDto(int LogicalBank, int LogicalProgram, string SourcePath, int SourceBank, int SourceProgram, double GainDb = 0);
 public sealed record TrackOverrideDto(int TrackIndex, string? TrackName, string SourcePath, int SourceBank, int SourceProgram, double GainDb = 0);
+// A per-part substitution: force the part (track, channel) to a source font's instrument. Routes one
+// channel of a (possibly multi-channel / format-0) track independently of the rest.
+public sealed record PartOverrideDto(int TrackIndex, int Channel, string? PartName, string SourcePath, int SourceBank, int SourceProgram, double GainDb = 0);
 // Per-part mixer strip, keyed by (track, channel) — the engine mixes by Synthesizer.TrackPart(track,
 // channel). All fields default to no-ops. `inserts` is the part's Tier-2 insert rack.
 public sealed record InstrumentMixDto(int TrackIndex, int Channel, double GainDb = 0, double Pan = 0, bool Mute = false, bool Solo = false, double ReverbSend = 0, double ChorusSend = 0, EffectDto[]? Inserts = null);
@@ -28,14 +31,15 @@ public sealed record EffectDto(string Type, bool Enabled = true, EqBandDto[]? Eq
 public sealed record MasterDto(EffectDto[]? Effects = null, double MasterGainDb = 0,
     bool LimiterEnabled = false, double CeilingDb = -1.0, double ReleaseMs = 100.0,
     bool EqEnabled = false, EqBandDto[]? EqBands = null);
-public sealed record PlayRequest(string? DeviceId, string MidiPath, string SoundfontPath, PatchOverrideDto[]? Overrides = null, TrackOverrideDto[]? TrackOverrides = null, InstrumentMixDto[]? Mix = null, MasterDto? Master = null);
+public sealed record PlayRequest(string? DeviceId, string MidiPath, string SoundfontPath, PatchOverrideDto[]? Overrides = null, TrackOverrideDto[]? TrackOverrides = null, PartOverrideDto[]? PartOverrides = null, InstrumentMixDto[]? Mix = null, MasterDto? Master = null);
 public sealed record PlayResponse(bool Ok, double DurationSeconds, string[] Defects, string? Error);
 public sealed record StatusDto(string State, double PositionSeconds, double DurationSeconds, string? Midi, string? Soundfont);
 public sealed record UsedPatchDto(int Bank, int Program, string? Name, bool IsDrum, int[] Channels);
 public sealed record TrackInfoDto(int TrackIndex, string? Name, int[] Channels, int[] Programs, string? BaseName);
 // One mixer strip = one song "part" = a (track, channel). Name/Sound are resolved server-side from the
 // best info the file gives (track name when it uniquely identifies the part, else GM program name).
-// CanSubstitute is true only when the track sounds on one channel (so a per-track override == this part).
+// CanSubstitute is always true now (per-part overrides route each (track, channel) independently); the
+// field stays on the wire for older clients that gate the `src` button on it.
 public sealed record PartDto(int TrackIndex, int Channel, string Name, string? Sound, bool IsDrum, bool CanSubstitute);
 public sealed record SoundfontPatchDto(int Bank, int Program, string Name);
 public sealed record SoundfontCatalogDto(string Name, SoundfontPatchDto[] Patches);
@@ -124,8 +128,9 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
             // Sub-line: the program info, plus the GM name only when it isn't already the headline.
             var sound = p.BaseName != null && !string.Equals(p.BaseName, name, StringComparison.Ordinal)
                 ? $"{progStr} · {p.BaseName}" : progStr;
-            // A per-track source override only equals this single part when the track has one channel.
-            return new PartDto(p.TrackIndex, p.Channel, name, sound, p.IsDrum, p.TrackChannelCount == 1);
+            // Every part is independently substitutable now (per-part overrides route one (track,
+            // channel) on its own), so the strip's `src` is always available.
+            return new PartDto(p.TrackIndex, p.Channel, name, sound, p.IsDrum, CanSubstitute: true);
         }).ToList();
     }
 
@@ -167,14 +172,16 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
                 var sources = new Dictionary<string, IRBank>(StringComparer.OrdinalIgnoreCase);
                 ApplyOverrides(session, req.Overrides, sources);
                 ApplyTrackOverrides(session, req.TrackOverrides, sources);
+                ApplyPartOverrides(session, req.PartOverrides, sources);
 
                 var synth = new Synthesizer(SampleRate);
                 var composite = session.BuildResolved();
                 synth.LoadSoundFont(composite.Bank);
                 synth.SetTrackPatchMap(composite.TrackPatchMap);
+                synth.SetPartPatchMap(composite.PartPatchMap);
                 // Override gainDb seeds the per-instrument gain; the mixer array then takes authority
                 // (gain/pan/mute/solo/sends). Master DSP (limiter) is configured from the request too.
-                ApplyInstrumentGains(synth, req.Overrides, req.TrackOverrides, composite);
+                ApplyInstrumentGains(synth, req.Overrides, req.TrackOverrides, req.PartOverrides, composite);
                 ApplyInstrumentMix(synth, req.Mix);
                 ApplyInstrumentInserts(synth, req.Mix);
                 ConfigureMaster(req.Master);
@@ -242,6 +249,21 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
         }
     }
 
+    // Force every note on a given (track, channel) part to a chosen source patch — the finest-grained
+    // substitution, used where a single track carries several instruments (format 0). Shares the byPath
+    // cache so a font reused across patch/track/part overrides loads only once.
+    private static void ApplyPartOverrides(PatchMapSession session, PartOverrideDto[]? overrides,
+        Dictionary<string, IRBank> byPath)
+    {
+        if (overrides == null || overrides.Length == 0) return;
+
+        foreach (var o in overrides)
+        {
+            var src = LoadSource(session, byPath, o.SourcePath);
+            session.SetPartOverride(o.TrackIndex, o.Channel, new PatchRef(src, o.SourceBank, o.SourceProgram));
+        }
+    }
+
     // Apply each override's per-instrument gain trim (dB) to the loaded synth. The trim is keyed by the
     // instrument id a note resolves to: a patch override's logical (bank, program), or a track
     // override's synthetic address from the composite's track→patch map. This is the orchestration
@@ -249,7 +271,7 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
     // would otherwise pin to silence. Zero gain is skipped so an all-zero setup leaves the engine on
     // its bit-identical pre-mixer path.
     private static void ApplyInstrumentGains(Synthesizer synth, PatchOverrideDto[]? overrides,
-        TrackOverrideDto[]? trackOverrides, CompositeResult composite)
+        TrackOverrideDto[]? trackOverrides, PartOverrideDto[]? partOverrides, CompositeResult composite)
     {
         if (overrides != null)
             foreach (var o in overrides)
@@ -260,6 +282,13 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
             foreach (var o in trackOverrides)
                 if (o.GainDb != 0 && composite.TrackPatchMap.TryGetValue(o.TrackIndex, out var addr))
                     synth.GetInstrumentMix(addr.Bank, addr.Program).GainDb = o.GainDb;
+
+        // A part override's gain seeds the part's mixer bucket — the (TrackMixBank, TrackPart) id the
+        // voice is actually tagged with — so it lands on the same strip the user sees.
+        if (partOverrides != null)
+            foreach (var o in partOverrides)
+                if (o.GainDb != 0)
+                    synth.GetInstrumentMix(Synthesizer.TrackMixBank, Synthesizer.TrackPart(o.TrackIndex, o.Channel)).GainDb = o.GainDb;
     }
 
     // Apply the per-instrument mixer strips to the loaded synth. gainDb here is absolute and supersedes

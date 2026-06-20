@@ -9,12 +9,13 @@ const escapeHtml = s => String(s).replace(/[&<>"']/g,
 
 let selectedMidi = null;        // { name, path }
 let selectedSoundfont = null;   // { name, path }
-const overrides = new Map();      // "bank:program" -> patch override DTO
-const trackOverrides = new Map(); // trackIndex -> track override DTO
+const overrides = new Map();      // "bank:program" -> patch override DTO (legacy patch swaps)
+const partOverrides = new Map();  // "track:channel" -> part override DTO (the strips' `src`)
 const catalogCache = new Map();   // font path -> catalog
 // When a setup is being loaded, these hold its overrides so the pickers render pre-populated.
 let loadedOverrides = null;       // "bank:program" -> override DTO  (null when not loading a setup)
-let loadedTrackOverrides = null;  // trackIndex -> override DTO
+let loadedPartOverrides = null;   // "track:channel" -> override DTO  (the per-part substitutions)
+let loadedTrackOverrides = null;  // trackIndex -> legacy whole-track override (migrated onto its part)
 let lastSetupName = '';
 
 // Mixer (per-instrument, keyed "bank:program") + master limiter. Only non-default strips are kept in
@@ -148,7 +149,7 @@ function addRow(list, icon, label, cls, onClick) {
 // ---------------- analysis + overrides ----------------
 function resetAnalysis() {
   overrides.clear();
-  trackOverrides.clear();
+  partOverrides.clear();
   mixMap.clear();
   $('mixer').innerHTML = '';
   $('masterStrip').innerHTML = '';
@@ -421,23 +422,22 @@ function buildStrip(p, e) {
   const fxBtn = document.createElement('button'); fxBtn.textContent = 'FX'; fxBtn.title = 'insert effects';
   head.append(srcBtn, fxBtn);
 
-  // src popover → per-track override. Only meaningful when this part's track has one channel (so the
-  // override hits just this part); on a multi-channel/format-0 track it's disabled until per-part
-  // substitution lands.
-  if (p.canSubstitute) {
-    srcBtn.title = 'assign a font to this part';
-    const srcPop = document.createElement('div'); srcPop.className = 'pop src';
-    srcPop.appendChild(buildPicker(
-      (srcPath, sb, sp) => { trackOverrides.set(p.trackIndex, { trackIndex: p.trackIndex, trackName: p.name, sourcePath: srcPath, sourceBank: sb, sourceProgram: sp }); srcBtn.classList.add('on'); },
-      () => { trackOverrides.delete(p.trackIndex); srcBtn.classList.remove('on'); },
-      'revert this part to its original sound',
-      loadedTrackOverrides && loadedTrackOverrides.get(p.trackIndex)));
-    if (loadedTrackOverrides && loadedTrackOverrides.get(p.trackIndex)) srcBtn.classList.add('on');
-    srcBtn.onclick = () => togglePopover(srcBtn, srcPop);
-  } else {
-    srcBtn.disabled = true;
-    srcBtn.title = 'this part shares a track with others (e.g. format 0) — per-part substitution coming soon';
-  }
+  // src popover → per-part override keyed by (track, channel), so each part substitutes on its own —
+  // including the several instruments that share one track in a format-0 file. A loaded setup's
+  // per-part override pre-populates the picker; a legacy whole-track override migrates onto its part
+  // (when its picker fires onPick during init, it's re-recorded as a part override).
+  const pk = partKey(p);
+  srcBtn.title = 'assign a font to this part';
+  const srcPop = document.createElement('div'); srcPop.className = 'pop src';
+  const loadedSub = (loadedPartOverrides && loadedPartOverrides.get(pk))
+    || (loadedTrackOverrides && loadedTrackOverrides.get(p.trackIndex));
+  srcPop.appendChild(buildPicker(
+    (srcPath, sb, sp) => { partOverrides.set(pk, { trackIndex: p.trackIndex, channel: p.channel, partName: p.name, sourcePath: srcPath, sourceBank: sb, sourceProgram: sp }); srcBtn.classList.add('on'); },
+    () => { partOverrides.delete(pk); srcBtn.classList.remove('on'); },
+    'revert this part to its original sound',
+    loadedSub));
+  if (loadedSub) srcBtn.classList.add('on');
+  srcBtn.onclick = () => togglePopover(srcBtn, srcPop);
 
   // insert-rack popover (the SAME buildRack/widgets as the master bus)
   const fxPop = document.createElement('div'); fxPop.className = 'pop fxpop rack';
@@ -684,7 +684,7 @@ async function play() {
     midiPath: selectedMidi.path,
     soundfontPath: selectedSoundfont.path,
     overrides: [...overrides.values()],
-    trackOverrides: [...trackOverrides.values()],
+    partOverrides: [...partOverrides.values()],
     mix: [...mixMap.values()].filter(isNonDefaultMix),
     master,
   };
@@ -718,7 +718,7 @@ async function saveSetup() {
   const body = {
     name, midiPath: selectedMidi.path, midiName: selectedMidi.name,
     soundfontPath: selectedSoundfont.path, soundfontName: selectedSoundfont.name,
-    overrides: [...overrides.values()], trackOverrides: [...trackOverrides.values()],
+    overrides: [...overrides.values()], partOverrides: [...partOverrides.values()],
     mix: [...mixMap.values()].filter(isNonDefaultMix), master,
   };
   let res;
@@ -741,11 +741,12 @@ async function loadSetup(id) {
   selectedSoundfont = { name: setup.soundfontName || setup.soundfontPath.split('/').pop(), path: setup.soundfontPath };
   $('sfPick').classList.remove('empty'); $('sfPick').textContent = selectedSoundfont.name;
 
-  // Substitution: track-overrides are edited on the strips' `src`. Legacy patch-overrides (older setups
-  // like brand51) are carried through passively so their sound swaps still apply on play, even though
-  // the new track strips don't edit them.
+  // Substitution: per-part overrides are edited on the strips' `src`. Legacy whole-track overrides are
+  // mapped by trackIndex and migrated onto their part as each strip renders. Legacy patch-overrides
+  // (older setups like brand51) are carried through passively so their sound swaps still apply on play.
   overrides.clear();
   for (const o of setup.overrides || []) overrides.set(`${o.logicalBank}:${o.logicalProgram}`, o);
+  loadedPartOverrides = new Map((setup.partOverrides || []).map(o => [`${o.trackIndex}:${o.channel}`, o]));
   loadedTrackOverrides = new Map((setup.trackOverrides || []).map(o => [o.trackIndex, o]));
   // Per-part mix, keyed (track:channel). Older setups stored mix by trackIndex only (no channel) — key
   // those by the bare trackIndex so renderMixer can migrate them onto the matching part.
@@ -758,7 +759,7 @@ async function loadSetup(id) {
 
   lastSetupName = setup.name || lastSetupName;
   await analyze();
-  loadedOverrides = null; loadedTrackOverrides = null; loadedMix = null;
+  loadedOverrides = null; loadedPartOverrides = null; loadedTrackOverrides = null; loadedMix = null;
 }
 
 async function deleteSetup() {
@@ -772,8 +773,8 @@ async function deleteSetup() {
 function resetAll() {
   if (!selectedMidi || !selectedSoundfont) return;
   overrides.clear();
-  trackOverrides.clear();
-  loadedOverrides = null; loadedTrackOverrides = null;
+  partOverrides.clear();
+  loadedOverrides = null; loadedPartOverrides = null; loadedTrackOverrides = null;
   analyze();
 }
 

@@ -17,6 +17,8 @@ internal sealed record SetupPatchOverride(int LogicalBank, int LogicalProgram, s
 
 internal sealed record SetupTrackOverride(int TrackIndex, string? TrackName, string SourcePath, int SourceBank, int SourceProgram, double GainDb = 0);
 
+internal sealed record SetupPartOverride(int TrackIndex, int Channel, string? PartName, string SourcePath, int SourceBank, int SourceProgram, double GainDb = 0);
+
 internal sealed record SetupFile(
     string Name,
     string MidiPath,
@@ -25,6 +27,7 @@ internal sealed record SetupFile(
     string? SoundfontName,
     SetupPatchOverride[]? Overrides,
     SetupTrackOverride[]? TrackOverrides,
+    SetupPartOverride[]? PartOverrides = null,
     string? SavedAt = null,
     int Version = 1);
 
@@ -105,6 +108,10 @@ internal static class SetupSupport
 
         foreach (var o in setup.TrackOverrides ?? [])
             session.SetTrackOverride(o.TrackIndex,
+                new PatchRef(Source(o.SourcePath), o.SourceBank, o.SourceProgram));
+
+        foreach (var o in setup.PartOverrides ?? [])
+            session.SetPartOverride(o.TrackIndex, o.Channel,
                 new PatchRef(Source(o.SourcePath), o.SourceBank, o.SourceProgram));
 
         return session;

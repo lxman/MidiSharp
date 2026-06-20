@@ -11,13 +11,24 @@ namespace MidiSharp.PatchMap;
 /// lives at. Hand the map to <c>Synthesizer.SetTrackPatchMap</c> so notes from that track route
 /// to the override regardless of the channel/program they carry.
 /// </summary>
-public readonly struct CompositeResult(IRBank bank, IReadOnlyDictionary<int, (int Bank, int Program)> trackPatchMap)
+public readonly struct CompositeResult(
+    IRBank bank,
+    IReadOnlyDictionary<int, (int Bank, int Program)> trackPatchMap,
+    IReadOnlyDictionary<int, (int Bank, int Program)> partPatchMap)
 {
     /// <summary>The composite bank to load into the synth.</summary>
     public IRBank Bank { get; } = bank;
 
     /// <summary>trackIndex → synthetic (bank, program) for each resolved per-track override.</summary>
     public IReadOnlyDictionary<int, (int Bank, int Program)> TrackPatchMap { get; } = trackPatchMap;
+
+    /// <summary>
+    /// partKey → synthetic (bank, program) for each resolved per-part override, where partKey packs
+    /// (track, channel) exactly as <c>Synthesizer.TrackPart</c>. Hand this to
+    /// <c>Synthesizer.SetPartPatchMap</c>; it takes precedence over <see cref="TrackPatchMap"/> so a
+    /// single channel of a multi-channel (e.g. format-0) track can be substituted on its own.
+    /// </summary>
+    public IReadOnlyDictionary<int, (int Bank, int Program)> PartPatchMap { get; } = partPatchMap;
 }
 
 /// <summary>
@@ -43,6 +54,19 @@ public static class SoundBankComposer
     public const int TrackOverrideBank = 1_000_000;
 
     /// <summary>
+    /// Reserved logical bank for per-part override patches (one MIDI (track, channel)). Placed at
+    /// (<see cref="PartOverrideBank"/>, partKey) where partKey packs (track, channel) exactly as
+    /// <c>Synthesizer.TrackPart</c>. Distinct from <see cref="TrackOverrideBank"/> so a part override
+    /// and a whole-track override never collide, and far above any channel-resolved bank.
+    /// </summary>
+    public const int PartOverrideBank = 1_000_001;
+
+    // partKey packs (track, channel) into one int — the SAME convention as Synthesizer.TrackPart
+    // (channel is 4-bit). PatchMap can't reference the Synth assembly, so the formula is mirrored
+    // here; the two must stay in lock-step or per-part routing addresses the wrong patch.
+    private static int PartKey(int trackIndex, int channel) => (trackIndex << 4) | (channel & 0xF);
+
+    /// <summary>
     /// Compose <paramref name="overrides"/> (logical (bank, program) → a patch in some source
     /// font). Overrides whose source patch can't be found are skipped, leaving the base font's
     /// patch (and its bank-0 fallback) in place.
@@ -55,6 +79,9 @@ public static class SoundBankComposer
     private static readonly IReadOnlyDictionary<int, PatchRef> EmptyTrackOverrides
         = new Dictionary<int, PatchRef>();
 
+    private static readonly IReadOnlyDictionary<(int Track, int Channel), PatchRef> EmptyPartOverrides
+        = new Dictionary<(int, int), PatchRef>();
+
     /// <summary>
     /// Compose <paramref name="baseBank"/> with per-patch <paramref name="patchOverrides"/> and
     /// per-track <paramref name="trackOverrides"/>. Track overrides are placed at the reserved
@@ -66,6 +93,20 @@ public static class SoundBankComposer
         IRBank baseBank,
         IReadOnlyDictionary<(int Bank, int Program), PatchRef> patchOverrides,
         IReadOnlyDictionary<int, PatchRef> trackOverrides)
+        => BuildComposite(baseBank, patchOverrides, trackOverrides, EmptyPartOverrides);
+
+    /// <summary>
+    /// Compose <paramref name="baseBank"/> with per-patch, per-track, and per-part overrides. Part
+    /// overrides (keyed by (track, channel)) are placed at the reserved
+    /// (<see cref="PartOverrideBank"/>, partKey) addresses and reported in
+    /// <see cref="CompositeResult.PartPatchMap"/>; they let one channel of a multi-channel (format-0)
+    /// track be substituted independently. Overrides whose source patch can't be found are skipped.
+    /// </summary>
+    public static CompositeResult BuildComposite(
+        IRBank baseBank,
+        IReadOnlyDictionary<(int Bank, int Program), PatchRef> patchOverrides,
+        IReadOnlyDictionary<int, PatchRef> trackOverrides,
+        IReadOnlyDictionary<(int Track, int Channel), PatchRef> partOverrides)
     {
         // Assign each contributing font a sample-id offset. Base is always first at offset 0.
         var offsetOf = new Dictionary<IRBank, int> { [baseBank] = 0 };
@@ -79,6 +120,7 @@ public static class SoundBankComposer
         }
         foreach (var pref in patchOverrides.Values) Reserve(pref);
         foreach (var pref in trackOverrides.Values) Reserve(pref);
+        foreach (var pref in partOverrides.Values) Reserve(pref);
 
         // Start from the base patches (ids valid as-is at offset 0), then apply overrides.
         var byKey = new Dictionary<(int, int), Patch>();
@@ -120,6 +162,17 @@ public static class SoundBankComposer
             trackPatchMap[trackIndex] = (TrackOverrideBank, trackIndex);
         }
 
+        // Per-part overrides occupy their own reserved bank, keyed by the packed (track, channel).
+        var partPatchMap = new Dictionary<int, (int Bank, int Program)>();
+        foreach (var entry in partOverrides)
+        {
+            var key = PartKey(entry.Key.Track, entry.Key.Channel);
+            var composed = Compose(PartOverrideBank, key, entry.Value);
+            if (composed == null) continue;   // unresolved → part keeps its channel-based sound
+            byKey[(PartOverrideBank, key)] = composed;
+            partPatchMap[key] = (PartOverrideBank, key);
+        }
+
         var sampleSources = new List<ISampleSource>(1 + extraSources.Count) { baseBank.Samples };
         sampleSources.AddRange(extraSources.Select(s => s.Samples));
 
@@ -148,7 +201,7 @@ public static class SoundBankComposer
             Patches = byKey.Values.ToList(),
             Samples = new ConcatenatedSampleSource(sampleSources),
         };
-        return new CompositeResult(bank, trackPatchMap);
+        return new CompositeResult(bank, trackPatchMap, partPatchMap);
     }
 
     // PatchZone/SampleRef are immutable; re-index a borrowed zone's sample by cloning it with

@@ -51,6 +51,11 @@ public sealed class Synthesizer
     private static readonly IReadOnlyDictionary<int, (int Bank, int Program)> EmptyTrackPatchMap
         = new Dictionary<int, (int Bank, int Program)>();
 
+    // Per-part instrument routing: TrackPart(track, channel) → the synthetic (bank, program) its
+    // forced patch lives at. Checked before _trackPatchMap, so substituting one channel of a
+    // multi-channel (format-0) track doesn't disturb the track's other channels.
+    private IReadOnlyDictionary<int, (int Bank, int Program)> _partPatchMap = EmptyTrackPatchMap;
+
     // Tier-1 per-instrument mixer trims, keyed by the (bank, program) a note's patch resolves to.
     // Empty by default — while empty the voice loop takes the exact pre-mixer path (Generate gates on
     // Count), so playback is bit-identical until a control is touched. Entries are created lazily and
@@ -219,6 +224,16 @@ public sealed class Synthesizer
         => _trackPatchMap = map ?? EmptyTrackPatchMap;
 
     /// <summary>
+    /// Installs a per-part instrument routing map (<see cref="TrackPart"/>(track, channel) → synthetic
+    /// (bank, program), as produced by <c>SoundBankComposer.BuildComposite</c>'s
+    /// <c>PartPatchMap</c>). Consulted before the per-track map, so a single channel of a
+    /// multi-channel (format-0) track can be forced to its own instrument. Pass an empty map (or none)
+    /// to leave per-part routing off.
+    /// </summary>
+    public void SetPartPatchMap(IReadOnlyDictionary<int, (int Bank, int Program)> map)
+        => _partPatchMap = map ?? EmptyTrackPatchMap;
+
+    /// <summary>
     /// The live per-instrument mixer trims, keyed by the (bank, program) a note's patch resolves to.
     /// Read-only view; obtain a mutable entry with <see cref="GetInstrumentMix"/>. Empty until a mix
     /// is first requested — while empty, playback is bit-identical to the pre-mixer engine.
@@ -322,12 +337,18 @@ public sealed class Synthesizer
 
         var channelState = _channels[channel];
 
-        // Per-track override wins: a note from a mapped track is forced to its instrument,
-        // ignoring the channel's program. Falls through to channel resolution if unmapped or
-        // (defensively) if the synthetic patch is somehow absent.
+        // Override wins, most specific first: a per-part override (this exact track+channel) beats a
+        // whole-track override, which beats channel resolution. Each forces the note's instrument
+        // regardless of the channel's program. Falls through if unmapped or (defensively) if the
+        // synthetic patch is somehow absent.
         Patch? patch = null;
-        if (trackIndex >= 0 && _trackPatchMap.TryGetValue(trackIndex, out var addr))
-            patch = _soundBank.FindPatch(addr.Bank, addr.Program);
+        if (trackIndex >= 0)
+        {
+            if (_partPatchMap.TryGetValue(TrackPart(trackIndex, channel), out var paddr))
+                patch = _soundBank.FindPatch(paddr.Bank, paddr.Program);
+            if (patch == null && _trackPatchMap.TryGetValue(trackIndex, out var addr))
+                patch = _soundBank.FindPatch(addr.Bank, addr.Program);
+        }
         patch ??= _soundBank.FindPatch(channelState.Bank, channelState.Program)
                   ?? _soundBank.FindPatch(0, channelState.Program);
         if (patch == null) return;

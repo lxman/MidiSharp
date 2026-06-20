@@ -20,6 +20,7 @@ public sealed class PatchMapSession(IRBank baseBank) : IDisposable
     private readonly List<IRBank> _sources = [];
     private readonly Dictionary<(int Bank, int Program), PatchRef> _overrides = new();
     private readonly Dictionary<int, PatchRef> _trackOverrides = new();
+    private readonly Dictionary<(int Track, int Channel), PatchRef> _partOverrides = new();
     private bool _disposed;
 
     /// <summary>The base font supplying defaults for every patch the song requests.</summary>
@@ -36,6 +37,13 @@ public sealed class PatchMapSession(IRBank baseBank) : IDisposable
     /// from that track is forced to this instrument regardless of the channel/program it carries.
     /// </summary>
     public IReadOnlyDictionary<int, PatchRef> TrackOverrides => _trackOverrides;
+
+    /// <summary>
+    /// The current per-part overrides: (track, channel) → a patch in a source font. Every note on
+    /// that channel of that track is forced to this instrument. Takes precedence over a whole-track
+    /// override, so one channel of a multi-channel (format-0) track can be substituted on its own.
+    /// </summary>
+    public IReadOnlyDictionary<(int Track, int Channel), PatchRef> PartOverrides => _partOverrides;
 
     /// <summary>Preload a source font to pick override patches from. Returns its palette index.</summary>
     public int AddSource(IRBank font)
@@ -69,11 +77,20 @@ public sealed class PatchMapSession(IRBank baseBank) : IDisposable
     public void ClearTrackOverride(int trackIndex)
         => _trackOverrides.Remove(trackIndex);
 
-    /// <summary>Drop all overrides (both per-patch and per-track; revert entirely to the base font).</summary>
+    /// <summary>Force every note on (<paramref name="channel"/> of <paramref name="trackIndex"/>) to a source patch.</summary>
+    public void SetPartOverride(int trackIndex, int channel, PatchRef target)
+        => _partOverrides[(trackIndex, channel)] = target;
+
+    /// <summary>Remove any override on the given part (revert to its channel-based sound).</summary>
+    public void ClearPartOverride(int trackIndex, int channel)
+        => _partOverrides.Remove((trackIndex, channel));
+
+    /// <summary>Drop all overrides (per-patch, per-track, and per-part; revert entirely to the base font).</summary>
     public void ClearAllOverrides()
     {
         _overrides.Clear();
         _trackOverrides.Clear();
+        _partOverrides.Clear();
     }
 
     /// <summary>
@@ -89,7 +106,7 @@ public sealed class PatchMapSession(IRBank baseBank) : IDisposable
     /// <see cref="CompositeResult.TrackPatchMap"/> to <c>Synthesizer.SetTrackPatchMap</c>.
     /// </summary>
     public CompositeResult BuildResolved()
-        => SoundBankComposer.BuildComposite(Base, _overrides, _trackOverrides);
+        => SoundBankComposer.BuildComposite(Base, _overrides, _trackOverrides, _partOverrides);
 
     public void Dispose()
     {
