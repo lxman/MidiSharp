@@ -17,6 +17,11 @@ internal static class ClapAbi
     public const string ExtAudioPorts = "clap.audio-ports";
     public const string ExtParams = "clap.params";
     public const string ExtState = "clap.state";
+    public const string ExtGui = "clap.gui";
+
+    public const string WindowApiX11 = "x11";
+    public const string WindowApiWin32 = "win32";
+    public const string WindowApiCocoa = "cocoa";
 
     public const ushort CoreEventSpaceId = 0;
     public const ushort EventParamValue = 5;
@@ -193,6 +198,36 @@ internal static class ClapAbi
     {
         public delegate* unmanaged[Cdecl]<ClapPlugin*, ClapOStream*, byte> Save;
         public delegate* unmanaged[Cdecl]<ClapPlugin*, ClapIStream*, byte> Load;
+    }
+
+    // clap_window: { const char* api; union { x11 (unsigned long) | win32/cocoa/ptr (void*) } }. The union
+    // is pointer-sized; an X11 XID (unsigned long) fits in the same 8 bytes.
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct ClapWindow
+    {
+        public byte* Api;
+        public nuint Handle;   // x11 XID, or a void* for win32/cocoa
+    }
+
+    // clap_plugin_gui, in vtable order. Methods are [main-thread].
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct ClapPluginGui
+    {
+        public delegate* unmanaged[Cdecl]<ClapPlugin*, byte*, byte, byte> IsApiSupported;       // (plugin, api, is_floating)
+        public delegate* unmanaged[Cdecl]<ClapPlugin*, byte**, byte*, byte> GetPreferredApi;
+        public delegate* unmanaged[Cdecl]<ClapPlugin*, byte*, byte, byte> Create;               // (plugin, api, is_floating)
+        public delegate* unmanaged[Cdecl]<ClapPlugin*, void> Destroy;
+        public delegate* unmanaged[Cdecl]<ClapPlugin*, double, byte> SetScale;
+        public delegate* unmanaged[Cdecl]<ClapPlugin*, uint*, uint*, byte> GetSize;
+        public delegate* unmanaged[Cdecl]<ClapPlugin*, byte> CanResize;
+        public delegate* unmanaged[Cdecl]<ClapPlugin*, void*, byte> GetResizeHints;
+        public delegate* unmanaged[Cdecl]<ClapPlugin*, uint*, uint*, byte> AdjustSize;
+        public delegate* unmanaged[Cdecl]<ClapPlugin*, uint, uint, byte> SetSize;
+        public delegate* unmanaged[Cdecl]<ClapPlugin*, ClapWindow*, byte> SetParent;
+        public delegate* unmanaged[Cdecl]<ClapPlugin*, ClapWindow*, byte> SetTransient;
+        public delegate* unmanaged[Cdecl]<ClapPlugin*, byte*, void> SuggestTitle;
+        public delegate* unmanaged[Cdecl]<ClapPlugin*, byte> Show;
+        public delegate* unmanaged[Cdecl]<ClapPlugin*, byte> Hide;
     }
 
     [StructLayout(LayoutKind.Sequential)]

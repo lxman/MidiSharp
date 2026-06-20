@@ -49,4 +49,8 @@ public interface IHostedPlugin : IDisposable
 
     /// <summary>Restore opaque state previously returned by <see cref="SaveState"/>. Off the audio thread.</summary>
     void LoadState(ReadOnlySpan<byte> state);
+
+    /// <summary>The plugin's native editor, or null when it has none. Drives the editor-window lifecycle
+    /// (see <see cref="IPluginGui"/>); independent of audio. Default null — adapters opt in.</summary>
+    IPluginGui? Gui => null;
 }

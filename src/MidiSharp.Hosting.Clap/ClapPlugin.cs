@@ -18,7 +18,7 @@ namespace MidiSharp.Hosting.Clap;
 /// Parameter delivery via the per-block input-event list is single-producer for now (set off the audio
 /// thread between blocks); a lock-free hand-off is Phase-3 work.
 /// </remarks>
-public sealed unsafe class ClapPlugin : IHostedPlugin
+public sealed unsafe class ClapPlugin : IHostedPlugin, IPluginGui
 {
     private readonly IntPtr _lib;
     private readonly ClapPluginEntry* _entry;
@@ -26,6 +26,8 @@ public sealed unsafe class ClapPlugin : IHostedPlugin
     private ClapAbi.ClapPlugin* _plugin;
 
     private ClapPluginParams* _params;
+    private ClapPluginGui* _gui;
+    private bool _guiCreated;
     private int _inputPortCount = 1;    // effects have one audio input; instruments typically zero
     private int _outputChannels = 2;    // 1 (mono, duplicated to the stereo bus) or 2
     private readonly List<uint> _paramIds = [];
@@ -74,6 +76,7 @@ public sealed unsafe class ClapPlugin : IHostedPlugin
 
         QueryPorts();
         BuildParameters();
+        _gui = (ClapPluginGui*)_plugin->GetExtension(_plugin, FixedConst(ExtGui));   // null when the plugin has no editor
 
         if (_plugin->Activate(_plugin, config.SampleRate, 1, max) == 0)
             throw new InvalidOperationException($"CLAP activate failed for '{Descriptor.Name}'.");
@@ -273,10 +276,53 @@ public sealed unsafe class ClapPlugin : IHostedPlugin
         return n;
     }
 
+    // ── Editor (clap.gui) ──────────────────────────────────────────────────────────────────────────
+    public IPluginGui? Gui => _gui != null ? this : null;
+
+    bool IPluginGui.HasEditor => _gui != null;
+
+    bool IPluginGui.IsApiSupported(string windowApi, bool floating)
+        => _gui != null && _gui->IsApiSupported(_plugin, FixedConst(windowApi), (byte)(floating ? 1 : 0)) != 0;
+
+    bool IPluginGui.Create(string windowApi, bool floating)
+    {
+        if (_gui == null) return false;
+        _guiCreated = _gui->Create(_plugin, FixedConst(windowApi), (byte)(floating ? 1 : 0)) != 0;
+        return _guiCreated;
+    }
+
+    bool IPluginGui.SetScale(double scale) => _gui != null && _gui->SetScale(_plugin, scale) != 0;
+
+    bool IPluginGui.TryGetSize(out int width, out int height)
+    {
+        width = height = 0;
+        if (_gui == null) return false;
+        uint w, h;
+        if (_gui->GetSize(_plugin, &w, &h) == 0) return false;
+        width = (int)w; height = (int)h;
+        return true;
+    }
+
+    bool IPluginGui.SetParent(string windowApi, ulong windowHandle)
+    {
+        if (_gui == null) return false;
+        var win = new ClapWindow { Api = FixedConst(windowApi), Handle = (nuint)windowHandle };
+        return _gui->SetParent(_plugin, &win) != 0;
+    }
+
+    bool IPluginGui.Show() => _gui != null && _gui->Show(_plugin) != 0;
+    bool IPluginGui.Hide() => _gui != null && _gui->Hide(_plugin) != 0;
+
+    void IPluginGui.Destroy()
+    {
+        if (_gui != null && _guiCreated) { _gui->Destroy(_plugin); _guiCreated = false; }
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
+        if (_gui != null && _guiCreated) { _gui->Destroy(_plugin); _guiCreated = false; }
         Deactivate();
         if (_plugin != null) { _plugin->Destroy(_plugin); _plugin = null; }
         _host.Dispose();

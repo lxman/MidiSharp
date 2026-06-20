@@ -22,6 +22,7 @@
     <Project Path="src/MidiSharp.Hosting.Vst2/MidiSharp.Hosting.Vst2.csproj" />
     <Project Path="src/MidiSharp.Hosting.Vst3/MidiSharp.Hosting.Vst3.csproj" />
     <Project Path="src/MidiSharp.Hosting.Sandbox/MidiSharp.Hosting.Sandbox.csproj" />
+    <Project Path="src/MidiSharp.Hosting.EditorHost/MidiSharp.Hosting.EditorHost.csproj" />
     <Project Path="src/MidiSharp.Hosting.Worker/MidiSharp.Hosting.Worker.csproj" />
   </Folder>
   <Folder Name="/Loader/">
