@@ -235,7 +235,18 @@ that robustness is Phase 8 (out-of-process sandboxing).
 live, save the setup, reload it, and confirm the plugin + its state round-trip (measured: re-rendered
 output matches pre-save within tolerance).
 
-### Phase 3 — Sample-accurate events plumbing
+### Phase 3 — Sample-accurate events plumbing  — ✅ VERIFIED 2026-06-20
+
+`HostEvent` generalized to carry either a MIDI message or a parameter change, each with a
+`SampleOffset`. `ClapPlugin` now builds a time-ordered, heterogeneous CLAP event list per block (live UI
+param sets at time 0, then the caller's events as `clap_event_param_value` / `clap_event_midi` with
+`header.time = SampleOffset`) and hands it to the plugin through the input-event list.
+`HostedEffect.QueueEvent` accepts per-block events and partitions them across chunks (rebasing offsets),
+so the rack can feed timed automation/MIDI. Measured against the (now sample-accurate) gain fixture: a
+parameter event queued at sample 256 and a MIDI CC#7 event at sample 384 each produced a gain step at
+*exactly* that sample — not block-quantized. The no-event path stays allocation-free (invariant 2 still
+green). This is the plumbing Phase 4 (CLAP instruments) and automation lanes build on.
+
 
 Generalize `HostEvent` delivery so the host can feed timestamped MIDI/param-automation into a plugin's
 process call (needed for instruments and for param automation). Reuse the synth's existing timestamped
@@ -328,8 +339,9 @@ through a `ProcessorChain`, with the loader, struct/function-pointer marshaling,
 kernel, no-GC hot path, and `IAudioProcessor` drop-in all validated by measurement. Every cross-cutting
 concern the rest of the plan rests on is proven.
 
-**Phases 0, 1 and 2 are done and verified** — LADSPA spike, CLAP effects, and full discovery/rack/UI/
-persistence, all measured against real native plugins. **Next: Phase 3 — sample-accurate events
-plumbing**: generalize `HostEvent` delivery so timestamped MIDI / param-automation can be split at event
-offsets within a block (CLAP/VST3 take an event list; VST2 takes `processEvents`). This is the
-prerequisite for Phase 4 (CLAP instruments) and for parameter automation lanes.
+**Phases 0–3 are done and verified** — LADSPA spike, CLAP effects, discovery/rack/UI/persistence, and
+sample-accurate event plumbing, all measured against real native plugins. **Next: Phase 4 — CLAP
+instruments**: a `HostedInstrument` that feeds a mixer part/bus, driven by the Phase-3 timed `HostEvent`
+stream (note on/off via `clap_event_midi` or `clap_event_note`), its stereo output summed like synth
+voices. Needs a CLAP instrument to verify against (e.g. the installed DISTRHO Nekobi, or a built
+fixture).

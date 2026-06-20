@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using MidiSharp.Dsp;
 
@@ -26,6 +27,11 @@ public sealed unsafe class HostedEffect : IAudioProcessor, IDisposable
     private readonly UnmanagedFloatBuffer[] _outBufs;
     private float** _inPtrs;
     private float** _outPtrs;
+
+    // Per-block timed events queued before Process (param automation / MIDI). Filled off the audio
+    // thread; drained and cleared in Process. Empty by default, so the no-event path stays alloc-free.
+    private readonly List<HostEvent> _events = [];
+    private readonly HostEvent[] _evScratch = new HostEvent[512];
     private bool _disposed;
 
     /// <summary>
@@ -59,11 +65,19 @@ public sealed unsafe class HostedEffect : IAudioProcessor, IDisposable
     /// <summary>The wrapped plugin, e.g. to read its parameters for the UI.</summary>
     public IHostedPlugin Plugin => _plugin;
 
+    /// <summary>
+    /// Queue a timed event (parameter automation or MIDI) for the next <see cref="Process"/>. Its
+    /// <see cref="HostEvent.SampleOffset"/> is relative to the start of that block. Call before the block,
+    /// off the audio thread; events should be queued in ascending sample order.
+    /// </summary>
+    public void QueueEvent(HostEvent e) => _events.Add(e);
+
     public void Process(Span<float> interleavedStereo)
     {
         if (_disposed || _channels != 2) return;   // stereo bus for now (the engine's contract)
 
         var total = interleavedStereo.Length / 2;
+        var hasEvents = _events.Count > 0;
         var done = 0;
         while (done < total)
         {
@@ -74,11 +88,26 @@ public sealed unsafe class HostedEffect : IAudioProcessor, IDisposable
 
             var input = new PlanarBuffers(_inPtrs, _channels, n);
             var output = new PlanarBuffers(_outPtrs, _channels, n);
-            _plugin.Process(input, output, ReadOnlySpan<HostEvent>.Empty);
+            _plugin.Process(input, output, hasEvents ? ChunkEvents(done, done + n) : ReadOnlySpan<HostEvent>.Empty);
 
             PlanarBridge.InterleaveStereo(_outBufs[0].Span[..n], _outBufs[1].Span[..n], slice);
             done += n;
         }
+        if (hasEvents) _events.Clear();
+    }
+
+    // Events whose offset falls in [start, end) of the full block, rebased to the chunk's local offset.
+    // For the common single-chunk block this is the whole queue with offsets unchanged.
+    private ReadOnlySpan<HostEvent> ChunkEvents(int start, int end)
+    {
+        var src = CollectionsMarshal.AsSpan(_events);
+        var m = 0;
+        for (var i = 0; i < src.Length && m < _evScratch.Length; i++)
+        {
+            var off = src[i].SampleOffset;
+            if (off >= start && off < end) _evScratch[m++] = src[i] with { SampleOffset = off - start };
+        }
+        return _evScratch.AsSpan(0, m);
     }
 
     /// <summary>

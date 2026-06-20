@@ -38,14 +38,17 @@ public sealed unsafe class ClapPlugin : IHostedPlugin
     private ClapInputEvents* _inEvents;
     private ClapOutputEvents* _outEvents;
     private InEventsState* _evState;
-    private ClapEventParamValue* _events;
-    private int _pending;
+    private byte* _evBuffer;       // this block's CLAP events, back-to-back at a fixed max-size stride
+    private int* _evOffsets;       // byte offset of event i within _evBuffer
+    private int _evCapacity;       // max events per block
+    private ClapEventParamValue* _liveParams;   // coalesced live (UI) param sets, emitted at time 0
+    private int _liveCount;
     private long _steady;
     private bool _active;
     private bool _disposed;
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct InEventsState { public int Count; public ClapEventParamValue* Events; }
+    private struct InEventsState { public int Count; public byte* Buffer; public int* Offsets; }
 
     internal ClapPlugin(IntPtr lib, ClapPluginEntry* entry, ClapHost host,
         ClapAbi.ClapPlugin* plugin, PluginDescriptor descriptor, AudioConfig config)
@@ -83,10 +86,14 @@ public sealed unsafe class ClapPlugin : IHostedPlugin
         _inBuf->Data32 = _inData32; _inBuf->ChannelCount = 2;
         _outBuf->Data32 = _outData32; _outBuf->ChannelCount = 2;
 
-        var capacity = Math.Max(1, _parameters.Count);
-        _events = (ClapEventParamValue*)NativeMemory.AllocZeroed((nuint)capacity, (nuint)sizeof(ClapEventParamValue));
+        // Time-ordered event scratch: live param sets (≤ one per param) plus a generous per-block cap.
+        // Every slot is the size of the largest event (param-value) so offsets stay 8-aligned for its double.
+        _evCapacity = _parameters.Count + 512;
+        _evBuffer = (byte*)NativeMemory.AllocZeroed((nuint)_evCapacity, (nuint)sizeof(ClapEventParamValue));
+        _evOffsets = (int*)NativeMemory.AllocZeroed((nuint)_evCapacity, sizeof(int));
+        _liveParams = (ClapEventParamValue*)NativeMemory.AllocZeroed((nuint)Math.Max(1, _parameters.Count), (nuint)sizeof(ClapEventParamValue));
         _evState = Alloc<InEventsState>();
-        _evState->Count = 0; _evState->Events = _events;
+        _evState->Count = 0; _evState->Buffer = _evBuffer; _evState->Offsets = _evOffsets;
 
         _inEvents = Alloc<ClapInputEvents>();
         _inEvents->Ctx = _evState;
@@ -119,7 +126,9 @@ public sealed unsafe class ClapPlugin : IHostedPlugin
         if (_outData32 != null) NativeMemory.Free(_outData32);
         Free(ref _inBuf); Free(ref _outBuf); Free(ref _process);
         Free(ref _inEvents); Free(ref _outEvents); Free(ref _evState);
-        if (_events != null) { NativeMemory.Free(_events); _events = null; }
+        if (_evBuffer != null) { NativeMemory.Free(_evBuffer); _evBuffer = null; }
+        if (_evOffsets != null) { NativeMemory.Free(_evOffsets); _evOffsets = null; }
+        if (_liveParams != null) { NativeMemory.Free(_liveParams); _liveParams = null; }
         _inData32 = _outData32 = null;
         _active = false;
     }
@@ -134,10 +143,43 @@ public sealed unsafe class ClapPlugin : IHostedPlugin
         _process->SteadyTime = _steady;
         _steady += output.Frames;
 
-        _evState->Count = _pending;     // hand this block's pending param changes to the plugin
+        // Build the block's time-ordered event list: live param sets at time 0, then the caller's events
+        // (assumed sorted by SampleOffset, as CLAP requires) converted to CLAP param/MIDI events.
+        var n = 0;
+        for (var i = 0; i < _liveCount && n < _evCapacity; i++, n++)
+            WriteParamSlot(n, _liveParams[i].ParamId, _liveParams[i].Value, 0);
+        foreach (var e in events)
+        {
+            if (n >= _evCapacity) break;
+            if (e.Kind == HostEventKind.Param && (uint)e.ParamIndex < (uint)_paramIds.Count)
+                WriteParamSlot(n++, _paramIds[e.ParamIndex], _parameters[e.ParamIndex].Denormalize(e.ParamValue), (uint)e.SampleOffset);
+            else if (e.Kind == HostEventKind.Midi)
+                WriteMidiSlot(n++, e.Status, e.Data1, e.Data2, (uint)e.SampleOffset);
+        }
+        _evState->Count = n;
         _plugin->Process(_plugin, _process);
         _evState->Count = 0;
-        _pending = 0;
+        _liveCount = 0;
+    }
+
+    private void WriteParamSlot(int slot, uint paramId, double value, uint time)
+    {
+        var stride = sizeof(ClapEventParamValue);
+        var e = (ClapEventParamValue*)(_evBuffer + slot * stride);
+        e->Header.Size = (uint)sizeof(ClapEventParamValue);
+        e->Header.Time = time; e->Header.SpaceId = CoreEventSpaceId; e->Header.Type = EventParamValue; e->Header.Flags = 0;
+        e->ParamId = paramId; e->Cookie = null; e->NoteId = -1; e->PortIndex = -1; e->Channel = -1; e->Key = -1; e->Value = value;
+        _evOffsets[slot] = slot * stride;
+    }
+
+    private void WriteMidiSlot(int slot, byte d0, byte d1, byte d2, uint time)
+    {
+        var stride = sizeof(ClapEventParamValue);
+        var e = (ClapEventMidi*)(_evBuffer + slot * stride);
+        e->Header.Size = (uint)sizeof(ClapEventMidi);
+        e->Header.Time = time; e->Header.SpaceId = CoreEventSpaceId; e->Header.Type = EventMidi; e->Header.Flags = 0;
+        e->PortIndex = 0; e->Data0 = d0; e->Data1 = d1; e->Data2 = d2;
+        _evOffsets[slot] = slot * stride;
     }
 
     public double GetParameter(int index)
@@ -154,12 +196,12 @@ public sealed unsafe class ClapPlugin : IHostedPlugin
         var id = _paramIds[index];
         var value = _parameters[index].Denormalize(normalized);
 
-        // Coalesce: one pending event per param id.
-        for (var i = 0; i < _pending; i++)
-            if (_events[i].ParamId == id) { _events[i].Value = value; return; }
-        if (_pending >= _parameters.Count) return;
+        // Coalesce live (UI) sets: one pending param-value per id, delivered at time 0 next block.
+        for (var i = 0; i < _liveCount; i++)
+            if (_liveParams[i].ParamId == id) { _liveParams[i].Value = value; return; }
+        if (_liveCount >= _parameters.Count) return;
 
-        ref var e = ref _events[_pending++];
+        ref var e = ref _liveParams[_liveCount++];
         e.Header.Size = (uint)sizeof(ClapEventParamValue);
         e.Header.Time = 0;
         e.Header.SpaceId = CoreEventSpaceId;
@@ -273,7 +315,7 @@ public sealed unsafe class ClapPlugin : IHostedPlugin
     private static void* InEventsGet(ClapInputEvents* list, uint index)
     {
         var st = (InEventsState*)list->Ctx;
-        return &st->Events[index];
+        return st->Buffer + st->Offsets[index];
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]

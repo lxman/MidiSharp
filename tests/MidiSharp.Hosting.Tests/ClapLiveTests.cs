@@ -69,6 +69,52 @@ public sealed class ClapLiveTests
         }
     }
 
+    // Phase-3 gate: a parameter-automation event and a MIDI event delivered at a sample offset within a
+    // block take effect at exactly that sample, not at the block boundary. The gain fixture applies gain
+    // changes sample-accurately, so a constant input makes the timing directly observable in the output.
+    [Fact]
+    public void Param_and_midi_events_apply_sample_accurately()
+    {
+        var desc = ScanAll().FirstOrDefault(p => p.Id == "midisharp.test.gain");
+        Assert.SkipWhen(desc == null, "gain fixture not installed.");
+        using var effect = new HostedEffect(_format.Load(desc!, Config), Config);
+
+        // Process one block of constant-1.0 input (so output[i] == gain at sample i) and return channel L.
+        float[] RunBlock(Action<HostedEffect> queue)
+        {
+            var buf = new float[Block * 2];
+            Array.Fill(buf, 1f);
+            queue(effect);
+            effect.Process(buf);
+            var l = new float[Block];
+            for (var i = 0; i < Block; i++) l[i] = buf[2 * i];
+            return l;
+        }
+        int FirstChange(float[] x) { for (var i = 0; i < x.Length; i++) if (Math.Abs(x[i] - 1f) > 1e-4) return i; return -1; }
+
+        // Establish gain = ×1 (normalized 0.5 of the 0..2 range) via a live set.
+        var warm = RunBlock(e => e.Plugin.SetParameter(0, 0.5));
+        Assert.True(Math.Abs(warm[0] - 1f) < 1e-4 && Math.Abs(warm[Block - 1] - 1f) < 1e-4, "warm-up gain should be ×1");
+
+        // Parameter event at sample 256 → ×0.5.
+        const int pOff = 256;
+        var pOut = RunBlock(e => e.QueueEvent(HostEvent.Param(pOff, 0, 0.25)));
+        Assert.True(Math.Abs(pOut[pOff - 1] - 1f) < 1e-4, $"sample before param event should be ×1 (got {pOut[pOff - 1]})");
+        Assert.True(Math.Abs(pOut[pOff] - 0.5f) < 1e-4, $"sample at param event should be ×0.5 (got {pOut[pOff]})");
+        Assert.Equal(pOff, FirstChange(pOut));
+
+        RunBlock(e => e.Plugin.SetParameter(0, 0.5));   // back to ×1
+
+        // MIDI CC#7 = 127 at sample 384 → ×2.
+        const int mOff = 384;
+        var mOut = RunBlock(e => e.QueueEvent(HostEvent.Midi(mOff, 0xB0, 7, 127)));
+        Assert.True(Math.Abs(mOut[mOff - 1] - 1f) < 1e-4, $"sample before CC event should be ×1 (got {mOut[mOff - 1]})");
+        Assert.True(Math.Abs(mOut[mOff] - 2f) < 1e-4, $"sample at CC event should be ×2 (got {mOut[mOff]})");
+        Assert.Equal(mOff, FirstChange(mOut));
+
+        _out.WriteLine($"param step at sample {FirstChange(pOut)} (want {pOff}); midi step at sample {FirstChange(mOut)} (want {mOff})");
+    }
+
     [Fact]
     public void Loads_a_clap_effect_and_applies_its_parameter()
     {

@@ -20,6 +20,7 @@ internal static class ClapAbi
 
     public const ushort CoreEventSpaceId = 0;
     public const ushort EventParamValue = 5;
+    public const ushort EventMidi = 10;
 
     public const int ProcessError = 0;
 
@@ -205,6 +206,16 @@ internal static class ClapAbi
         public short Channel;
         public short Key;
         public double Value;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct ClapEventMidi
+    {
+        public ClapEventHeader Header;
+        public ushort PortIndex;
+        public byte Data0;
+        public byte Data1;
+        public byte Data2;
     }
 
     /// <summary>Marshal a NUL-terminated UTF-8 C string to managed, or "" when null.</summary>
