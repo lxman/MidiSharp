@@ -158,7 +158,8 @@
     .vstrip .vgain { font-size: .72rem; font-variant-numeric: tabular-nums; color: #cdd6e4; }
     /* Floating popovers (source-font picker / FX insert rack) — anchored to the strip header buttons. */
     .pop { position: fixed; z-index: 100; display: none; background: #1a1d24; border: 1px solid #3a4250;
-           border-radius: 8px; padding: .6rem; box-shadow: 0 10px 34px rgba(0,0,0,.55); }
+           border-radius: 8px; padding: .6rem; box-shadow: 0 10px 34px rgba(0,0,0,.55);
+           overflow-y: auto; overscroll-behavior: contain; }
     .pop.pop-open { display: block; }
     .pop.src { width: 320px; }
     .pop.fxpop { width: 540px; }

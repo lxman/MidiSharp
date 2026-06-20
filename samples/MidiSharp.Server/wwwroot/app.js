@@ -393,12 +393,16 @@ function togglePopover(btn, panel) {
   closePopover();
   if (panel.parentElement !== document.body) document.body.appendChild(panel);
   panel.classList.add('pop-open');           // display:block so we can measure it
+  panel.style.maxHeight = '';                  // measure full content height first
   const r = btn.getBoundingClientRect();
   let left = Math.min(r.left, window.innerWidth - panel.offsetWidth - 8);
   let top = r.bottom + 4;
   if (top + panel.offsetHeight > window.innerHeight - 8) top = Math.max(8, r.top - panel.offsetHeight - 4);
   panel.style.left = Math.max(8, left) + 'px';
   panel.style.top = top + 'px';
+  // Cap the panel to the space from its top to the viewport bottom so a tall plugin rack scrolls inside the
+  // popover instead of running off-screen (where the buttons below it are unreachable).
+  panel.style.maxHeight = Math.max(120, window.innerHeight - top - 8) + 'px';
   openPop = { panel, btn };
 }
 document.addEventListener('click', e => {
