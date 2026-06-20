@@ -174,6 +174,31 @@ public sealed class Vst3Tests
     }
 
     [Fact]
+    public void Parameters_marshal_to_the_ui_thread_while_the_editor_is_open()
+    {
+        Assert.SkipWhen(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")), "no X display.");
+        var plugin = LoadGain();
+        Assert.SkipWhen(plugin == null, "VST3 gain fixture not installed.");
+        using var _ = plugin;
+
+        using var window = MidiSharp.Hosting.EditorHost.EditorWindow.Open(plugin!.Gui, "VST3 param-marshal test");
+        Assert.NotNull(window);
+        Assert.True(window!.IsOpen, $"editor should open (error: {window.Error}).");
+
+        // With the editor open, get/setParamNormalized are marshaled onto the editor UI thread (these calls
+        // come from this — a different — thread). They must still round-trip.
+        plugin.SetParameter(0, 0.3);
+        Assert.Equal(0.3, plugin.GetParameter(0), 3);
+        plugin.SetParameter(0, 0.8);
+        Assert.Equal(0.8, plugin.GetParameter(0), 3);
+
+        window.Close();
+        // After close the run loop is unbound; params go direct again and still work.
+        plugin.SetParameter(0, 0.5);
+        Assert.Equal(0.5, plugin.GetParameter(0), 3);
+    }
+
+    [Fact]
     public void Discovers_the_instrument_and_its_separate_controller_parameter()
     {
         var d = FindSynth();

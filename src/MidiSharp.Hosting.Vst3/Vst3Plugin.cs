@@ -23,6 +23,7 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
     private void* _controller;
     private void* _view;            // IPlugView, created lazily from the controller (on the editor UI thread)
     private Vst3PlugFrame? _frame;  // host frame + IRunLoop for the open editor
+    private volatile IEditorRunLoop? _editorLoop;   // non-null while an editor is open → params marshal to the UI thread
     private bool _controllerSeparate;
 
     private int _outputChannels = 2;
@@ -227,12 +228,32 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
     }
 
     public double GetParameter(int index)
-        => _controller != null && (uint)index < (uint)_parameters.Count ? Ctrl->GetParamNormalized(_controller, _paramIds[index]) : 0;
+    {
+        if (_controller == null || (uint)index >= (uint)_parameters.Count) return 0;
+        var id = _paramIds[index];
+        return OnUiThread(() => Ctrl->GetParamNormalized(_controller, id));
+    }
 
     public void SetParameter(int index, double normalized)
     {
-        if (_controller != null && (uint)index < (uint)_parameters.Count)
-            Ctrl->SetParamNormalized(_controller, _paramIds[index], Math.Clamp(normalized, 0, 1));
+        if (_controller == null || (uint)index >= (uint)_parameters.Count) return;
+        var id = _paramIds[index];
+        var v = Math.Clamp(normalized, 0, 1);
+        OnUiThread(() => { Ctrl->SetParamNormalized(_controller, id, v); return 0.0; });
+    }
+
+    // VST3 controller calls (get/setParamNormalized) are main-thread-only. While an editor is open the UI
+    // thread owns the controller (it drives the view), so marshal param access onto it; otherwise call
+    // directly. Bounded wait so a wedged editor can't hang a param request.
+    private double OnUiThread(Func<double> fn)
+    {
+        var loop = _editorLoop;
+        if (loop == null) return fn();
+        double result = 0;
+        using var done = new System.Threading.ManualResetEventSlim(false);
+        loop.Post(() => { try { result = fn(); } finally { done.Set(); } });
+        done.Wait(800);
+        return result;
     }
 
     // State round-trips through the component's getState/setState (the authoritative processor state). When
@@ -308,6 +329,7 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
     {
         _frame?.Dispose();
         _frame = runLoop != null ? new Vst3PlugFrame(runLoop) : null;
+        _editorLoop = runLoop;
     }
 
     bool IPluginGui.IsApiSupported(string windowApi, bool floating)

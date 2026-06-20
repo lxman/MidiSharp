@@ -15,6 +15,10 @@ public interface IEditorRunLoop
     /// <summary>Call <paramref name="onTick"/> every <paramref name="periodMs"/> ms on the UI thread, keyed by <paramref name="token"/>.</summary>
     void RegisterTimer(long periodMs, object token, System.Action onTick);
     void UnregisterTimer(object token);
+
+    /// <summary>Run <paramref name="action"/> on the UI thread at the next pump. Lets another thread marshal a
+    /// main-thread-only call (e.g. a VST3 parameter set) onto the editor thread while the editor is open.</summary>
+    void Post(System.Action action);
 }
 
 /// <summary>
