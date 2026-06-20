@@ -11,12 +11,15 @@ using MidiSharp.Hosting.Vst2;
 using MidiSharp.Hosting.Vst3;
 using static MidiSharp.Hosting.Sandbox.SandboxProtocol;
 
-// Scan mode: enumerate ONE format and stream its descriptors back. A native crash here kills only this
-// process; the host keeps whatever streamed. args: --scan <format> <outHandle>
-if (args.Length >= 3 && args[0] == "--scan")
+// Scan mode: enumerate ONE format file-by-file and stream descriptors back. Before each file it sends a
+// BEGIN marker, so if a file crashes this process the host knows which one and restarts us to resume past
+// it. A native crash kills only this process; the host keeps whatever streamed.
+// args: --scan <format> <outHandle> <resumeAfterPath> [searchPath ...]
+if (args.Length >= 4 && args[0] == "--scan")
 {
     using var scanPipe = new AnonymousPipeClientStream(PipeDirection.Out, args[2]);
     using var scanWriter = new BinaryWriter(scanPipe);
+    var resumeAfter = args[3];
     try
     {
         IPluginFormat sfmt = args[1] switch
@@ -27,15 +30,29 @@ if (args.Length >= 3 && args[0] == "--scan")
             "LADSPA" => new LadspaFormat(),
             _ => throw new NotSupportedException(args[1]),
         };
-        foreach (var d in sfmt.Scan(sfmt.DefaultSearchPaths))
+        var paths = args.Length > 4 ? args[4..] : sfmt.DefaultSearchPaths;
+
+        var skipping = resumeAfter.Length > 0;   // skip files up to and including resumeAfter (the last crasher)
+        foreach (var file in sfmt.EnumerateFiles(paths))
         {
-            scanWriter.Write(SandboxProtocol.ScanDescriptor);
-            scanWriter.Write(d.Format); scanWriter.Write(d.Id); scanWriter.Write(d.Name);
-            scanWriter.Write(d.Vendor); scanWriter.Write(d.IsInstrument); scanWriter.Write(d.Path);
-            scanWriter.Flush();   // stream each result so a later crash still leaves the earlier ones
+            if (skipping)
+            {
+                if (file == resumeAfter) skipping = false;
+                continue;
+            }
+            scanWriter.Write(SandboxProtocol.ScanBegin);
+            scanWriter.Write(file);
+            scanWriter.Flush();                   // announce the file BEFORE touching its native code
+            foreach (var d in sfmt.ScanFile(file))
+            {
+                scanWriter.Write(SandboxProtocol.ScanDescriptor);
+                scanWriter.Write(d.Format); scanWriter.Write(d.Id); scanWriter.Write(d.Name);
+                scanWriter.Write(d.Vendor); scanWriter.Write(d.IsInstrument); scanWriter.Write(d.Path);
+                scanWriter.Flush();
+            }
         }
     }
-    catch { /* a managed scan error still completes with DONE; a native crash just exits */ }
+    catch { /* a managed scan error still completes with DONE; a native crash just exits the process */ }
     scanWriter.Write(SandboxProtocol.ScanDone);
     scanWriter.Flush();
     return 0;

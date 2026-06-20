@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using MidiSharp.Hosting;
 using static MidiSharp.Hosting.Clap.ClapAbi;
@@ -39,18 +40,21 @@ public sealed unsafe class ClapFormat : IPluginFormat
         }
     }
 
-    public IEnumerable<PluginDescriptor> Scan(IEnumerable<string> searchPaths)
+    public IEnumerable<string> EnumerateFiles(IEnumerable<string> searchPaths)
     {
         foreach (var dir in searchPaths)
         {
             if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) continue;
-            foreach (var file in Directory.EnumerateFiles(dir, "*.clap"))
-                foreach (var d in ScanFile(file))
-                    yield return d;
+            foreach (var file in Directory.EnumerateFiles(dir, "*.clap").OrderBy(f => f, StringComparer.Ordinal))
+                yield return file;
         }
     }
 
-    private static IEnumerable<PluginDescriptor> ScanFile(string file)
+
+    /// <summary>Enumerate every file, then scan each (the conventional crash-resilient composition).</summary>
+    public IEnumerable<PluginDescriptor> Scan(IEnumerable<string> searchPaths) => EnumerateFiles(searchPaths).SelectMany(ScanFile);
+
+    public IEnumerable<PluginDescriptor> ScanFile(string file)
     {
         var results = new List<PluginDescriptor>();
         if (!NativeLibrary.TryLoad(file, out var lib)) return results;

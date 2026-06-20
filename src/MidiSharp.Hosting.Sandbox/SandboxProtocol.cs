@@ -23,6 +23,7 @@ public static class SandboxProtocol
     public const byte RespProcessed = 0x14;
 
     // scan mode (worker → host, streamed)
+    public const byte ScanBegin = 0x1F;        // followed by the file path about to be scanned (for crash-resume)
     public const byte ScanDescriptor = 0x20;   // format, id, name, vendor, isInstrument, path
     public const byte ScanDone = 0x21;
 

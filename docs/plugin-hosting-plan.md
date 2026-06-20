@@ -368,8 +368,16 @@ descriptors back as it finds them; a plugin that crashes the scan kills only tha
 host keeps what streamed; other formats are untouched). `PluginHost.Rescan` uses it when sandboxing is on.
 Verified live: the server discovers all plugins through the sandboxed scan (217: CLAP 196, VST3 1, VST2 1,
 LADSPA 19). With both scan and load out-of-process, the server never instantiates native plugin code
-in-process. **Remaining:** per-file resume so a crash skips only the one plugin (currently loses a format's
-tail after its crasher), proxy plugin state, and a worker watchdog/timeout for hangs.
+in-process.
+
+**Per-file scan resume (2026-06-20):** `IPluginFormat` split into `EnumerateFiles` (filesystem only, can't
+crash) + `ScanFile` (one file, may crash); `Scan` composes them. The scan worker announces each file
+(`ScanBegin`) before touching its native code, so when a file crashes the worker the host knows exactly
+which one and restarts the worker to **resume past it** — skipping only the one bad plugin instead of a
+format's whole tail. Verified: a crash-on-scan CLAP fixture (its `clap_entry.init` segfaults) placed
+before a good plugin is skipped, and the scan resumes to discover the good one; the live server still finds
+all 217 plugins. **Remaining:** proxy plugin state across the sandbox, and a worker watchdog/timeout for
+hangs (a wedged plugin currently blocks its process call rather than crashing).
 
 
 Run plugins in a child process; bridge audio over a shared-memory ring and control over RPC, behind the

@@ -38,18 +38,24 @@ public sealed unsafe class Vst3Format : IPluginFormat
         }
     }
 
-    public IEnumerable<PluginDescriptor> Scan(IEnumerable<string> searchPaths)
+    public IEnumerable<string> EnumerateFiles(IEnumerable<string> searchPaths)
     {
         foreach (var dir in searchPaths)
         {
             if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) continue;
-            foreach (var entry in Directory.EnumerateFileSystemEntries(dir, "*.vst3"))
-            {
-                var binary = ResolveBinary(entry);
-                if (binary == null) continue;
-                foreach (var d in ScanBinary(binary)) yield return d;
-            }
+            foreach (var entry in Directory.EnumerateFileSystemEntries(dir, "*.vst3").OrderBy(f => f, StringComparer.Ordinal))
+                yield return entry;
         }
+    }
+
+
+    /// <summary>Enumerate every file, then scan each (the conventional crash-resilient composition).</summary>
+    public IEnumerable<PluginDescriptor> Scan(IEnumerable<string> searchPaths) => EnumerateFiles(searchPaths).SelectMany(ScanFile);
+
+    public IEnumerable<PluginDescriptor> ScanFile(string file)
+    {
+        var binary = ResolveBinary(file);
+        return binary == null ? [] : ScanBinary(binary);
     }
 
     // A .vst3 is either a single shared library or a bundle directory with the binary under

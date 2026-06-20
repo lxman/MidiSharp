@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using MidiSharp.Hosting;
 
@@ -37,26 +38,29 @@ public sealed class LadspaFormat : IPluginFormat
         }
     }
 
-    public IEnumerable<PluginDescriptor> Scan(IEnumerable<string> searchPaths)
+    public IEnumerable<string> EnumerateFiles(IEnumerable<string> searchPaths)
     {
         foreach (var dir in searchPaths)
         {
             if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) continue;
-
-            foreach (var file in Directory.EnumerateFiles(dir, "*.so"))
-            {
-                if (!NativeLibrary.TryLoad(file, out var lib)) continue;
-                try
-                {
-                    foreach (var d in EnumerateDescriptors(lib, file))
-                        yield return d;
-                }
-                finally
-                {
-                    NativeLibrary.Free(lib);
-                }
-            }
+            foreach (var file in Directory.EnumerateFiles(dir, "*.so").OrderBy(f => f, StringComparer.Ordinal))
+                yield return file;
         }
+    }
+
+
+    /// <summary>Enumerate every file, then scan each (the conventional crash-resilient composition).</summary>
+    public IEnumerable<PluginDescriptor> Scan(IEnumerable<string> searchPaths) => EnumerateFiles(searchPaths).SelectMany(ScanFile);
+
+    public IEnumerable<PluginDescriptor> ScanFile(string file)
+    {
+        if (!NativeLibrary.TryLoad(file, out var lib)) yield break;
+        try
+        {
+            foreach (var d in EnumerateDescriptors(lib, file))
+                yield return d;
+        }
+        finally { NativeLibrary.Free(lib); }
     }
 
     public IHostedPlugin Load(PluginDescriptor descriptor, AudioConfig config)

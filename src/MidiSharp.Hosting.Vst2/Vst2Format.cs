@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using MidiSharp.Hosting;
 using static MidiSharp.Hosting.Vst2.Vst2Abi;
@@ -39,21 +40,28 @@ public sealed unsafe class Vst2Format : IPluginFormat
 
     private static string[] Extensions => OperatingSystem.IsWindows() ? ["*.dll"] : ["*.so"];
 
-    public IEnumerable<PluginDescriptor> Scan(IEnumerable<string> searchPaths)
+    public IEnumerable<string> EnumerateFiles(IEnumerable<string> searchPaths)
     {
         foreach (var dir in searchPaths)
         {
             if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) continue;
             foreach (var ext in Extensions)
-                foreach (var file in Directory.EnumerateFiles(dir, ext))
-                {
-                    var d = ScanFile(file);
-                    if (d != null) yield return d;
-                }
+                foreach (var file in Directory.EnumerateFiles(dir, ext).OrderBy(f => f, StringComparer.Ordinal))
+                    yield return file;
         }
     }
 
-    private static PluginDescriptor? ScanFile(string file)
+
+    /// <summary>Enumerate every file, then scan each (the conventional crash-resilient composition).</summary>
+    public IEnumerable<PluginDescriptor> Scan(IEnumerable<string> searchPaths) => EnumerateFiles(searchPaths).SelectMany(ScanFile);
+
+    public IEnumerable<PluginDescriptor> ScanFile(string file)
+    {
+        var d = ScanOne(file);
+        if (d != null) yield return d;
+    }
+
+    private static PluginDescriptor? ScanOne(string file)
     {
         if (!NativeLibrary.TryLoad(file, out var lib)) return null;
         try

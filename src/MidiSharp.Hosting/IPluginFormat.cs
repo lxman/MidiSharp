@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace MidiSharp.Hosting;
 
@@ -18,8 +19,23 @@ public interface IPluginFormat
     IEnumerable<string> DefaultSearchPaths { get; }
 
     /// <summary>
-    /// Discover every plugin reachable under <paramref name="searchPaths"/>. Cheap metadata only — does
-    /// not instantiate or activate anything.
+    /// The candidate plugin files/bundles under <paramref name="searchPaths"/>, in a stable (sorted)
+    /// order. Touches no native code — just the filesystem — so it can't crash. Pair with
+    /// <see cref="ScanFile"/> for crash-resilient, resumable scanning.
+    /// </summary>
+    IEnumerable<string> EnumerateFiles(IEnumerable<string> searchPaths);
+
+    /// <summary>
+    /// Scan ONE file/bundle returned by <see cref="EnumerateFiles"/> for its plugins. This loads native
+    /// code (the plugin's entry/factory) and so may crash on a broken plugin — callers that need
+    /// resilience run it out-of-process per file.
+    /// </summary>
+    IEnumerable<PluginDescriptor> ScanFile(string file);
+
+    /// <summary>
+    /// Discover every plugin reachable under <paramref name="searchPaths"/> (enumerate + scan each file).
+    /// Cheap metadata only — does not instantiate or activate any plugin. Conventionally
+    /// <c>EnumerateFiles(searchPaths).SelectMany(ScanFile)</c>.
     /// </summary>
     IEnumerable<PluginDescriptor> Scan(IEnumerable<string> searchPaths);
 

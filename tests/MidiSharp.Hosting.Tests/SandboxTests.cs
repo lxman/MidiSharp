@@ -54,6 +54,31 @@ public sealed class SandboxTests
     }
 
     [Fact]
+    public void Sandboxed_scan_skips_a_crashing_plugin_and_resumes()
+    {
+        var worker = WorkerDll();
+        Assert.SkipWhen(worker == null, "sandbox worker not built.");
+        var crashSrc = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "soundfonts", "clap-test", "crash.clap");
+        var gain = GainDescriptor();
+        Assert.SkipWhen(!File.Exists(crashSrc) || gain == null, "crash/gain CLAP fixtures not available.");
+
+        var tmp = Path.Combine(Path.GetTempPath(), "midisharp-scan-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tmp);
+        try
+        {
+            File.Copy(crashSrc, Path.Combine(tmp, "01_crash.clap"));        // sorts first → scanned (and crashes) first
+            File.Copy(gain!.Path, Path.Combine(tmp, "02_gain.clap"));       // must still be found after resume
+
+            var found = SandboxScanner.ScanFormat("CLAP", worker!, [tmp]);
+            _out.WriteLine($"scan of [crasher, gain] found {found.Count}: {string.Join(", ", found.Select(p => p.Name))}");
+            // The crasher killed its scan worker, but the scan resumed past it and discovered the good plugin.
+            Assert.Contains(found, p => p.Id == "midisharp.test.gain");
+        }
+        finally { try { Directory.Delete(tmp, true); } catch { } }
+    }
+
+    [Fact]
     public void Sandboxed_plugin_processes_audio_correctly_in_another_process()
     {
         var worker = WorkerDll();
