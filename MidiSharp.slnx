@@ -18,6 +18,7 @@
   <Folder Name="/Hosting/">
     <Project Path="src/MidiSharp.Hosting/MidiSharp.Hosting.csproj" />
     <Project Path="src/MidiSharp.Hosting.Ladspa/MidiSharp.Hosting.Ladspa.csproj" />
+    <Project Path="src/MidiSharp.Hosting.Clap/MidiSharp.Hosting.Clap.csproj" />
   </Folder>
   <Folder Name="/Loader/">
     <Project Path="src/MidiSharp.Loader/MidiSharp.Loader.csproj" />

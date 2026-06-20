@@ -177,7 +177,18 @@ LADSPA is one C struct of function pointers; no MIDI, no state, no GUI.
 Deliverable: `MidiSharp.Hosting` core (`PlanarBridge`, `HostedEffect`, `IHostedPlugin`, unmanaged-buffer
 helpers) + `MidiSharp.Hosting.Ladspa`. Everything learned here is format-independent.
 
-### Phase 1 — Host abstraction + CLAP effects  *(the real anchor)*
+### Phase 1 — Host abstraction + CLAP effects  *(the real anchor)*  — ✅ VERIFIED 2026-06-19
+
+`MidiSharp.Hosting.Clap` built and measured: the full CLAP ABI bound via `delegate* unmanaged[Cdecl]`
+function pointers (`ClapAbi`), a minimal `clap_host` with `UnmanagedCallersOnly` callbacks (`ClapHost`),
+scan/load (`ClapFormat`), and `ClapPlugin : IHostedPlugin` (activate → start_processing → planar
+`clap_process`; params via the `clap.params` extension; parameter *setting* via `clap_event_param_value`
+events fed through the per-block input-event list). Verified end-to-end against a real native CLAP plugin
+(a stereo-gain fixture built in C from the free-audio/clap headers): gain tracks the parameter exactly —
+input RMS 0.28284 → ×1 0.28277 (transparent), ×0.5 0.14139, ×2 0.56555. Reuses `PlanarBridge`/
+`HostedEffect` verbatim. Self-skipping live test `ClapLiveTests`. (State save/restore deferred to Phase 2;
+non-stereo main ports throw `NotSupportedException` for now.)
+
 
 Promote the spike's concrete pieces into the format-agnostic abstraction (§5) and implement the first
 cross-platform adapter. CLAP effects use `clap_plugin_factory` → `clap_plugin` →
@@ -300,6 +311,8 @@ through a `ProcessorChain`, with the loader, struct/function-pointer marshaling,
 kernel, no-GC hot path, and `IAudioProcessor` drop-in all validated by measurement. Every cross-cutting
 concern the rest of the plan rests on is proven.
 
-**Next: Phase 1 — CLAP effects.** Promote the concrete spike pieces into the format-agnostic abstraction
-(already largely in place) and write the first cross-platform adapter (`MidiSharp.Hosting.Clap`),
-reusing `PlanarBridge`/`HostedEffect` verbatim. Acceptance gate as in Phase 1 above.
+**Phases 0 and 1 are done and verified** (LADSPA spike + CLAP effects, both measured against real native
+plugins). **Next: Phase 2 — discovery, registry & web UI**: a `/api/plugins` endpoint over
+`PluginRegistry.Scan`, a `"plugin"` `EffectDto` variant rendered as generic knobs from each
+`PluginParameter`, and plugin-insert persistence (descriptor id + `clap.state` blob + param values) into
+the Setup JSON — which also lands CLAP/VST state save/restore (the one piece Phase 1 deferred).

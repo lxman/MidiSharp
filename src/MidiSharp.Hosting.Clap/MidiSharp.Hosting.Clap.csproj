@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    CLAP host adapter (Phase 1 — the cross-platform anchor format). CLAP is a pure C ABI (MIT), so it
+    binds directly via function pointers with no marshaling on the audio thread. Reuses the
+    MidiSharp.Hosting core (PlanarBridge / HostedEffect / IHostedPlugin) verbatim — this adapter only
+    speaks the CLAP ABI and maps it onto IHostedPlugin. See docs/plugin-hosting-plan.md (Phase 1).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>MidiSharp.Hosting.Clap</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MidiSharp.Hosting\MidiSharp.Hosting.csproj" />
+  </ItemGroup>
+
+</Project>
