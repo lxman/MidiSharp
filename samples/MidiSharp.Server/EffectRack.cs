@@ -110,6 +110,15 @@ internal sealed class EffectRack : IInstrumentInsert, IDisposable
 
     private static string KeyOf(EffectDto e) => e.InstanceId ?? $"{e.PluginFormat}:{e.PluginId}";
 
+    /// <summary>Current opaque state of a loaded plugin insert (by InstanceId) as base64, or null when it
+    /// has no instance or no state. Used to capture live plugin state into a saved setup.</summary>
+    public string? GetPluginState(string instanceId)
+    {
+        if (!_plugins.TryGetValue(instanceId, out var he)) return null;
+        var blob = he.Plugin.SaveState();
+        return blob.Length > 0 ? Convert.ToBase64String(blob) : null;
+    }
+
     public void Process(Span<float> interleavedStereo) => _chain.Process(interleavedStereo);
 
     public void Reset() => _chain.Reset();

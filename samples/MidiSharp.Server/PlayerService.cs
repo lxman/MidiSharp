@@ -395,6 +395,35 @@ public sealed class PlayerService : IDisposable
         ];
     }
 
+    /// <summary>
+    /// Enrich a setup being saved with the live opaque state of each plugin insert (master bus and each
+    /// per-part rack), so a stateful plugin's settings persist in the setup. A plugin that isn't currently
+    /// loaded keeps whatever <c>PluginState</c> the setup already carried.
+    /// </summary>
+    public SetupDto CaptureStates(SetupDto setup)
+    {
+        lock (_lock)
+        {
+            var master = setup.Master is { Effects: { } eff }
+                ? setup.Master with { Effects = EnrichEffects(eff, _masterRack) }
+                : setup.Master;
+            var mix = setup.Mix?.Select(m =>
+            {
+                if (m.Inserts == null) return m;
+                var part = Synthesizer.TrackPart(m.TrackIndex, m.Channel);
+                return _instrumentRacks.TryGetValue(part, out var rack)
+                    ? m with { Inserts = EnrichEffects(m.Inserts, rack) }
+                    : m;
+            }).ToArray();
+            return setup with { Master = master, Mix = mix };
+        }
+    }
+
+    private static EffectDto[] EnrichEffects(EffectDto[] effects, EffectRack rack) =>
+        effects.Select(e => e.Type == "plugin" && !string.IsNullOrEmpty(e.InstanceId)
+            ? e with { PluginState = rack.GetPluginState(e.InstanceId) ?? e.PluginState }
+            : e).ToArray();
+
     // Rebuild the per-instrument insert racks from the play request and register the non-empty ones
     // with the synth (an instrument with no inserts pays nothing — the synth stays on its bypass path).
     private void ApplyInstrumentInserts(Synthesizer synth, InstrumentMixDto[]? mix)

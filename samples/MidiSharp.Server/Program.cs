@@ -82,7 +82,8 @@ app.MapPost("/api/exit", () => { player.RequestExit(); return Results.Ok(); });
 // Saved setups (per-MIDI instrument-substitution configurations). The browser holds the working
 // copy; these persist it. Save with an existing name for the same song overwrites it.
 app.MapGet("/api/setups", (string midiPath) => Results.Json(setups.ListForMidi(midiPath)));
-app.MapPost("/api/setups", (SetupDto setup) => Results.Json(new { id = setups.Save(setup) }));
+// Capture each loaded plugin's live state into the setup before persisting, so stateful plugins round-trip.
+app.MapPost("/api/setups", (SetupDto setup) => Results.Json(new { id = setups.Save(player.CaptureStates(setup)) }));
 app.MapGet("/api/setups/{id}", (string id) =>
 {
     var s = setups.Load(id);

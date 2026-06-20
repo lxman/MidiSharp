@@ -444,9 +444,10 @@ concern the rest of the plan rests on is proven.
 
 **Phases 0–6 and 8 done and verified** — LADSPA, CLAP (effects + instruments + live player integration),
 VST2, and VST3 all host through one `PlanarBridge`/`HostedEffect`/`HostedInstrument`/event stack,
-discovered in the web rack, measured against real or clean-room native plugins; and out-of-process
-sandboxing gives crash isolation. The four major formats are covered (AU is macOS-only, deferred; AAX is
-parked). **All remaining work is depth/productization, not new capability:** wire the sandbox into the
-server's plugin-loading path (so the live rack runs untrusted plugins out-of-process); the
-bind-a-plugin-as-instrument UI; per-part gain/pan on summed instruments; VST3 separate-controller /
-event-list / IBStream state; and proxy state/watchdog polish.
+discovered in the web rack, measured against real or clean-room native plugins; out-of-process sandboxing
+(both discovery and load, with per-file scan resume, a hung-plugin watchdog, and state proxying) gives full
+crash isolation, wired into the live server; and stateful plugins' state is captured into saved setups and
+restored on load. The four major formats are covered (AU is macOS-only, deferred; AAX is parked). **No
+robustness or persistence gaps remain — all remaining work is pure feature depth:** the
+bind-a-plugin-as-instrument UI; per-part gain/pan on summed instruments; and VST3 separate-controller /
+event-list / IBStream state.
