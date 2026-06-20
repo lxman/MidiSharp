@@ -1,6 +1,8 @@
-﻿namespace MidiSharp.Audio.Vorbis.Ogg
+﻿using MidiSharp.Audio.Vorbis.Contracts.Ogg;
+
+namespace MidiSharp.Audio.Vorbis.Ogg
 {
-    class Crc : Contracts.Ogg.ICrc
+    class Crc : ICrc
     {
         const uint CRC32_POLY = 0x04c11db7;
         static readonly uint[] s_crcTable;
@@ -10,8 +12,8 @@
             s_crcTable = new uint[256];
             for (uint i = 0; i < 256; i++)
             {
-                uint s = i << 24;
-                for (int j = 0; j < 8; ++j)
+                var s = i << 24;
+                for (var j = 0; j < 8; ++j)
                 {
                     s = (s << 1) ^ (s >= (1U << 31) ? CRC32_POLY : 0);
                 }

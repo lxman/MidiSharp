@@ -1,6 +1,7 @@
-﻿using MidiSharp.Audio.Vorbis.Contracts.Ogg;
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.IO;
+using MidiSharp.Audio.Vorbis.Contracts.Ogg;
 
 namespace MidiSharp.Audio.Vorbis.Ogg
 {
@@ -9,7 +10,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
         internal static Func<IStreamPageReader, int, Contracts.IPacketProvider> CreatePacketProvider { get; set; } = (pr, ss) => new PacketProvider(pr, ss);
 
         private readonly IPageData _reader;
-        private readonly List<long> _pageOffsets = new List<long>();
+        private readonly List<long> _pageOffsets = [];
 
         private int _lastSeqNbr;
         private int? _firstDataPageIndex;
@@ -58,7 +59,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
                     else if (_maxGranulePos > _reader.GranulePosition)
                     {
                         // uuuuh, what?!
-                        throw new System.IO.InvalidDataException("Granule Position regressed?!");
+                        throw new InvalidDataException("Granule Position regressed?!");
                     }
                     _maxGranulePos = _reader.GranulePosition;
                 }
@@ -66,7 +67,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
                 // we don't really care if it's a continuation itself, only that it is continued and has a single packet
                 else if (_firstDataPageIndex.HasValue && (!_reader.IsContinued || _reader.PacketCount != 1))
                 {
-                    throw new System.IO.InvalidDataException("Granule Position was -1 but page does not have exactly 1 continued packet.");
+                    throw new InvalidDataException("Granule Position was -1 but page does not have exactly 1 continued packet.");
                 }
 
                 if ((_reader.PageFlags & PageFlags.EndOfStream) != 0)
@@ -122,7 +123,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
         public int FindPage(long granulePos)
         {
             // if we're being asked for the first granule, just grab the very first data page
-            int pageIndex = -1;
+            var pageIndex = -1;
             if (granulePos == 0)
             {
                 pageIndex = FindFirstDataPage();
@@ -386,7 +387,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
 
         public bool HasAllPages { get; private set; }
 
-        public long? MaxGranulePosition => HasAllPages ? (long?)_maxGranulePos : null;
+        public long? MaxGranulePosition => HasAllPages ? _maxGranulePos : null;
 
         public int FirstDataPageIndex => FindFirstDataPage();
     }

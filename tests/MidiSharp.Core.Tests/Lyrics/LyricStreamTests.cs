@@ -36,7 +36,7 @@ public class LyricStreamTests
     public void RawCr_FlagsEndOfLine()
     {
         var ls = new LyricStream();
-        var seg = ls.Parse(MakeRaw(new byte[] { 0x0D }));
+        var seg = ls.Parse(MakeRaw([0x0D]));
         Assert.True(seg.Flags.HasFlag(LyricFlags.EndOfLine));
         Assert.Equal(string.Empty, seg.Text);
     }
@@ -45,7 +45,7 @@ public class LyricStreamTests
     public void RawLf_FlagsEndOfParagraph()
     {
         var ls = new LyricStream();
-        var seg = ls.Parse(MakeRaw(new byte[] { 0x0A }));
+        var seg = ls.Parse(MakeRaw([0x0A]));
         Assert.True(seg.Flags.HasFlag(LyricFlags.EndOfParagraph));
     }
 
@@ -99,7 +99,7 @@ public class LyricStreamTests
         var ls = new LyricStream();
         ls.Parse(Make("{@JP}"));
         // Shift-JIS bytes for "美" (kanji "beautiful") = 0x94 0xFC
-        var seg = ls.Parse(MakeRaw(new byte[] { 0x94, 0xFC }));
+        var seg = ls.Parse(MakeRaw([0x94, 0xFC]));
         Assert.Equal("美", seg.Text);
     }
 

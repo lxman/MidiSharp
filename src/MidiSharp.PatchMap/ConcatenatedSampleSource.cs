@@ -44,7 +44,7 @@ internal sealed class ConcatenatedSampleSource : ISampleSource
                 _sourceOf[gid] = si;
                 _localOf[gid] = li;
                 var md = src.Metadata(li);
-                _metadata[gid] = md.StereoLinkSampleId is int link ? Rebase(md, link + offset) : md;
+                _metadata[gid] = md.StereoLinkSampleId is { } link ? Rebase(md, link + offset) : md;
             }
             offset += src.Count;
         }

@@ -1,7 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using MidiSharp.IO;
-using MidiSharp.Model;
 using MidiSharp.Model.Events;
 using Xunit;
 
@@ -94,7 +94,7 @@ public class SmfRepairFilterTests
         var input = Concat(Mthd(0, 1, 96), MtrkHeader(corrupted.Length), corrupted);
 
         // sanity: a strict read of the corrupted bytes throws
-        Assert.ThrowsAny<System.Exception>(() => MidiFileReader.Read(input));
+        Assert.ThrowsAny<Exception>(() => MidiFileReader.Read(input));
 
         var result = SmfRepairFilter.Scan(input);
 

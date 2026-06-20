@@ -25,10 +25,10 @@ public sealed class SfzLoadReport
     public int RegionCount { get; init; }
 
     /// <summary>Unsupported opcode families (numbered variants aggregated), most-used first.</summary>
-    public IReadOnlyList<SfzOpcodeStat> UnsupportedOpcodes { get; init; } = Array.Empty<SfzOpcodeStat>();
+    public IReadOnlyList<SfzOpcodeStat> UnsupportedOpcodes { get; init; } = [];
 
     /// <summary>Skipped headers like <c>curve</c>/<c>effect</c>, most-frequent first.</summary>
-    public IReadOnlyList<SfzHeaderStat> IgnoredHeaders { get; init; } = Array.Empty<SfzHeaderStat>();
+    public IReadOnlyList<SfzHeaderStat> IgnoredHeaders { get; init; } = [];
 
     public bool HasFindings => UnsupportedOpcodes.Count > 0 || IgnoredHeaders.Count > 0;
 }
@@ -43,8 +43,8 @@ public static class SfzDiagnostics
     /// <summary>Parse <paramref name="path"/> (resolving <c>#include</c>s) and report what it drops. No samples decoded.</summary>
     public static SfzLoadReport Scan(string path)
     {
-        string text = File.ReadAllText(path);
-        string baseDir = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".";
+        var text = File.ReadAllText(path);
+        var baseDir = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".";
         var instrument = SfzParser.Parse(text, inc => SfzBankLoader.ReadInclude(baseDir, inc));
         return Analyze(instrument, Path.GetFileNameWithoutExtension(path));
     }
@@ -58,8 +58,8 @@ public static class SfzDiagnostics
             foreach (var kv in region.Opcodes)
             {
                 if (SfzOpcodes.IsHandled(kv.Key)) continue;
-                string family = SfzOpcodes.Family(kv.Key);
-                counts.TryGetValue(family, out int c);
+                var family = SfzOpcodes.Family(kv.Key);
+                counts.TryGetValue(family, out var c);
                 counts[family] = c + 1;
             }
 
@@ -67,8 +67,8 @@ public static class SfzDiagnostics
         foreach (var kv in instrument.ControlIgnored)
         {
             if (SfzOpcodes.IsHandled(kv.Key)) continue;
-            string family = SfzOpcodes.Family(kv.Key);
-            counts.TryGetValue(family, out int c);
+            var family = SfzOpcodes.Family(kv.Key);
+            counts.TryGetValue(family, out var c);
             counts[family] = c + kv.Value;
         }
 

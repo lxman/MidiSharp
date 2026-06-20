@@ -32,7 +32,7 @@ public sealed class VorbisDecoder : IAudioDecoder
             var arr = data.ToArray();
             using var ms = new MemoryStream(arr, writable: false);
             using var reader = new VorbisReader(ms, closeOnDispose: false);
-            long total = reader.TotalSamples;
+            var total = reader.TotalSamples;
             return new AudioInfo
             {
                 Channels = reader.Channels,
@@ -48,7 +48,7 @@ public sealed class VorbisDecoder : IAudioDecoder
 
     public DecodedAudio Decode(byte[] data)
     {
-        var samples = DecodePcm(data, out int channels, out int sampleRate, out long frames);
+        var samples = DecodePcm(data, out var channels, out var sampleRate, out var frames);
         return new DecodedAudio
         {
             Channels = channels,
@@ -66,7 +66,7 @@ public sealed class VorbisDecoder : IAudioDecoder
     /// </summary>
     public static float[] DecodePcm(ReadOnlyMemory<byte> ogg, out int channels, out int sampleRate, out long frames)
     {
-        if (ogg.Length == 0) { channels = 1; sampleRate = 44100; frames = 0; return Array.Empty<float>(); }
+        if (ogg.Length == 0) { channels = 1; sampleRate = 44100; frames = 0; return []; }
 
         var seg = AsSegment(ogg);
         using var ms = new MemoryStream(seg.Array!, seg.Offset, seg.Count, writable: false, publiclyVisible: false);
@@ -74,7 +74,7 @@ public sealed class VorbisDecoder : IAudioDecoder
 
         channels = reader.Channels;
         sampleRate = reader.SampleRate;
-        long total = reader.TotalSamples;
+        var total = reader.TotalSamples;
 
         float[] result;
         if (total <= 0 || total > int.MaxValue / Math.Max(1, channels))
@@ -84,7 +84,7 @@ public sealed class VorbisDecoder : IAudioDecoder
         else
         {
             var buf = new float[total * channels];
-            int read = reader.ReadSamples(buf, 0, buf.Length);
+            var read = reader.ReadSamples(buf, 0, buf.Length);
             if (read < buf.Length) { Array.Resize(ref buf, read); }
             result = buf;
         }
@@ -143,7 +143,7 @@ public sealed class VorbisDecoder : IAudioDecoder
         var accum = new List<float>();
         int got;
         while ((got = reader.ReadSamples(tmp, 0, tmp.Length)) > 0)
-            for (int i = 0; i < got; i++) accum.Add(tmp[i]);
+            for (var i = 0; i < got; i++) accum.Add(tmp[i]);
         return accum.ToArray();
     }
 }

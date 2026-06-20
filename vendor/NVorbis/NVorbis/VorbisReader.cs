@@ -1,8 +1,9 @@
-﻿using MidiSharp.Audio.Vorbis.Contracts;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using MidiSharp.Audio.Vorbis.Contracts;
+using MidiSharp.Audio.Vorbis.Ogg;
 
 namespace MidiSharp.Audio.Vorbis
 {
@@ -11,7 +12,7 @@ namespace MidiSharp.Audio.Vorbis
     /// </summary>
     public sealed class VorbisReader : IVorbisReader
     {
-        internal static Func<Stream, bool, Contracts.IContainerReader> CreateContainerReader { get; set; } = (s, cod) => new Ogg.ContainerReader(s, cod);
+        internal static Func<Stream, bool, Contracts.IContainerReader> CreateContainerReader { get; set; } = (s, cod) => new ContainerReader(s, cod);
         internal static Func<Contracts.IPacketProvider, IStreamDecoder> CreateStreamDecoder { get; set; } = pp => new StreamDecoder(pp, new Factory());
 
         private readonly List<IStreamDecoder> _decoders;
@@ -30,7 +31,7 @@ namespace MidiSharp.Audio.Vorbis
         /// </summary>
         /// <param name="fileName">The file to read from.</param>
         public VorbisReader(string fileName)
-            : this(File.OpenRead(fileName), true)
+            : this(File.OpenRead(fileName))
         {
         }
 
@@ -41,7 +42,7 @@ namespace MidiSharp.Audio.Vorbis
         /// <param name="closeOnDispose"><see langword="true"/> to take ownership and clean up the instance when disposed, otherwise <see langword="false"/>.</param>
         public VorbisReader(Stream stream, bool closeOnDispose = true)
         {
-            _decoders = new List<IStreamDecoder>();
+            _decoders = [];
 
             var containerReader = CreateContainerReader(stream, closeOnDispose);
             containerReader.NewStreamCallback = ProcessNewStream;
@@ -354,7 +355,7 @@ namespace MidiSharp.Audio.Vorbis
         public int ReadSamples(Span<float> buffer)
         {
             // don't allow non-aligned reads (always on a full sample boundary!)
-            int count = buffer.Length - buffer.Length % _streamDecoder.Channels;
+            var count = buffer.Length - buffer.Length % _streamDecoder.Channels;
             if (!buffer.IsEmpty)
             {
                 return _streamDecoder.Read(buffer, 0, count);

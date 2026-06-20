@@ -11,7 +11,7 @@ namespace MidiSharp.Audio;
 public sealed class DecodedAudio
 {
     /// <summary>Interleaved float32 samples in [-1, 1] (length = FrameCount × Channels).</summary>
-    public float[] Samples { get; init; } = Array.Empty<float>();
+    public float[] Samples { get; init; } = [];
 
     public int Channels { get; init; } = 1;
 

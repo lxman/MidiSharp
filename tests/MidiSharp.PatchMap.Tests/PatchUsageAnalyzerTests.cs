@@ -12,7 +12,7 @@ public class PatchUsageAnalyzerTests
     {
         for (var i = 0; i < events.Length; i++) events[i].AbsoluteTicks = i * 10;
         var header = new MidiHeader(MidiFormat.SingleTrack, 1, TimeDivision.FromTicksPerQuarterNote(480));
-        return new MidiFile(header, new[] { new MidiTrack(events) });
+        return new MidiFile(header, [new MidiTrack(events)]);
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public class PatchUsageAnalyzerTests
             new NoteOnEvent { Channel = 1, Note = 64, Velocity = 100 }));   // both default to (0,0)
 
         var p = Assert.Single(used);
-        Assert.Equal(new[] { 0, 1 }, p.Channels);
+        Assert.Equal([0, 1], p.Channels);
     }
 
     [Fact]

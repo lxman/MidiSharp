@@ -32,9 +32,9 @@ internal sealed class GenericEgRunner
     public void Configure(GenericEg eg, int sampleRate)
     {
         _sampleRate = sampleRate;
-        int n = eg.Stages.Length;
+        var n = eg.Stages.Length;
         if (_levels.Length < n) { _levels = new double[n]; _stageSamples = new int[n]; }
-        for (int i = 0; i < n; i++)
+        for (var i = 0; i < n; i++)
         {
             _levels[i] = eg.Stages[i].Level;
             _stageSamples[i] = eg.Stages[i].TimeSeconds > 0 ? (int)(eg.Stages[i].TimeSeconds * sampleRate) : 0;
@@ -74,8 +74,8 @@ internal sealed class GenericEgRunner
     {
         if (_stageCount == 0 || _stage > _sustainStage) return _value;   // held at the sustain level
 
-        int len = _stageSamples[_stage];
-        double target = _levels[_stage];
+        var len = _stageSamples[_stage];
+        var target = _levels[_stage];
         _value = len <= 0 ? target : _prevLevel + (target - _prevLevel) * (_sampleInStage / (double)len);
 
         if (++_sampleInStage >= len)
@@ -92,8 +92,8 @@ internal sealed class GenericEgRunner
     private static double SumCc(LfoCcDepth[]? mods, ChannelState ch)
     {
         if (mods == null) return 0.0;
-        double sum = 0.0;
-        for (int i = 0; i < mods.Length; i++)
+        var sum = 0.0;
+        for (var i = 0; i < mods.Length; i++)
             sum += ch.GetCC(mods[i].Cc) / 127.0 * mods[i].Amount;
         return sum;
     }

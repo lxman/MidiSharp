@@ -31,7 +31,7 @@ public static class SampleConvert
             for (; i <= last; i += step)
             {
                 var s = MemoryMarshal.Read<Vector<short>>(srcBytes.Slice(i * sizeof(short)));
-                Vector.Widen(s, out Vector<int> lo, out Vector<int> hi);
+                Vector.Widen(s, out var lo, out var hi);
                 var fLo = Vector.ConvertToSingle(lo) * vScale;
                 var fHi = Vector.ConvertToSingle(hi) * vScale;
                 MemoryMarshal.Write(dstBytes.Slice(i * sizeof(float)), ref fLo);

@@ -1,6 +1,6 @@
-﻿using MidiSharp.Audio.Vorbis.Contracts;
-using System;
+﻿using System;
 using System.Collections.Generic;
+using MidiSharp.Audio.Vorbis.Contracts;
 
 namespace MidiSharp.Audio.Vorbis
 {
@@ -56,7 +56,7 @@ namespace MidiSharp.Audio.Vorbis
 
                 // now, calc the bit reverse table
                 _bitrev = new ushort[_n8];
-                for (int i = 0; i < _n8; ++i)
+                for (var i = 0; i < _n8; ++i)
                 {
                     _bitrev[i] = (ushort)(Utils.BitReverse((uint)i, _ld - 3) << 2);
                 }
@@ -157,7 +157,7 @@ namespace MidiSharp.Audio.Vorbis
                     var k0 = _n >> (l + 2);
                     var k0_2 = k0 >> 1;
                     var lim = 1 << (l + 1);
-                    for (int i = 0; i < lim; ++i)
+                    for (var i = 0; i < lim; ++i)
                     {
                         step3_inner_r_loop(_n >> (l + 4), u, _n2 - 1 - k0 * i, -k0_2, 1 << (l + 3));
                     }
@@ -174,7 +174,7 @@ namespace MidiSharp.Audio.Vorbis
                     var i_off = _n2 - 1;
                     var A0 = 0;
 
-                    for (int r = rlim; r > 0; --r)
+                    for (var r = rlim; r > 0; --r)
                     {
                         step3_inner_s_loop(lim, u, i_off, -k0_2, A0, k1, k0);
                         A0 += k1 * 4;
@@ -317,7 +317,7 @@ namespace MidiSharp.Audio.Vorbis
                 var ee0 = i_off;        // e
                 var ee2 = ee0 + k_off;  // e
                 var a = 0;
-                for (int i = n >> 2; i > 0; --i)
+                for (var i = n >> 2; i > 0; --i)
                 {
                     float k00_20, k01_21;
 
@@ -364,9 +364,9 @@ namespace MidiSharp.Audio.Vorbis
 
                 var e0 = d0;            // e
                 var e2 = e0 + k_off;    // e
-                int a = 0;
+                var a = 0;
 
-                for (int i = lim >> 2; i > 0; --i)
+                for (var i = lim >> 2; i > 0; --i)
                 {
                     k00_20 = e[e0] - e[e2];
                     k01_21 = e[e0 - 1] - e[e2 - 1];
@@ -425,7 +425,7 @@ namespace MidiSharp.Audio.Vorbis
                 var ee0 = i_off;        // e
                 var ee2 = ee0 + k_off;  // e
 
-                for (int i = n; i > 0; --i)
+                for (var i = n; i > 0; --i)
                 {
                     k00 = e[ee0] - e[ee2];
                     k11 = e[ee0 - 1] - e[ee2 - 1];

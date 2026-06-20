@@ -1,5 +1,4 @@
 using System;
-using MidiSharp.Dsp;
 using Xunit;
 
 namespace MidiSharp.Dsp.Tests;
@@ -16,10 +15,10 @@ public sealed class LimiterProcessorTests
     public void Output_never_exceeds_the_ceiling()
     {
         var lim = new LimiterProcessor(Rate) { CeilingDb = -1.0 };   // ceiling ≈ 0.891
-        double ceiling = Math.Pow(10, -1.0 / 20.0);
+        var ceiling = Math.Pow(10, -1.0 / 20.0);
         var buf = Tone(220, amp: 0.95f, frames: 8192);               // hot, above ceiling
         lim.Process(buf);
-        float peak = Peak(buf);
+        var peak = Peak(buf);
         Assert.True(peak <= ceiling + 1e-4f, $"peak {peak:F4} must not exceed ceiling {ceiling:F4}");
     }
 
@@ -49,15 +48,15 @@ public sealed class LimiterProcessorTests
         var lim = new LimiterProcessor(Rate) { CeilingDb = -3.0 };
         // Asymmetric block: left hot, right quiet. The shared gain must scale both equally, so their
         // ratio is preserved sample-for-sample.
-        int frames = 2048;
+        var frames = 2048;
         var buf = new float[frames * 2];
-        for (int f = 0; f < frames; f++)
+        for (var f = 0; f < frames; f++)
         {
             buf[f * 2] = (float)(0.95 * Math.Sin(2 * Math.PI * 200 * f / Rate));
             buf[f * 2 + 1] = buf[f * 2] * 0.5f;
         }
         lim.Process(buf);
-        for (int f = 0; f < frames; f++)
+        for (var f = 0; f < frames; f++)
             if (Math.Abs(buf[f * 2]) > 1e-6f)
                 Assert.True(Math.Abs(buf[f * 2 + 1] / buf[f * 2] - 0.5f) < 1e-3f, "L/R ratio must be preserved");
     }
@@ -69,17 +68,17 @@ public sealed class LimiterProcessorTests
         lim.Process(Tone(200, 0.99f, 4096));        // drive it into reduction
         Assert.True(lim.GainReductionDb < -0.1, "should be reducing during a hot signal");
         // Now feed silence-ish low level long enough to release.
-        for (int i = 0; i < 20; i++) lim.Process(Tone(200, 0.05f, 4096));
+        for (var i = 0; i < 20; i++) lim.Process(Tone(200, 0.05f, 4096));
         Assert.True(lim.GainReductionDb > -0.01, $"should recover to ~unity (got {lim.GainReductionDb:F3} dB)");
     }
 
     private static float[] Tone(double freqHz, float amp, int frames)
     {
         var buf = new float[frames * 2];
-        double step = 2.0 * Math.PI * freqHz / Rate;
-        for (int f = 0; f < frames; f++)
+        var step = 2.0 * Math.PI * freqHz / Rate;
+        for (var f = 0; f < frames; f++)
         {
-            float s = (float)(amp * Math.Sin(step * f));
+            var s = (float)(amp * Math.Sin(step * f));
             buf[f * 2] = s; buf[f * 2 + 1] = s;
         }
         return buf;

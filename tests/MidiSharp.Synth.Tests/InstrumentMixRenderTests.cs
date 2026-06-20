@@ -1,6 +1,5 @@
 using System;
 using MidiSharp.SoundBank;
-using MidiSharp.Synth;
 using Xunit;
 using IRBank = MidiSharp.SoundBank.SoundBank;
 
@@ -31,8 +30,8 @@ public sealed class InstrumentMixRenderTests
     {
         // A note carrying a track index mixes by (TrackMixBank, track), not by its program — so the
         // mixer groups by part. Trimming track 5's mix halves its level even though it plays program 0.
-        double flat = Rms(RenderTrackNote(5, null).left);
-        double cut = Rms(RenderTrackNote(5, s => s.GetInstrumentMix(Synthesizer.TrackMixBank, 5).GainDb = -6.0206).left);
+        var flat = Rms(RenderTrackNote(5, null).left);
+        var cut = Rms(RenderTrackNote(5, s => s.GetInstrumentMix(Synthesizer.TrackMixBank, 5).GainDb = -6.0206).left);
         Assert.True(Math.Abs(cut / flat - 0.5) < 0.02, $"track-5 -6 dB trim should halve RMS (ratio {cut / flat:F4})");
     }
 
@@ -49,7 +48,7 @@ public sealed class InstrumentMixRenderTests
 
     private static (float[] left, float[] right) RenderTrackNote(int track, Action<Synthesizer>? setup)
     {
-        var synth = new Synthesizer(Rate);
+        var synth = new Synthesizer();
         synth.LoadSoundFont(MakeBank(1));
         setup?.Invoke(synth);
         synth.NoteOn(0, 60, 120, track);
@@ -58,7 +57,7 @@ public sealed class InstrumentMixRenderTests
 
     private static (float[] left, float[] right) RenderTwoTrackNotes(int soloTrack, bool includeTrack7)
     {
-        var synth = new Synthesizer(Rate);
+        var synth = new Synthesizer();
         synth.LoadSoundFont(MakeBank(1));
         synth.GetInstrumentMix(Synthesizer.TrackMixBank, soloTrack).Solo = true;
         synth.NoteOn(0, 60, 120, soloTrack);
@@ -69,23 +68,23 @@ public sealed class InstrumentMixRenderTests
     [Fact]
     public void Gain_trim_plus_6dB_doubles_rms()
     {
-        double flat = Rms(RenderProgram0(mix: null).left);
-        double boosted = Rms(RenderProgram0(s => s.GetInstrumentMix(0, 0).GainDb = 6.0206).left);
+        var flat = Rms(RenderProgram0(mix: null).left);
+        var boosted = Rms(RenderProgram0(s => s.GetInstrumentMix(0, 0).GainDb = 6.0206).left);
         Assert.True(Math.Abs(boosted / flat - 2.0) < 0.02, $"+6 dB should ~double RMS (ratio {boosted / flat:F4})");
     }
 
     [Fact]
     public void Gain_trim_minus_6dB_halves_rms()
     {
-        double flat = Rms(RenderProgram0(mix: null).left);
-        double cut = Rms(RenderProgram0(s => s.GetInstrumentMix(0, 0).GainDb = -6.0206).left);
+        var flat = Rms(RenderProgram0(mix: null).left);
+        var cut = Rms(RenderProgram0(s => s.GetInstrumentMix(0, 0).GainDb = -6.0206).left);
         Assert.True(Math.Abs(cut / flat - 0.5) < 0.02, $"-6 dB should ~halve RMS (ratio {cut / flat:F4})");
     }
 
     [Fact]
     public void Mute_silences_the_instrument()
     {
-        double muted = Rms(RenderProgram0(s => s.GetInstrumentMix(0, 0).Mute = true).left);
+        var muted = Rms(RenderProgram0(s => s.GetInstrumentMix(0, 0).Mute = true).left);
         Assert.True(muted < 1e-6, $"mute should be silent (rms {muted:E3})");
     }
 
@@ -116,8 +115,8 @@ public sealed class InstrumentMixRenderTests
     public void Reverb_send_adds_wet_energy()
     {
         // A short note then a tail; the reverb send should leave audible energy after the note ends.
-        double dry = TotalEnergy(RenderProgram0(mix: null, blocks: 80));
-        double wet = TotalEnergy(RenderProgram0(s => s.GetInstrumentMix(0, 0).ReverbSend = 1.0, blocks: 80));
+        var dry = TotalEnergy(RenderProgram0(mix: null, blocks: 80));
+        var wet = TotalEnergy(RenderProgram0(s => s.GetInstrumentMix(0, 0).ReverbSend = 1.0, blocks: 80));
         Assert.True(wet > dry * 1.01, $"reverb send should add wet energy (wet {wet:F3} vs dry {dry:F3})");
     }
 
@@ -125,7 +124,7 @@ public sealed class InstrumentMixRenderTests
 
     private static (float[] left, float[] right) RenderProgram0(Action<Synthesizer>? mix, int blocks = 50)
     {
-        var synth = new Synthesizer(Rate);
+        var synth = new Synthesizer();
         synth.LoadSoundFont(MakeBank(2));
         mix?.Invoke(synth);
         synth.NoteOn(0, 60, 120);
@@ -135,7 +134,7 @@ public sealed class InstrumentMixRenderTests
     // Plays program 0 on channel 0 and program 1 on channel 1, with optional solo/mute/isolation.
     private static (float[] left, float[] right) RenderTwoPrograms(bool soloProgram0, bool muteAll, bool onlyProgram0)
     {
-        var synth = new Synthesizer(Rate);
+        var synth = new Synthesizer();
         synth.LoadSoundFont(MakeBank(2));
         if (soloProgram0) synth.GetInstrumentMix(0, 0).Solo = true;
 
@@ -153,7 +152,7 @@ public sealed class InstrumentMixRenderTests
         const int n = 128;
         var left = new float[blocks * n];
         var right = new float[blocks * n];
-        for (int b = 0; b < blocks; b++)
+        for (var b = 0; b < blocks; b++)
         {
             var l = new float[n];
             var r = new float[n];
@@ -170,14 +169,14 @@ public sealed class InstrumentMixRenderTests
         var data = new[] { Constant(0.5f, 16000) };
         var meta = new[] { new SampleMetadata { SampleRate = Rate, Channels = 1, LengthFrames = 16000, RootKey = 60 } };
         var patches = new Patch[programs];
-        for (int p = 0; p < programs; p++)
+        for (var p = 0; p < programs; p++)
         {
             patches[p] = new Patch
             {
                 Bank = 0,
                 Program = p,
-                Zones = new[]
-                {
+                Zones =
+                [
                     new PatchZone
                     {
                         Keys = new KeyRange(0, 127),
@@ -187,8 +186,8 @@ public sealed class InstrumentMixRenderTests
                         {
                             AttackSeconds = 0, DecaySeconds = 0, SustainLevel = 1.0, ReleaseSeconds = 0.05,
                         },
-                    },
-                },
+                    }
+                ],
             };
         }
         return new IRBank { Patches = patches, Samples = new PreDecodedFloatSampleSource(data, meta) };
@@ -204,14 +203,14 @@ public sealed class InstrumentMixRenderTests
     private static double Rms(float[] x)
     {
         double sum = 0;
-        for (int i = 0; i < x.Length; i++) sum += (double)x[i] * x[i];
+        for (var i = 0; i < x.Length; i++) sum += (double)x[i] * x[i];
         return Math.Sqrt(sum / x.Length);
     }
 
     private static double TotalEnergy((float[] left, float[] right) s)
     {
         double sum = 0;
-        for (int i = 0; i < s.left.Length; i++) sum += (double)s.left[i] * s.left[i] + (double)s.right[i] * s.right[i];
+        for (var i = 0; i < s.left.Length; i++) sum += (double)s.left[i] * s.left[i] + (double)s.right[i] * s.right[i];
         return sum;
     }
 }

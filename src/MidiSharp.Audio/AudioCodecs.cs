@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 
 namespace MidiSharp.Audio;
@@ -14,12 +13,12 @@ public static class AudioCodecs
 {
     // Order matters only for ambiguity; these four have disjoint magic bytes.
     private static readonly IAudioDecoder[] Decoders =
-    {
+    [
         new WavDecoder(),
         new AiffDecoder(),
         new FlacDecoder(),
-        new VorbisDecoder(),
-    };
+        new VorbisDecoder()
+    ];
 
     /// <summary>Decode a file from disk.</summary>
     public static DecodedAudio Decode(string path)

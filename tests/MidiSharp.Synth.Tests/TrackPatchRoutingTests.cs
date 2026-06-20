@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using MidiSharp.SoundBank;
-using MidiSharp.Synth;
 using Xunit;
 using IRBank = MidiSharp.SoundBank.SoundBank;
 
@@ -55,7 +54,7 @@ public sealed class TrackPatchRoutingTests
 
     private static Synthesizer NewSynth()
     {
-        var synth = new Synthesizer(Rate);
+        var synth = new Synthesizer();
         synth.LoadSoundFont(MakeBank());
         return synth;
     }
@@ -66,7 +65,7 @@ public sealed class TrackPatchRoutingTests
         var r = new float[frames];
         synth.Generate(l, r);
         float peak = 0;
-        for (int i = 0; i < frames; i++) peak = Math.Max(peak, Math.Abs(l[i]));
+        for (var i = 0; i < frames; i++) peak = Math.Max(peak, Math.Abs(l[i]));
         return peak;
     }
 
@@ -82,16 +81,16 @@ public sealed class TrackPatchRoutingTests
         // Sample 0 is loud, sample 1 is silent. The channel patch uses the loud sample; the
         // synthetic track-override patch uses the silent one.
         var samples = new PreDecodedFloatSampleSource(
-            new[] { Constant(0.5f, 2000), Constant(0.0f, 2000) },
-            new[] { Meta(), Meta() });
+            [Constant(0.5f, 2000), Constant(0.0f, 2000)],
+            [Meta(), Meta()]);
 
         return new IRBank
         {
-            Patches = new[]
-            {
-                new Patch { Bank = ChannelBank, Program = ChannelProgram, Zones = new[] { Zone(0) } },
-                new Patch { Bank = TrackBank, Program = TrackProgram, Zones = new[] { Zone(1) } },
-            },
+            Patches =
+            [
+                new Patch { Bank = ChannelBank, Program = ChannelProgram, Zones = [Zone(0)] },
+                new Patch { Bank = TrackBank, Program = TrackProgram, Zones = [Zone(1)] }
+            ],
             Samples = samples,
         };
     }

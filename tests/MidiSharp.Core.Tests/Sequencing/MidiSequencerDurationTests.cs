@@ -33,13 +33,12 @@ public class MidiSequencerDurationTests
     public void PaddedEndOfTrack_DurationAnchorsOnLastNote()
     {
         // Note ends at tick 960; EndOfTrack jammed out at tick 100000 (the bug pattern).
-        var seq = Seq(new MidiTrack(new MidiEvent[]
-        {
+        var seq = Seq(new MidiTrack([
             Tempo120(),
             At(new NoteOnEvent { Channel = 0, Note = 60, Velocity = 100 }, 0),
             At(new NoteOffEvent { Channel = 0, Note = 60, Velocity = 0 }, 960),
-            EndOfTrack(100000),
-        }));
+            EndOfTrack(100000)
+        ]));
 
         Assert.Equal(seq.TickToTime(960), seq.Duration);
         Assert.True(seq.Duration < seq.TickToTime(100000));   // trailing silence trimmed
@@ -50,13 +49,12 @@ public class MidiSequencerDurationTests
     {
         // Last note-ON is early (tick 480) but it's held until note-OFF at tick 3840.
         // Duration must reach the note-off, never the note-on.
-        var seq = Seq(new MidiTrack(new MidiEvent[]
-        {
+        var seq = Seq(new MidiTrack([
             Tempo120(),
             At(new NoteOnEvent { Channel = 0, Note = 60, Velocity = 100 }, 480),
             At(new NoteOffEvent { Channel = 0, Note = 60, Velocity = 0 }, 3840),
-            EndOfTrack(50000),
-        }));
+            EndOfTrack(50000)
+        ]));
 
         Assert.Equal(seq.TickToTime(3840), seq.Duration);
     }
@@ -66,13 +64,12 @@ public class MidiSequencerDurationTests
     {
         // The common, well-formed case: EndOfTrack sits at the same tick as the final note-off.
         // New and old behaviour must agree exactly — no change for normal files.
-        var seq = Seq(new MidiTrack(new MidiEvent[]
-        {
+        var seq = Seq(new MidiTrack([
             Tempo120(),
             At(new NoteOnEvent { Channel = 0, Note = 60, Velocity = 100 }, 0),
             At(new NoteOffEvent { Channel = 0, Note = 60, Velocity = 0 }, 960),
-            EndOfTrack(960),
-        }));
+            EndOfTrack(960)
+        ]));
 
         Assert.Equal(seq.TickToTime(960), seq.Duration);
     }
@@ -82,12 +79,11 @@ public class MidiSequencerDurationTests
     {
         // No notes anywhere (a tempo/automation/lyric-only track): nothing to anchor on, so the
         // nominal end (last event) is kept rather than collapsing to zero.
-        var seq = Seq(new MidiTrack(new MidiEvent[]
-        {
+        var seq = Seq(new MidiTrack([
             Tempo120(),
             At(new ControlChangeEvent { Channel = 0, Controller = 7, Value = 100 }, 480),
-            EndOfTrack(2000),
-        }));
+            EndOfTrack(2000)
+        ]));
 
         Assert.Equal(seq.TickToTime(2000), seq.Duration);
     }
@@ -97,13 +93,12 @@ public class MidiSequencerDurationTests
     {
         // The Bohemian Rhapsody pattern: music track ends at tick 960; a separate conductor track's
         // EndOfTrack is padded to tick 262143. Duration follows the music, not the padded conductor.
-        var conductor = new MidiTrack(new MidiEvent[] { Tempo120(), EndOfTrack(262143) });
-        var music = new MidiTrack(new MidiEvent[]
-        {
+        var conductor = new MidiTrack([Tempo120(), EndOfTrack(262143)]);
+        var music = new MidiTrack([
             At(new NoteOnEvent { Channel = 0, Note = 60, Velocity = 100 }, 0),
             At(new NoteOffEvent { Channel = 0, Note = 60, Velocity = 0 }, 960),
-            EndOfTrack(960),
-        });
+            EndOfTrack(960)
+        ]);
         var seq = Seq(conductor, music);
 
         Assert.Equal(seq.TickToTime(960), seq.Duration);

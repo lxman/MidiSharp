@@ -35,19 +35,19 @@ internal sealed class EffectRack : IInstrumentInsert
         if (effects != null)
             foreach (var e in effects)
             {
-                if (!e.enabled) continue;
-                switch (e.type?.ToLowerInvariant())
+                if (!e.Enabled) continue;
+                switch (e.Type?.ToLowerInvariant())
                 {
                     case "eq":
-                        _eq.SetBands(e.eqBands is { Length: > 0 } b
-                            ? System.Array.ConvertAll(b, ToEqSpec)
-                            : System.Array.Empty<EqBandSpec>());
+                        _eq.SetBands(e.EqBands is { Length: > 0 } b
+                            ? Array.ConvertAll(b, ToEqSpec)
+                            : []);
                         ordered.Add(_eq);
                         break;
                     case "limiter":
                         _limiter.Enabled = true;
-                        _limiter.CeilingDb = e.ceilingDb;
-                        _limiter.ReleaseMs = e.releaseMs > 0 ? e.releaseMs : 100.0;
+                        _limiter.CeilingDb = e.CeilingDb;
+                        _limiter.ReleaseMs = e.ReleaseMs > 0 ? e.ReleaseMs : 100.0;
                         ordered.Add(_limiter);
                         break;
                 }
@@ -60,14 +60,14 @@ internal sealed class EffectRack : IInstrumentInsert
         _chain.SetAll(ordered);
     }
 
-    public void Process(System.Span<float> interleavedStereo) => _chain.Process(interleavedStereo);
+    public void Process(Span<float> interleavedStereo) => _chain.Process(interleavedStereo);
 
     /// <summary>Clears the chain's filter/limiter state (e.g. on transport stop).</summary>
     public void Reset() => _chain.Reset();
 
     private static EqBandSpec ToEqSpec(EqBandDto b)
     {
-        var type = b.type?.ToLowerInvariant() switch
+        var type = b.Type?.ToLowerInvariant() switch
         {
             "lowshelf" => BiquadType.LowShelf,
             "highshelf" => BiquadType.HighShelf,
@@ -76,6 +76,6 @@ internal sealed class EffectRack : IInstrumentInsert
             "notch" => BiquadType.Notch,
             _ => BiquadType.Peaking,
         };
-        return new EqBandSpec(type, b.freqHz, b.q > 0 ? b.q : 0.707, b.gainDb);
+        return new EqBandSpec(type, b.FreqHz, b.Q > 0 ? b.Q : 0.707, b.GainDb);
     }
 }

@@ -54,7 +54,7 @@ public sealed class WaveSampleInfo
     public short FineTuneCents { get; init; }         // fixed-point relative pitch
     public int GainCentibels { get; init; }           // attenuation (DLS stores as gain — typically ≤ 0)
     public uint Options { get; init; }
-    public IReadOnlyList<SampleLoop> Loops { get; init; } = Array.Empty<SampleLoop>();
+    public IReadOnlyList<SampleLoop> Loops { get; init; } = [];
 }
 
 /// <summary>
@@ -102,7 +102,7 @@ public sealed class DlsRegion
     public ushort KeyGroup { get; init; }              // exclusive class
     public WaveLink WaveLink { get; init; }
     public WaveSampleInfo? SampleInfo { get; init; }
-    public IReadOnlyList<ArticulatorList> Articulators { get; init; } = Array.Empty<ArticulatorList>();
+    public IReadOnlyList<ArticulatorList> Articulators { get; init; } = [];
 }
 
 /// <summary>
@@ -114,7 +114,7 @@ public sealed class DlsRegion
 public sealed class ArticulatorList
 {
     public bool IsLevel2 { get; init; }                // art1 (Level 1) vs art2 (Level 2)
-    public IReadOnlyList<ConnectionBlock> Connections { get; init; } = Array.Empty<ConnectionBlock>();
+    public IReadOnlyList<ConnectionBlock> Connections { get; init; } = [];
 }
 
 /// <summary>
@@ -126,8 +126,8 @@ public sealed class DlsInstrument
     public uint Program { get; init; }
     public bool IsDrumKit { get; init; }
     public string? Name { get; init; }
-    public IReadOnlyList<DlsRegion> Regions { get; init; } = Array.Empty<DlsRegion>();
-    public IReadOnlyList<ArticulatorList> Articulators { get; init; } = Array.Empty<ArticulatorList>();
+    public IReadOnlyList<DlsRegion> Regions { get; init; } = [];
+    public IReadOnlyList<ArticulatorList> Articulators { get; init; } = [];
 }
 
 /// <summary>
@@ -140,6 +140,6 @@ public sealed class DlsCollection
     public string? Copyright { get; init; }
     public string? Engineer { get; init; }
     public string? Comments { get; init; }
-    public IReadOnlyList<DlsInstrument> Instruments { get; init; } = Array.Empty<DlsInstrument>();
-    public IReadOnlyList<DlsWave> Waves { get; init; } = Array.Empty<DlsWave>();
+    public IReadOnlyList<DlsInstrument> Instruments { get; init; } = [];
+    public IReadOnlyList<DlsWave> Waves { get; init; } = [];
 }

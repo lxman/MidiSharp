@@ -1,5 +1,5 @@
-﻿using MidiSharp.Audio.Vorbis.Contracts;
-using System;
+﻿using System;
+using MidiSharp.Audio.Vorbis.Contracts;
 
 namespace MidiSharp.Audio.Vorbis
 {
@@ -20,7 +20,7 @@ namespace MidiSharp.Audio.Vorbis
         {
             if (index < 0 || index >= buffer.Length) throw new ArgumentOutOfRangeException(nameof(index));
             if (count < 0 || index + count > buffer.Length) throw new ArgumentOutOfRangeException(nameof(count));
-            for (int i = 0; i < count; i++)
+            for (var i = 0; i < count; i++)
             {
                 var value = (byte)packet.TryPeekBits(8, out var bitsRead);
                 if (bitsRead == 0)
@@ -42,7 +42,7 @@ namespace MidiSharp.Audio.Vorbis
         public static byte[] ReadBytes(this IPacket packet, int count)
         {
             var buf = new byte[count];
-            var cnt = Read(packet, buf, 0, count);
+            var cnt = packet.Read(buf, 0, count);
             if (cnt < count)
             {
                 var temp = new byte[cnt];

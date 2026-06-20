@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using MidiSharp.SoundBank;
-
 using IRBank = MidiSharp.SoundBank.SoundBank;
 namespace MidiSharp.Loader.Dls;
 

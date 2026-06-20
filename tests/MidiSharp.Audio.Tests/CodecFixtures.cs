@@ -28,12 +28,12 @@ internal static class CodecFixtures
     public static float[] MakeSignal(int frames, int channels)
     {
         var s = new float[frames * channels];
-        for (int i = 0; i < frames; i++)
+        for (var i = 0; i < frames; i++)
         {
-            double t = i / (double)SampleRate;
-            double env = 0.6 * (0.5 - 0.5 * Math.Cos(2 * Math.PI * i / frames)); // hann-ish, peaks ~0.6
-            float l = (float)(env * Math.Sin(2 * Math.PI * 440.0 * t));
-            float r = (float)(env * Math.Sin(2 * Math.PI * 660.0 * t));
+            var t = i / (double)SampleRate;
+            var env = 0.6 * (0.5 - 0.5 * Math.Cos(2 * Math.PI * i / frames)); // hann-ish, peaks ~0.6
+            var l = (float)(env * Math.Sin(2 * Math.PI * 440.0 * t));
+            var r = (float)(env * Math.Sin(2 * Math.PI * 660.0 * t));
             s[i * channels] = l;
             if (channels > 1) s[i * channels + 1] = r;
         }
@@ -44,8 +44,8 @@ internal static class CodecFixtures
     {
         using var fs = File.Create(path);
         using var w = new BinaryWriter(fs);
-        int frames = interleaved.Length / channels;
-        int dataBytes = interleaved.Length * 2;
+        var frames = interleaved.Length / channels;
+        var dataBytes = interleaved.Length * 2;
 
         w.Write(Encoding.ASCII.GetBytes("RIFF"));
         w.Write(36 + dataBytes);
@@ -60,9 +60,9 @@ internal static class CodecFixtures
         w.Write((short)16);
         w.Write(Encoding.ASCII.GetBytes("data"));
         w.Write(dataBytes);
-        foreach (float v in interleaved)
+        foreach (var v in interleaved)
         {
-            int s = (int)Math.Round(Math.Clamp(v, -1f, 1f) * 32767f);
+            var s = (int)Math.Round(Math.Clamp(v, -1f, 1f) * 32767f);
             w.Write((short)Math.Clamp(s, short.MinValue, short.MaxValue));
         }
     }

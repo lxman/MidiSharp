@@ -108,10 +108,10 @@ public sealed class PreDecodedFloatSampleSource : ISampleSource
         var src = _samples[sampleId];
         var channels = _metadata[sampleId].Channels;
 
-        long firstFloat = frameOffset * channels;
+        var firstFloat = frameOffset * channels;
         if (firstFloat >= src.Length) return 0;
 
-        int available = (int)Math.Min(dest.Length, src.Length - firstFloat);
+        var available = (int)Math.Min(dest.Length, src.Length - firstFloat);
         new ReadOnlySpan<float>(src, (int)firstFloat, available).CopyTo(dest);
         return available / channels;
     }

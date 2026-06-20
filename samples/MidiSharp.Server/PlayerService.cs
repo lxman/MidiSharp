@@ -1,42 +1,40 @@
-using MidiSharp.Loader;
 using MidiSharp.IO;
+using MidiSharp.Loader;
 using MidiSharp.PatchMap;
-using MidiSharp.SoundBank;
 using MidiSharp.Synth;
 using MidiSharp.Synth.OwnAudio;
-using MidiSharp.Dsp;
 using IRBank = MidiSharp.SoundBank.SoundBank;
 
 namespace MidiSharp.Server;
 
 public enum PlayerState { Idle, Playing, Completed }
 
-public sealed record DeviceDto(string id, string name, string engine, bool isDefault);
-public sealed record PatchOverrideDto(int logicalBank, int logicalProgram, string sourcePath, int sourceBank, int sourceProgram, double gainDb = 0);
-public sealed record TrackOverrideDto(int trackIndex, string? trackName, string sourcePath, int sourceBank, int sourceProgram, double gainDb = 0);
+public sealed record DeviceDto(string Id, string Name, string Engine, bool IsDefault);
+public sealed record PatchOverrideDto(int LogicalBank, int LogicalProgram, string SourcePath, int SourceBank, int SourceProgram, double GainDb = 0);
+public sealed record TrackOverrideDto(int TrackIndex, string? TrackName, string SourcePath, int SourceBank, int SourceProgram, double GainDb = 0);
 // Per-track mixer strip, keyed by source MIDI track (the engine mixes by track → (TrackMixBank,
 // trackIndex)). All fields default to no-ops. `inserts` is the track's Tier-2 insert rack.
-public sealed record InstrumentMixDto(int trackIndex, double gainDb = 0, double pan = 0, bool mute = false, bool solo = false, double reverbSend = 0, double chorusSend = 0, EffectDto[]? inserts = null);
+public sealed record InstrumentMixDto(int TrackIndex, double GainDb = 0, double Pan = 0, bool Mute = false, bool Solo = false, double ReverbSend = 0, double ChorusSend = 0, EffectDto[]? Inserts = null);
 // A live per-track insert-rack update.
-public sealed record InstrumentInsertDto(int trackIndex, EffectDto[]? effects = null);
+public sealed record InstrumentInsertDto(int TrackIndex, EffectDto[]? Effects = null);
 // One master-EQ band. type is "lowshelf" | "highshelf" | "peaking" (others map to peaking).
-public sealed record EqBandDto(string type, double freqHz, double q, double gainDb);
+public sealed record EqBandDto(string Type, double FreqHz, double Q, double GainDb);
 // One effect in a rack (ordered insert chain). type = "eq" | "limiter"; only the fields its type uses
 // are read. enabled=false leaves it in the rack's order but out of the signal path.
-public sealed record EffectDto(string type, bool enabled = true, EqBandDto[]? eqBands = null,
-    double ceilingDb = -1.0, double releaseMs = 100.0);
+public sealed record EffectDto(string Type, bool Enabled = true, EqBandDto[]? EqBands = null,
+    double CeilingDb = -1.0, double ReleaseMs = 100.0);
 // Master-bus DSP: an ordered effect rack. The legacy scalar fields are still accepted (older clients /
 // saved setups) and synthesized into an [eq, limiter] rack when `effects` is absent.
-public sealed record MasterDto(EffectDto[]? effects = null, double masterGainDb = 0,
-    bool limiterEnabled = false, double ceilingDb = -1.0, double releaseMs = 100.0,
-    bool eqEnabled = false, EqBandDto[]? eqBands = null);
-public sealed record PlayRequest(string? deviceId, string midiPath, string soundfontPath, PatchOverrideDto[]? overrides = null, TrackOverrideDto[]? trackOverrides = null, InstrumentMixDto[]? mix = null, MasterDto? master = null);
-public sealed record PlayResponse(bool ok, double durationSeconds, string[] defects, string? error);
-public sealed record StatusDto(string state, double positionSeconds, double durationSeconds, string? midi, string? soundfont);
-public sealed record UsedPatchDto(int bank, int program, string? name, bool isDrum, int[] channels);
-public sealed record TrackInfoDto(int trackIndex, string? name, int[] channels, int[] programs, string? baseName);
-public sealed record SoundfontPatchDto(int bank, int program, string name);
-public sealed record SoundfontCatalogDto(string name, SoundfontPatchDto[] patches);
+public sealed record MasterDto(EffectDto[]? Effects = null, double MasterGainDb = 0,
+    bool LimiterEnabled = false, double CeilingDb = -1.0, double ReleaseMs = 100.0,
+    bool EqEnabled = false, EqBandDto[]? EqBands = null);
+public sealed record PlayRequest(string? DeviceId, string MidiPath, string SoundfontPath, PatchOverrideDto[]? Overrides = null, TrackOverrideDto[]? TrackOverrides = null, InstrumentMixDto[]? Mix = null, MasterDto? Master = null);
+public sealed record PlayResponse(bool Ok, double DurationSeconds, string[] Defects, string? Error);
+public sealed record StatusDto(string State, double PositionSeconds, double DurationSeconds, string? Midi, string? Soundfont);
+public sealed record UsedPatchDto(int Bank, int Program, string? Name, bool IsDrum, int[] Channels);
+public sealed record TrackInfoDto(int TrackIndex, string? Name, int[] Channels, int[] Programs, string? BaseName);
+public sealed record SoundfontPatchDto(int Bank, int Program, string Name);
+public sealed record SoundfontCatalogDto(string Name, SoundfontPatchDto[] Patches);
 
 /// <summary>
 /// Owns the live playback engine (synth + player + audio output) for the web server.
@@ -123,23 +121,23 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
             StopLocked();
             try
             {
-                if (!File.Exists(req.midiPath))
-                    return new PlayResponse(false, 0, [], $"MIDI not found: {req.midiPath}");
-                if (!File.Exists(req.soundfontPath))
-                    return new PlayResponse(false, 0, [], $"SoundFont not found: {req.soundfontPath}");
+                if (!File.Exists(req.MidiPath))
+                    return new PlayResponse(false, 0, [], $"MIDI not found: {req.MidiPath}");
+                if (!File.Exists(req.SoundfontPath))
+                    return new PlayResponse(false, 0, [], $"SoundFont not found: {req.SoundfontPath}");
 
                 // Repair → strict read → load base font + override sources → compose → wire up.
-                var repair = SmfRepairFilter.Scan(File.ReadAllBytes(req.midiPath));
+                var repair = SmfRepairFilter.Scan(File.ReadAllBytes(req.MidiPath));
                 var midi = MidiFileReader.Read(repair.Data);
 
                 // The session owns the base font and every override source font for this play.
                 // Assigned to _session immediately so StopLocked disposes it even if a later
                 // step throws. The composite it builds is a borrowed view the synth consumes.
-                var session = new PatchMapSession(SoundBankLoader.Load(req.soundfontPath));
+                var session = new PatchMapSession(SoundBankLoader.Load(req.SoundfontPath));
                 _session = session;
                 var sources = new Dictionary<string, IRBank>(StringComparer.OrdinalIgnoreCase);
-                ApplyOverrides(session, req.overrides, sources);
-                ApplyTrackOverrides(session, req.trackOverrides, sources);
+                ApplyOverrides(session, req.Overrides, sources);
+                ApplyTrackOverrides(session, req.TrackOverrides, sources);
 
                 var synth = new Synthesizer(SampleRate);
                 var composite = session.BuildResolved();
@@ -147,14 +145,14 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
                 synth.SetTrackPatchMap(composite.TrackPatchMap);
                 // Override gainDb seeds the per-instrument gain; the mixer array then takes authority
                 // (gain/pan/mute/solo/sends). Master DSP (limiter) is configured from the request too.
-                ApplyInstrumentGains(synth, req.overrides, req.trackOverrides, composite);
-                ApplyInstrumentMix(synth, req.mix);
-                ApplyInstrumentInserts(synth, req.mix);
-                ConfigureMaster(req.master);
+                ApplyInstrumentGains(synth, req.Overrides, req.TrackOverrides, composite);
+                ApplyInstrumentMix(synth, req.Mix);
+                ApplyInstrumentInserts(synth, req.Mix);
+                ConfigureMaster(req.Master);
                 _masterRack.Reset();
                 var player = new RealtimePlayer(midi, synth);
                 var output = new OwnAudioOutput(SampleRate, channels: 2,
-                    outputDeviceId: string.IsNullOrEmpty(req.deviceId) ? null : req.deviceId);
+                    outputDeviceId: string.IsNullOrEmpty(req.DeviceId) ? null : req.DeviceId);
                 // Synth fills the block (per-instrument inserts already applied inside it); the master
                 // rack processes the summed mix caller-side before output.
                 output.SetCallback((buffer, frames) =>
@@ -169,8 +167,8 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
                 _player = player;
                 _synth = synth;
                 _state = PlayerState.Playing;
-                _midiName = Path.GetFileName(req.midiPath);
-                _soundfontName = Path.GetFileName(req.soundfontPath);
+                _midiName = Path.GetFileName(req.MidiPath);
+                _soundfontName = Path.GetFileName(req.SoundfontPath);
 
                 var gen = ++_generation;
                 _ = Task.Run(() => MonitorCompletionAsync(gen, player));
@@ -196,8 +194,8 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
 
         foreach (var o in overrides)
         {
-            var src = LoadSource(session, byPath, o.sourcePath);
-            session.SetOverride(o.logicalBank, o.logicalProgram, new PatchRef(src, o.sourceBank, o.sourceProgram));
+            var src = LoadSource(session, byPath, o.SourcePath);
+            session.SetOverride(o.LogicalBank, o.LogicalProgram, new PatchRef(src, o.SourceBank, o.SourceProgram));
         }
     }
 
@@ -210,8 +208,8 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
 
         foreach (var o in overrides)
         {
-            var src = LoadSource(session, byPath, o.sourcePath);
-            session.SetTrackOverride(o.trackIndex, new PatchRef(src, o.sourceBank, o.sourceProgram));
+            var src = LoadSource(session, byPath, o.SourcePath);
+            session.SetTrackOverride(o.TrackIndex, new PatchRef(src, o.SourceBank, o.SourceProgram));
         }
     }
 
@@ -226,13 +224,13 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
     {
         if (overrides != null)
             foreach (var o in overrides)
-                if (o.gainDb != 0)
-                    synth.GetInstrumentMix(o.logicalBank, o.logicalProgram).GainDb = o.gainDb;
+                if (o.GainDb != 0)
+                    synth.GetInstrumentMix(o.LogicalBank, o.LogicalProgram).GainDb = o.GainDb;
 
         if (trackOverrides != null)
             foreach (var o in trackOverrides)
-                if (o.gainDb != 0 && composite.TrackPatchMap.TryGetValue(o.trackIndex, out var addr))
-                    synth.GetInstrumentMix(addr.Bank, addr.Program).GainDb = o.gainDb;
+                if (o.GainDb != 0 && composite.TrackPatchMap.TryGetValue(o.TrackIndex, out var addr))
+                    synth.GetInstrumentMix(addr.Bank, addr.Program).GainDb = o.GainDb;
     }
 
     // Apply the per-instrument mixer strips to the loaded synth. gainDb here is absolute and supersedes
@@ -245,28 +243,28 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
 
     private static void ApplyOneMix(Synthesizer synth, InstrumentMixDto m)
     {
-        var im = synth.GetInstrumentMix(Synthesizer.TrackMixBank, m.trackIndex);
-        im.GainDb = m.gainDb;
-        im.Pan = m.pan;
-        im.Mute = m.mute;
-        im.Solo = m.solo;
-        im.ReverbSend = m.reverbSend;
-        im.ChorusSend = m.chorusSend;
+        var im = synth.GetInstrumentMix(Synthesizer.TrackMixBank, m.TrackIndex);
+        im.GainDb = m.GainDb;
+        im.Pan = m.Pan;
+        im.Mute = m.Mute;
+        im.Solo = m.Solo;
+        im.ReverbSend = m.ReverbSend;
+        im.ChorusSend = m.ChorusSend;
     }
 
     // Configure the master rack from an ordered effect list (the explicit `effects`, else an
     // [eq, limiter] rack synthesized from the legacy scalar fields for back-compat).
-    private void ConfigureMaster(MasterDto? master) => _masterRack.Configure(ResolveEffects(master), master?.masterGainDb ?? 0);
+    private void ConfigureMaster(MasterDto? master) => _masterRack.Configure(ResolveEffects(master), master?.MasterGainDb ?? 0);
 
     private static EffectDto[] ResolveEffects(MasterDto? m)
     {
-        if (m == null) return System.Array.Empty<EffectDto>();
-        if (m.effects != null) return m.effects;
-        return new[]
-        {
-            new EffectDto("eq", m.eqEnabled, m.eqBands),
-            new EffectDto("limiter", m.limiterEnabled, null, m.ceilingDb, m.releaseMs),
-        };
+        if (m == null) return [];
+        if (m.Effects != null) return m.Effects;
+        return
+        [
+            new EffectDto("eq", m.EqEnabled, m.EqBands),
+            new EffectDto("limiter", m.LimiterEnabled, null, m.CeilingDb, m.ReleaseMs)
+        ];
     }
 
     // Rebuild the per-instrument insert racks from the play request and register the non-empty ones
@@ -277,11 +275,11 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
         if (mix == null) return;
         foreach (var m in mix)
         {
-            if (m.inserts == null || m.inserts.Length == 0) continue;
+            if (m.Inserts == null || m.Inserts.Length == 0) continue;
             var rack = new EffectRack(SampleRate);
-            rack.Configure(m.inserts);
-            _instrumentRacks[m.trackIndex] = rack;
-            if (!rack.IsEmpty) synth.SetInstrumentInsert(Synthesizer.TrackMixBank, m.trackIndex, rack);
+            rack.Configure(m.Inserts);
+            _instrumentRacks[m.TrackIndex] = rack;
+            if (!rack.IsEmpty) synth.SetInstrumentInsert(Synthesizer.TrackMixBank, m.TrackIndex, rack);
         }
     }
 
@@ -294,13 +292,13 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
     {
         lock (_lock)
         {
-            if (!_instrumentRacks.TryGetValue(dto.trackIndex, out var rack))
+            if (!_instrumentRacks.TryGetValue(dto.TrackIndex, out var rack))
             {
                 rack = new EffectRack(SampleRate);
-                _instrumentRacks[dto.trackIndex] = rack;
+                _instrumentRacks[dto.TrackIndex] = rack;
             }
-            rack.Configure(dto.effects);
-            _synth?.SetInstrumentInsert(Synthesizer.TrackMixBank, dto.trackIndex, rack.IsEmpty ? null : rack);
+            rack.Configure(dto.Effects);
+            _synth?.SetInstrumentInsert(Synthesizer.TrackMixBank, dto.TrackIndex, rack.IsEmpty ? null : rack);
         }
     }
 

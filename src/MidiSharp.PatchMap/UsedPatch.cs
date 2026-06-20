@@ -17,7 +17,7 @@ public sealed class UsedPatch
     public int Program { get; init; }
 
     /// <summary>MIDI channels (0..15) on which this patch sounds at least one note, ascending.</summary>
-    public IReadOnlyList<int> Channels { get; init; } = Array.Empty<int>();
+    public IReadOnlyList<int> Channels { get; init; } = [];
 
     /// <summary>True when this is the percussion bank (a drum kit, swapped whole).</summary>
     public bool IsDrum { get; init; }

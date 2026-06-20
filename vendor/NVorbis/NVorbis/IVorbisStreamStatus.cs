@@ -1,4 +1,5 @@
 ﻿using System;
+using MidiSharp.Audio.Vorbis.Contracts;
 
 namespace MidiSharp.Audio.Vorbis
 {
@@ -6,7 +7,7 @@ namespace MidiSharp.Audio.Vorbis
     /// Backwards compatibility type
     /// </summary>
     [Obsolete("Moved to MidiSharp.Audio.Vorbis.Contracts.IStreamStats", true)]
-    public interface IVorbisStreamStatus : Contracts.IStreamStats
+    public interface IVorbisStreamStatus : IStreamStats
     {
         /// <summary>
         /// Gets the calculated latency per page

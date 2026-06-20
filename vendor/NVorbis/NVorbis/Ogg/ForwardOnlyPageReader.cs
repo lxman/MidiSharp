@@ -1,7 +1,7 @@
-﻿using MidiSharp.Audio.Vorbis.Contracts.Ogg;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using MidiSharp.Audio.Vorbis.Contracts.Ogg;
 
 namespace MidiSharp.Audio.Vorbis.Ogg
 {

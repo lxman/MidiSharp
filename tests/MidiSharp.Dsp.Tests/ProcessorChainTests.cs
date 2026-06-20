@@ -1,5 +1,4 @@
 using System;
-using MidiSharp.Dsp;
 using Xunit;
 
 namespace MidiSharp.Dsp.Tests;
@@ -11,7 +10,7 @@ public sealed class ProcessorChainTests
     public void Empty_chain_is_passthrough()
     {
         var chain = new ProcessorChain();
-        var buf = new float[] { 0.1f, -0.2f, 0.3f, -0.4f };
+        var buf = new[] { 0.1f, -0.2f, 0.3f, -0.4f };
         var copy = (float[])buf.Clone();
         chain.Process(buf);
         Assert.Equal(copy, buf);
@@ -23,7 +22,7 @@ public sealed class ProcessorChainTests
         var chain = new ProcessorChain();
         chain.Add(new GainProcessor { GainDb = 6.0206 });   // ×2
         chain.Add(new GainProcessor { GainDb = 6.0206 });   // ×2 again → ×4 total
-        var buf = new float[] { 0.1f, 0.1f };
+        var buf = new[] { 0.1f, 0.1f };
         chain.Process(buf);
         Assert.All(buf, v => Assert.True(Math.Abs(v - 0.4f) < 1e-4f, $"expected ~0.4, got {v}"));
     }
@@ -33,7 +32,7 @@ public sealed class ProcessorChainTests
     {
         var chain = new ProcessorChain { Bypass = true };
         chain.Add(new GainProcessor { GainDb = 12 });
-        var buf = new float[] { 0.1f, 0.1f };
+        var buf = new[] { 0.1f, 0.1f };
         var copy = (float[])buf.Clone();
         chain.Process(buf);
         Assert.Equal(copy, buf);
@@ -44,17 +43,16 @@ public sealed class ProcessorChainTests
     {
         var chain = new ProcessorChain();
         chain.Add(new GainProcessor { GainDb = 20 });   // would be ×10 — must be discarded by SetAll
-        chain.SetAll(new IAudioProcessor[]
-        {
+        chain.SetAll([
             new GainProcessor { GainDb = 6.0206 },      // ×2
-            new GainProcessor { GainDb = 6.0206 },      // ×2  → ×4 total
-        });
-        var buf = new float[] { 0.1f, 0.1f };
+            new GainProcessor { GainDb = 6.0206 } // ×2  → ×4 total
+        ]);
+        var buf = new[] { 0.1f, 0.1f };
         chain.Process(buf);
         Assert.All(buf, v => Assert.True(Math.Abs(v - 0.4f) < 1e-4f, $"expected ×4 → ~0.4, got {v}"));
 
-        chain.SetAll(System.Array.Empty<IAudioProcessor>());   // empty → passthrough
-        var b2 = new float[] { 0.2f, -0.2f };
+        chain.SetAll([]);   // empty → passthrough
+        var b2 = new[] { 0.2f, -0.2f };
         var copy = (float[])b2.Clone();
         chain.Process(b2);
         Assert.Equal(copy, b2);
@@ -67,7 +65,7 @@ public sealed class ProcessorChainTests
         var g = new GainProcessor { GainDb = 6.0206 };
         chain.Add(g);
         Assert.True(chain.Remove(g));
-        var buf = new float[] { 0.1f, 0.1f };
+        var buf = new[] { 0.1f, 0.1f };
         var copy = (float[])buf.Clone();
         chain.Process(buf);
         Assert.Equal(copy, buf);   // chain is empty again

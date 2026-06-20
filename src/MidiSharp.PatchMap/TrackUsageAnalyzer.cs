@@ -32,8 +32,8 @@ public static class TrackUsageAnalyzer
 
     private sealed class TrackAccumulator
     {
-        public readonly SortedSet<int> Channels = new();
-        public readonly SortedSet<int> Programs = new();
+        public readonly SortedSet<int> Channels = [];
+        public readonly SortedSet<int> Programs = [];
         public (int Bank, int Program)? FirstPatch;
     }
 
@@ -50,7 +50,7 @@ public static class TrackUsageAnalyzer
         var state = new ChannelBankState[16];
         for (var i = 0; i < 16; i++)
         {
-            state[i].DrumBank = (ushort)BankResolution.GmDrumBank;
+            state[i].DrumBank = BankResolution.GmDrumBank;
             if (i == 9) state[i].IsDrum = true;   // channel 10 = percussion (GM default)
         }
 

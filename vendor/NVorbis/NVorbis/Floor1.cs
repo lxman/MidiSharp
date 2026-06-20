@@ -1,6 +1,7 @@
-﻿using MidiSharp.Audio.Vorbis.Contracts;
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.IO;
+using MidiSharp.Audio.Vorbis.Contracts;
 
 namespace MidiSharp.Audio.Vorbis
 {
@@ -24,14 +25,14 @@ namespace MidiSharp.Audio.Vorbis
         ICodebook[][] _subclassBooks;
         int[][] _subclassBookIndex;
 
-        static readonly int[] _rangeLookup = { 256, 128, 86, 64 };
-        static readonly int[] _yBitsLookup = { 8, 7, 7, 6 };
+        static readonly int[] _rangeLookup = [256, 128, 86, 64];
+        static readonly int[] _yBitsLookup = [8, 7, 7, 6];
 
         public void Init(IPacket packet, int channels, int block0Size, int block1Size, ICodebook[] codebooks)
         {
             var maximum_class = -1;
             _partitionClass = new int[(int)packet.ReadBits(5)];
-            for (int i = 0; i < _partitionClass.Length; i++)
+            for (var i = 0; i < _partitionClass.Length; i++)
             {
                 _partitionClass[i] = (int)packet.ReadBits(4);
                 if (_partitionClass[i] > maximum_class)
@@ -46,7 +47,7 @@ namespace MidiSharp.Audio.Vorbis
             _classMasterBookIndex = new int[maximum_class];
             _subclassBooks = new ICodebook[maximum_class][];
             _subclassBookIndex = new int[maximum_class][];
-            for (int i = 0; i < maximum_class; i++)
+            for (var i = 0; i < maximum_class; i++)
             {
                 _classDimensions[i] = (int)packet.ReadBits(3) + 1;
                 _classSubclasses[i] = (int)packet.ReadBits(2);
@@ -58,7 +59,7 @@ namespace MidiSharp.Audio.Vorbis
 
                 _subclassBooks[i] = new ICodebook[1 << _classSubclasses[i]];
                 _subclassBookIndex[i] = new int[_subclassBooks[i].Length];
-                for (int j = 0; j < _subclassBooks[i].Length; j++)
+                for (var j = 0; j < _subclassBooks[i].Length; j++)
                 {
                     var bookNum = (int)packet.ReadBits(8) - 1;
                     if (bookNum >= 0) _subclassBooks[i][j] = codebooks[bookNum];
@@ -79,10 +80,10 @@ namespace MidiSharp.Audio.Vorbis
             xList.Add(0);
             xList.Add(1 << rangeBits);
 
-            for (int i = 0; i < _partitionClass.Length; i++)
+            for (var i = 0; i < _partitionClass.Length; i++)
             {
                 var classNum = _partitionClass[i];
-                for (int j = 0; j < _classDimensions[classNum]; j++)
+                for (var j = 0; j < _classDimensions[classNum]; j++)
                 {
                     xList.Add((int)packet.ReadBits(rangeBits));
                 }
@@ -95,12 +96,12 @@ namespace MidiSharp.Audio.Vorbis
             _sortIdx = new int[xList.Count];
             _sortIdx[0] = 0;
             _sortIdx[1] = 1;
-            for (int i = 2; i < _lNeigh.Length; i++)
+            for (var i = 2; i < _lNeigh.Length; i++)
             {
                 _lNeigh[i] = 0;
                 _hNeigh[i] = 1;
                 _sortIdx[i] = i;
-                for (int j = 2; j < i; j++)
+                for (var j = 2; j < i; j++)
                 {
                     var temp = _xList[j];
                     if (temp < _xList[i])
@@ -115,11 +116,11 @@ namespace MidiSharp.Audio.Vorbis
             }
 
             // precalc the sort table
-            for (int i = 0; i < _sortIdx.Length - 1; i++)
+            for (var i = 0; i < _sortIdx.Length - 1; i++)
             {
-                for (int j = i + 1; j < _sortIdx.Length; j++)
+                for (var j = i + 1; j < _sortIdx.Length; j++)
                 {
-                    if (_xList[i] == _xList[j]) throw new System.IO.InvalidDataException();
+                    if (_xList[i] == _xList[j]) throw new InvalidDataException();
 
                     if (_xList[_sortIdx[i]] > _xList[_sortIdx[j]])
                     {
@@ -143,7 +144,7 @@ namespace MidiSharp.Audio.Vorbis
                 data.Posts[0] = (int)packet.ReadBits(_yBits);
                 data.Posts[1] = (int)packet.ReadBits(_yBits);
 
-                for (int i = 0; i < _partitionClass.Length; i++)
+                for (var i = 0; i < _partitionClass.Length; i++)
                 {
                     var clsNum = _partitionClass[i];
                     var cdim = _classDimensions[clsNum];
@@ -159,7 +160,7 @@ namespace MidiSharp.Audio.Vorbis
                             break;
                         }
                     }
-                    for (int j = 0; j < cdim; j++)
+                    for (var j = 0; j < cdim; j++)
                     {
                         var book = _subclassBooks[clsNum][cval & csub];
                         cval >>= cbits;
@@ -195,7 +196,7 @@ namespace MidiSharp.Audio.Vorbis
 
                 var lx = 0;
                 var ly = data.Posts[0] * _multiplier;
-                for (int i = 1; i < data.PostCount; i++)
+                for (var i = 1; i < data.PostCount; i++)
                 {
                     var idx = _sortIdx[i];
 
@@ -231,7 +232,7 @@ namespace MidiSharp.Audio.Vorbis
             finalY[0] = data.Posts[0];
             finalY[1] = data.Posts[1];
 
-            for (int i = 2; i < data.PostCount; i++)
+            for (var i = 2; i < data.PostCount; i++)
             {
                 var lowOfs = _lNeigh[i];
                 var highOfs = _hNeigh[i];
@@ -288,7 +289,7 @@ namespace MidiSharp.Audio.Vorbis
                 }
             }
 
-            for (int i = 0; i < data.PostCount; i++)
+            for (var i = 0; i < data.PostCount; i++)
             {
                 data.Posts[i] = finalY[i];
             }
@@ -307,10 +308,8 @@ namespace MidiSharp.Audio.Vorbis
             {
                 return y0 - off;
             }
-            else
-            {
-                return y0 + off;
-            }
+
+            return y0 + off;
         }
 
         void RenderLineMulti(int x0, int y0, int x1, int y1, float[] v)
@@ -342,8 +341,9 @@ namespace MidiSharp.Audio.Vorbis
 
         #region dB inversion table
 
-        static readonly float[] inverse_dB_table = {
-                                                        1.0649863e-07f, 1.1341951e-07f, 1.2079015e-07f, 1.2863978e-07f,
+        static readonly float[] inverse_dB_table =
+        [
+            1.0649863e-07f, 1.1341951e-07f, 1.2079015e-07f, 1.2863978e-07f,
                                                         1.3699951e-07f, 1.4590251e-07f, 1.5538408e-07f, 1.6548181e-07f,
                                                         1.7623575e-07f, 1.8768855e-07f, 1.9988561e-07f, 2.1287530e-07f,
                                                         2.2670913e-07f, 2.4144197e-07f, 2.5713223e-07f, 2.7384213e-07f,
@@ -407,7 +407,7 @@ namespace MidiSharp.Audio.Vorbis
                                                         0.50028648f,    0.53279791f,    0.56742212f,    0.60429640f,
                                                         0.64356699f,    0.68538959f,    0.72993007f,    0.77736504f,
                                                         0.82788260f,    0.88168307f,    0.9389798f,     1.0f
-                                                        };
+        ];
 
         #endregion
     }

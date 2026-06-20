@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using MidiSharp.SoundBank;
-using IRBank = MidiSharp.SoundBank.SoundBank;
 using Xunit;
+using IRBank = MidiSharp.SoundBank.SoundBank;
 
 namespace MidiSharp.PatchMap.Tests;
 
@@ -28,8 +28,12 @@ public class SoundBankComposerTests
         var baseBank = new IRBank
         {
             Name = "sso",
-            Patches = new[] { new Patch { Bank = 0, Program = 0, Name = "x",
-                Zones = new[] { new PatchZone { Sample = new SampleRef { SampleId = 0 } } } } },
+            Patches =
+            [
+                new Patch { Bank = 0, Program = 0, Name = "x",
+                Zones = [new PatchZone { Sample = new SampleRef { SampleId = 0 } }]
+                }
+            ],
             Samples = new PreDecodedFloatSampleSource(data, meta),
             InitialControllers = new Dictionary<int, int> { { 1, 96 } },
         };
@@ -129,7 +133,7 @@ public class SoundBankComposerTests
             new SampleMetadata { SampleRate = 44100, Channels = 1, LengthFrames = 4, RootKey = 60, StereoLinkSampleId = 0 },
         };
         var zone = new PatchZone { Sample = new SampleRef { SampleId = 0 } };
-        var patch = new Patch { Bank = 0, Program = 5, Name = "StereoSrc", Zones = new[] { zone } };
-        return new IRBank { Name = "stereo", Patches = new[] { patch }, Samples = new PreDecodedFloatSampleSource(data, meta) };
+        var patch = new Patch { Bank = 0, Program = 5, Name = "StereoSrc", Zones = [zone] };
+        return new IRBank { Name = "stereo", Patches = [patch], Samples = new PreDecodedFloatSampleSource(data, meta) };
     }
 }

@@ -80,7 +80,7 @@ internal static class DlsArticulationTranslator
 
     private static double ScaleToAmount(ConnectionDestination dest, int scale)
     {
-        double raw = scale / 65536.0;
+        var raw = scale / 65536.0;
         return dest switch
         {
             // DLS Gain: positive = louder. IR AttenuationDb: positive = quieter.

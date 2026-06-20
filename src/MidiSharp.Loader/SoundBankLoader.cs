@@ -4,8 +4,9 @@ using System.IO;
 using MidiSharp.Loader.Dls;
 using MidiSharp.Loader.Format;
 using MidiSharp.Loader.Sf2;
+using MidiSharp.Loader.Sf3;
+using MidiSharp.Loader.Sfz;
 using MidiSharp.SoundBank;
-
 using IRBank = MidiSharp.SoundBank.SoundBank;
 namespace MidiSharp.Loader;
 
@@ -40,8 +41,8 @@ public static class SoundBankLoader
             return format switch
             {
                 SoundBankFormat.Sf2 => LoadSf2(path, options),
-                SoundBankFormat.Sf3 => Sf3.Sf3BankLoader.Load(SoundFont.Load(path), options),
-                SoundBankFormat.Sfz => Sfz.SfzBankLoader.Load(path, options),
+                SoundBankFormat.Sf3 => Sf3BankLoader.Load(SoundFont.Load(path), options),
+                SoundBankFormat.Sfz => SfzBankLoader.Load(path, options),
                 SoundBankFormat.Dls => DlsBankLoader.Load(DlsReader.Load(path), options),
                 _ => throw new UnsupportedFormatException($"Unknown format: {format}"),
             };
@@ -93,7 +94,7 @@ public static class SoundBankLoader
         foreach (var (path, _) in sfzFiles)
             if (!File.Exists(path)) throw new FileNotFoundException($"SFZ file not found: {path}", path);
 
-        return Sfz.SfzBankLoader.LoadCombined(sfzFiles, options ?? new SoundBankLoadOptions());
+        return SfzBankLoader.LoadCombined(sfzFiles, options ?? new SoundBankLoadOptions());
     }
 
     /// <summary>
@@ -130,7 +131,7 @@ public static class SoundBankLoader
                 var bytes = ReadAllBytes(stream);
                 try
                 {
-                    return Sf3.Sf3BankLoader.Load(SoundFont.Load(bytes), options);
+                    return Sf3BankLoader.Load(SoundFont.Load(bytes), options);
                 }
                 catch (SoundFontException ex)
                 {
@@ -138,7 +139,7 @@ public static class SoundBankLoader
                 }
             }
             case SoundBankFormat.Sfz:
-                return Sfz.SfzBankLoader.Load(stream, basePath, options);
+                return SfzBankLoader.Load(stream, basePath, options);
             case SoundBankFormat.Dls:
             {
                 var bytes = ReadAllBytes(stream);

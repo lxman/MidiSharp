@@ -57,31 +57,31 @@ internal static class RouteEvaluator
         contributions = default;
         if (routes == null) return;
 
-        int count = routes.Count;
-        for (int i = 0; i < count; i++)
+        var count = routes.Count;
+        for (var i = 0; i < count; i++)
         {
             var route = routes[i];
 
-            double srcRaw = EvaluateSource(route.Source, velocity, keyNumber, polyPressure, channelState);
+            var srcRaw = EvaluateSource(route.Source, velocity, keyNumber, polyPressure, channelState);
 
             // SFZ amplitude_oncc: source → linear gain via the ARIA curve, scaled by depth (Amount),
             // then to attenuation dB. Kept separate from the generic transform×amount path because the
             // gain→dB conversion is nonlinear.
             if (route.Transform == ModTransform.AmplitudeCurve)
             {
-                double shaped = route.CurveTable is { } ampTable ? CurveLookup(ampTable, srcRaw)
+                var shaped = route.CurveTable is { } ampTable ? CurveLookup(ampTable, srcRaw)
                                                                  : AriaCurve.Eval(route.CurveIndex, srcRaw);
-                double gain = route.Amount * shaped;
-                double att = -20.0 * Math.Log10(Math.Clamp(gain, 1e-5, 1e5));
+                var gain = route.Amount * shaped;
+                var att = -20.0 * Math.Log10(Math.Clamp(gain, 1e-5, 1e5));
                 contributions.AttenuationDb += att;
                 continue;
             }
 
             // A resolved CC-response curve (SFZ *_curvecc) maps the source instead of the linear transform.
-            double transformed = route.CurveTable is { } table
+            var transformed = route.CurveTable is { } table
                 ? CurveLookup(table, srcRaw)
                 : ApplyTransform(srcRaw, route.Transform);
-            double amount = route.Amount;
+            var amount = route.Amount;
 
             // SF2 modulator #10 (pitch wheel × bend range) is the canonical
             // amount-modulator case: the static amount (12700 cents) is scaled
@@ -89,11 +89,11 @@ internal static class RouteEvaluator
             // pitch-bend depth without per-voice re-evaluation.
             if (route.AmountModulator != null)
             {
-                double amtRaw = EvaluateSource(route.AmountModulator, velocity, keyNumber, polyPressure, channelState);
+                var amtRaw = EvaluateSource(route.AmountModulator, velocity, keyNumber, polyPressure, channelState);
                 amount *= amtRaw;
             }
 
-            double contribution = transformed * amount;
+            var contribution = transformed * amount;
 
             switch (route.Dest)
             {
@@ -154,7 +154,7 @@ internal static class RouteEvaluator
     /// <summary>Maps a normalized source x∈[0,1] through a resolved 128-entry CC-response curve.</summary>
     private static double CurveLookup(double[] table, double x)
     {
-        int i = (int)(Math.Clamp(x, 0.0, 1.0) * 127.0 + 0.5);
+        var i = (int)(Math.Clamp(x, 0.0, 1.0) * 127.0 + 0.5);
         return table[i < 0 ? 0 : i > 127 ? 127 : i];
     }
 
@@ -184,7 +184,7 @@ internal static class RouteEvaluator
     {
         if (x <= 0) return 0;
         if (x >= 1) return 1;
-        double y = -20.0 / 96.0 * Math.Log10(1.0 - x);
+        var y = -20.0 / 96.0 * Math.Log10(1.0 - x);
         return y > 1.0 ? 1.0 : y;
     }
 }

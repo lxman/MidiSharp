@@ -19,7 +19,7 @@ internal static class FormatDetector
     {
         using var fs = File.OpenRead(path);
         Span<byte> header = stackalloc byte[12];
-        int read = fs.Read(header);
+        var read = fs.Read(header);
         return Detect(header.Slice(0, read), path);
     }
 
@@ -58,7 +58,7 @@ internal static class FormatDetector
     private static bool Match(ReadOnlySpan<byte> bytes, string ascii)
     {
         if (bytes.Length != ascii.Length) return false;
-        for (int i = 0; i < ascii.Length; i++)
+        for (var i = 0; i < ascii.Length; i++)
             if (bytes[i] != (byte)ascii[i]) return false;
         return true;
     }

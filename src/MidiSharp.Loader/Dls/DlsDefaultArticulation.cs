@@ -27,7 +27,7 @@ internal static class DlsDefaultArticulation
     /// once it routes the same dimension).
     /// </summary>
     public static readonly ModulationRoute[] DefaultRoutes =
-    {
+    [
         // KeyOnVelocity → Gain @ 96 dB concave-unipolar-negative.
         // Voice attenuates more at low velocity; matches SF2 default #1.
         new ModulationRoute
@@ -110,6 +110,6 @@ internal static class DlsDefaultArticulation
             Amount = 12700.0,
             Transform = ModTransform.Linear,
             AmountModulator = new ModSource.RpnValue(0, 0),
-        },
-    };
+        }
+    ];
 }

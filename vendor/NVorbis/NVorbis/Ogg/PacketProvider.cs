@@ -1,7 +1,8 @@
-﻿using MidiSharp.Audio.Vorbis.Contracts;
-using MidiSharp.Audio.Vorbis.Contracts.Ogg;
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.IO;
+using MidiSharp.Audio.Vorbis.Contracts;
+using MidiSharp.Audio.Vorbis.Contracts.Ogg;
 
 namespace MidiSharp.Audio.Vorbis.Ogg
 {
@@ -57,8 +58,8 @@ namespace MidiSharp.Audio.Vorbis.Ogg
         {
             if (_reader == null) throw new ObjectDisposedException(nameof(PacketProvider));
 
-            int pageIndex = _reader.FindPage(granulePos);
-            int packetIndex = FindPacket(pageIndex, preRoll, ref granulePos, getPacketGranuleCount);
+            var pageIndex = _reader.FindPage(granulePos);
+            var packetIndex = FindPacket(pageIndex, preRoll, ref granulePos, getPacketGranuleCount);
 
             if (!NormalizePacketIndex(ref pageIndex, ref packetIndex))
             {
@@ -87,7 +88,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
                         var lastPacket = CreatePacket(ref pageIndex, ref lastPacketIndex, false, 0, false, isContinued, lastPacketCount, 0);
                         if (lastPacket == null)
                         {
-                            throw new System.IO.InvalidDataException("Could not find end of continuation!");
+                            throw new InvalidDataException("Could not find end of continuation!");
                         }
                         lastPagePacketLength = getPacketGranuleCount(lastPacket);
                     }
@@ -97,19 +98,17 @@ namespace MidiSharp.Audio.Vorbis.Ogg
                     }
                     return (lastPageGranulePos, lastPagePacketLength, isContinued ? 1 : 0);
                 }
-                throw new System.IO.InvalidDataException("Could not get preceding page?!");
+                throw new InvalidDataException("Could not get preceding page?!");
             }
-            else
-            {
-                return (0, 0, 0);
-            }
+
+            return (0, 0, 0);
         }
 
         private (long[] gps, long endGP) GetTargetPageInfo(int pageIndex, int firstRealPacket, int lastPagePacketLength, GetPacketGranuleCount getPacketGranuleCount)
         {
             if (!_reader.GetPage(pageIndex, out var pageGranulePos, out var isResync, out var isContinuation, out var isContinued, out var packetCount, out _))
             {
-                throw new System.IO.InvalidDataException("Could not get found page?!");
+                throw new InvalidDataException("Could not get found page?!");
             }
 
             if (isContinued)
@@ -130,7 +129,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
                 var packet = CreatePacket(ref pageIndex, ref i, false, pageGranulePos, i == 0 && isResync, isContinued, packetCount, 0);
                 if (packet == null)
                 {
-                    throw new System.IO.InvalidDataException("Could not find end of continuation!");
+                    throw new InvalidDataException("Could not find end of continuation!");
                 }
                 endGP -= getPacketGranuleCount(packet);
             }
@@ -179,7 +178,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
                 else if (pageIndex > _reader.FirstDataPageIndex)
                 {
                     // unknown error...
-                    throw new System.IO.InvalidDataException($"GranulePos mismatch: Page {pageIndex}, expected {lastPageGranulePos}, calculated {endGP}");
+                    throw new InvalidDataException($"GranulePos mismatch: Page {pageIndex}, expected {lastPageGranulePos}, calculated {endGP}");
                 }
             }
 
@@ -200,7 +199,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
                 }
             }
 
-            throw new System.IO.InvalidDataException("Could not find seek packet?!");
+            throw new InvalidDataException("Could not find seek packet?!");
         }
 
         private int FindPacket(int pageIndex, int preRoll, ref long granulePos, GetPacketGranuleCount getPacketGranuleCount)

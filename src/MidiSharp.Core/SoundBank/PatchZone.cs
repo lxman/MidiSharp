@@ -22,7 +22,7 @@ public sealed class PatchZone
     public VelocityRange Velocities { get; init; } = new(0, 127);
 
     /// <summary>SFZ locc/hicc gates (AND semantics). Empty for SF2/SF3/DLS.</summary>
-    public IReadOnlyList<CCGate> CCGates { get; init; } = Array.Empty<CCGate>();
+    public IReadOnlyList<CCGate> CCGates { get; init; } = [];
 
     /// <summary>SFZ sw_* keyswitch. Null elsewhere.</summary>
     public KeySwitch? KeySwitch { get; init; }
@@ -119,7 +119,7 @@ public sealed class PatchZone
     public LfoCcDepth[]? Filter2CutoffCc { get; init; }
 
     /// <summary>SFZ peaking-EQ bands (eqN_freq/bw/gain). Empty for SF2/SF3/DLS and SFZ without EQ.</summary>
-    public IReadOnlyList<EqBand> EqBands { get; init; } = Array.Empty<EqBand>();
+    public IReadOnlyList<EqBand> EqBands { get; init; } = [];
 
     // ─── Sends (0..1) ───────────────────────────────────────────────
 
@@ -129,7 +129,7 @@ public sealed class PatchZone
 
     // ─── Routing matrix ─────────────────────────────────────────────
 
-    public IReadOnlyList<ModulationRoute> Routes { get; init; } = Array.Empty<ModulationRoute>();
+    public IReadOnlyList<ModulationRoute> Routes { get; init; } = [];
 
     /// <summary>
     /// SFZ amp_velcurve_N: a 128-entry velocity→gain table (index = velocity 0..127,

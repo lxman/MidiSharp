@@ -1,4 +1,4 @@
-using MidiSharp.Synth;
+using System;
 using Xunit;
 
 namespace MidiSharp.Synth.Tests;
@@ -35,30 +35,30 @@ public class DomainTypedSetParametersTests
         var domain = new Envelope(SampleRate);
         domain.SetParameters(
             delaySeconds: 0.0,
-            attackSeconds: System.Math.Pow(2.0, -7973 / 1200.0),
+            attackSeconds: Math.Pow(2.0, -7973 / 1200.0),
             holdSeconds: 0.0,
-            decaySeconds: System.Math.Pow(2.0, -1000 / 1200.0),
-            sustainLevel: System.Math.Pow(10.0, -600 / 200.0),
-            releaseSeconds: System.Math.Pow(2.0, -2000 / 1200.0));
+            decaySeconds: Math.Pow(2.0, -1000 / 1200.0),
+            sustainLevel: Math.Pow(10.0, -600 / 200.0),
+            releaseSeconds: Math.Pow(2.0, -2000 / 1200.0));
 
         sf2.Trigger();
         domain.Trigger();
 
         // Render through attack+decay+sustain.
-        for (int i = 0; i < SampleRate; i++)
+        for (var i = 0; i < SampleRate; i++)
         {
-            double a = sf2.Process();
-            double b = domain.Process();
+            var a = sf2.Process();
+            var b = domain.Process();
             Assert.Equal(a, b, precision: 12);
         }
 
         // Release and render the rest.
         sf2.Release();
         domain.Release();
-        for (int i = 0; i < SampleRate; i++)
+        for (var i = 0; i < SampleRate; i++)
         {
-            double a = sf2.Process();
-            double b = domain.Process();
+            var a = sf2.Process();
+            var b = domain.Process();
             Assert.Equal(a, b, precision: 12);
         }
     }
@@ -102,18 +102,18 @@ public class DomainTypedSetParametersTests
 
         var domain = new LowFrequencyOscillator(SampleRate);
         domain.SetParameters(
-            delaySeconds: System.Math.Pow(2.0, DelayTc / 1200.0),
-            frequencyHz: 8.176 * System.Math.Pow(2.0, FreqCents / 1200.0));
+            delaySeconds: Math.Pow(2.0, DelayTc / 1200.0),
+            frequencyHz: 8.176 * Math.Pow(2.0, FreqCents / 1200.0));
 
         sf2.Trigger();
         domain.Trigger();
 
         // Run two full cycles' worth of samples.
-        int samples = (int)(SampleRate / 4.0); // ~250 ms at 44.1 kHz
-        for (int i = 0; i < samples; i++)
+        var samples = (int)(SampleRate / 4.0); // ~250 ms at 44.1 kHz
+        for (var i = 0; i < samples; i++)
         {
-            double a = sf2.Process();
-            double b = domain.Process();
+            var a = sf2.Process();
+            var b = domain.Process();
             Assert.Equal(a, b, precision: 12);
         }
     }
@@ -131,10 +131,10 @@ public class DomainTypedSetParametersTests
         domain.Trigger();
 
         // Period at 8.176 Hz at 44.1 kHz ≈ 5394 samples; check a chunk that crosses zero.
-        for (int i = 0; i < 6000; i++)
+        for (var i = 0; i < 6000; i++)
         {
-            double a = sf2.Process();
-            double b = domain.Process();
+            var a = sf2.Process();
+            var b = domain.Process();
             Assert.Equal(a, b, precision: 12);
         }
     }
@@ -153,16 +153,16 @@ public class DomainTypedSetParametersTests
 
         var domain = new LowPassFilter(SampleRate);
         domain.SetParameters(
-            cutoffHz: 8.176 * System.Math.Pow(2.0, CutoffCents / 1200.0),
+            cutoffHz: 8.176 * Math.Pow(2.0, CutoffCents / 1200.0),
             resonanceDb: ResonanceCb / 10.0);
 
         // Drive both with the same pseudo-random signal and confirm identical output.
-        var rng = new System.Random(0xC0FFEE);
-        for (int i = 0; i < 10_000; i++)
+        var rng = new Random(0xC0FFEE);
+        for (var i = 0; i < 10_000; i++)
         {
-            double sample = rng.NextDouble() * 2.0 - 1.0;
-            double a = sf2.Process(sample);
-            double b = domain.Process(sample);
+            var sample = rng.NextDouble() * 2.0 - 1.0;
+            var a = sf2.Process(sample);
+            var b = domain.Process(sample);
             Assert.Equal(a, b, precision: 12);
         }
     }
@@ -177,7 +177,7 @@ public class DomainTypedSetParametersTests
         Assert.False(sf2.Enabled);
 
         var domain = new LowPassFilter(SampleRate);
-        domain.SetParameters(cutoffHz: 8.176 * System.Math.Pow(2.0, 13500 / 1200.0), resonanceDb: 0);
+        domain.SetParameters(cutoffHz: 8.176 * Math.Pow(2.0, 13500 / 1200.0), resonanceDb: 0);
         Assert.False(domain.Enabled);
 
         // Both should pass any input through verbatim.

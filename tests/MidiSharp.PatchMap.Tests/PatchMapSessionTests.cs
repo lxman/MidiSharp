@@ -1,7 +1,7 @@
 using System;
 using MidiSharp.SoundBank;
-using IRBank = MidiSharp.SoundBank.SoundBank;
 using Xunit;
+using IRBank = MidiSharp.SoundBank.SoundBank;
 
 namespace MidiSharp.PatchMap.Tests;
 
@@ -19,7 +19,7 @@ public class PatchMapSessionTests
     }
 
     private static IRBank BankWith(FlagSource src, string name)
-        => new() { Name = name, Patches = Array.Empty<Patch>(), Samples = src };
+        => new() { Name = name, Patches = [], Samples = src };
 
     [Fact]
     public void Dispose_DisposesBaseAndAllSources()

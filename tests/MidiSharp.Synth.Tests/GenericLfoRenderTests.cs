@@ -1,6 +1,5 @@
 using System;
 using MidiSharp.SoundBank;
-using MidiSharp.Synth;
 using Xunit;
 using IRBank = MidiSharp.SoundBank.SoundBank;
 
@@ -23,8 +22,8 @@ public sealed class GenericLfoRenderTests
         var lfo = new GenericLfo
         {
             FrequencyHz = 30,
-            Stages = new[] { new LfoStage(1, 1.0, 1.0, 0.0) },   // sine
-            Targets = new[] { new LfoTarget { Destination = LfoDestination.Volume, Depth = 12 } },
+            Stages = [new LfoStage(1, 1.0, 1.0, 0.0)],   // sine
+            Targets = [new LfoTarget { Destination = LfoDestination.Volume, Depth = 12 }],
         };
         var (min, max) = RenderPeakWindow(WithLfo(lfo));
         Assert.True(max > min * 3.0, $"volume LFO should swing the output (max {max}, min {min})");
@@ -40,18 +39,18 @@ public sealed class GenericLfoRenderTests
     // Renders ~6000 frames in 100-frame blocks and returns the min/max block peak after the attack.
     private static (float Min, float Max) RenderPeakWindow(PatchZone zone)
     {
-        var synth = new Synthesizer(Rate);
+        var synth = new Synthesizer();
         synth.LoadSoundFont(MakeBank(zone));
         synth.NoteOn(0, 60, 120);
 
         float min = float.MaxValue, max = 0;
-        for (int blk = 0; blk < 60; blk++)
+        for (var blk = 0; blk < 60; blk++)
         {
             var l = new float[100];
             var r = new float[100];
             synth.Generate(l, r);
             float p = 0;
-            for (int i = 0; i < 100; i++) p = Math.Max(p, Math.Abs(l[i]));
+            for (var i = 0; i < 100; i++) p = Math.Max(p, Math.Abs(l[i]));
             if (blk < 5) continue;   // skip the envelope attack
             min = Math.Min(min, p);
             max = Math.Max(max, p);
@@ -68,16 +67,16 @@ public sealed class GenericLfoRenderTests
         {
             AttackSeconds = 0.0, DecaySeconds = 0.0, SustainLevel = 1.0, ReleaseSeconds = 0.1,
         },
-        Lfos = lfo is null ? null : new[] { lfo },
+        Lfos = lfo is null ? null : [lfo],
     };
 
     private static IRBank MakeBank(params PatchZone[] zones)
     {
         var samples = new PreDecodedFloatSampleSource(
-            new[] { Constant(0.5f, 8000) }, new[] { Meta() });
+            [Constant(0.5f, 8000)], [Meta()]);
         return new IRBank
         {
-            Patches = new[] { new Patch { Bank = 0, Program = 0, Zones = zones } },
+            Patches = [new Patch { Bank = 0, Program = 0, Zones = zones }],
             Samples = samples,
         };
     }

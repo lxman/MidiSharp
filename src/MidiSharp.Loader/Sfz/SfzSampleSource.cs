@@ -29,14 +29,14 @@ internal sealed class SfzSampleSource : ISampleSource
 
     private readonly object _cacheLock = new();
     private readonly Dictionary<int, CacheNode> _cache = new();
-    private readonly LinkedList<int> _lru = new();
-    private readonly HashSet<int> _decoding = new();   // samples a background decode is in flight for
+    private readonly LinkedList<int> _lru = [];
+    private readonly HashSet<int> _decoding = [];   // samples a background decode is in flight for
     private long _cachedBytes;
     private bool _disposed;
 
     private sealed class CacheNode
     {
-        public float[] Data = Array.Empty<float>();
+        public float[] Data = [];
         public int Length;
         public bool Pooled;
         public LinkedListNode<int>? LruNode;
@@ -53,7 +53,7 @@ internal sealed class SfzSampleSource : ISampleSource
         _blockingDecode = blockingDecode;
         _paths = new string[paths.Count];
         _metadata = new SampleMetadata[metadata.Count];
-        for (int i = 0; i < paths.Count; i++) { _paths[i] = paths[i]; _metadata[i] = metadata[i]; }
+        for (var i = 0; i < paths.Count; i++) { _paths[i] = paths[i]; _metadata[i] = metadata[i]; }
         // Floor the budget so the active working set (many sustained piano voices, each a multi-MB
         // decoded sample) fits without the cache thrashing decode→evict→re-decode under polyphony.
         const long MinBudget = 256L * 1024 * 1024;
@@ -105,10 +105,10 @@ internal sealed class SfzSampleSource : ISampleSource
             _lru.Remove(node.LruNode);
             node.LruNode = _lru.AddLast(sampleId);
         }
-        int ch = _metadata[sampleId].Channels;
+        var ch = _metadata[sampleId].Channels;
         long frameCount = node.Length / ch;
         if (frameOffset < 0 || frameOffset >= frameCount) return 0;
-        int framesToCopy = (int)Math.Min(frameCount - frameOffset, dest.Length / ch);
+        var framesToCopy = (int)Math.Min(frameCount - frameOffset, dest.Length / ch);
         node.Data.AsSpan((int)(frameOffset * ch), framesToCopy * ch).CopyTo(dest);
         return framesToCopy;
     }
@@ -150,7 +150,7 @@ internal sealed class SfzSampleSource : ISampleSource
     {
         while (_cachedBytes + incoming > _cacheBudgetBytes && _lru.Count > 0)
         {
-            int victim = _lru.First!.Value;
+            var victim = _lru.First!.Value;
             _lru.RemoveFirst();
             if (_cache.TryGetValue(victim, out var v))
             {
@@ -167,8 +167,8 @@ internal sealed class SfzSampleSource : ISampleSource
         // the synthetic metadata. (Rented buffers aren't zeroed, so clear it.)
         if (_paths[sampleId].StartsWith("*", StringComparison.Ordinal))
         {
-            int n = (int)Math.Min(_metadata[sampleId].LengthFrames, int.MaxValue);
-            if (n <= 0) return (Array.Empty<float>(), 0, false);
+            var n = (int)Math.Min(_metadata[sampleId].LengthFrames, int.MaxValue);
+            if (n <= 0) return ([], 0, false);
             var silence = ArrayPool<float>.Shared.Rent(n);
             Array.Clear(silence, 0, n);
             return (silence, n, true);
@@ -176,16 +176,16 @@ internal sealed class SfzSampleSource : ISampleSource
 
         DecodedAudio audio;
         try { audio = AudioCodecs.Decode(_paths[sampleId]); }
-        catch { return (Array.Empty<float>(), 0, false); }   // missing/corrupt at play time → silence
+        catch { return ([], 0, false); }   // missing/corrupt at play time → silence
 
-        int frames = (int)Math.Min(audio.FrameCount, int.MaxValue);
-        if (frames <= 0) return (Array.Empty<float>(), 0, false);
+        var frames = (int)Math.Min(audio.FrameCount, int.MaxValue);
+        if (frames <= 0) return ([], 0, false);
 
-        int srcCh = audio.Channels;
+        var srcCh = audio.Channels;
         var src = audio.Samples;
         // Output channel count was decided at load from the header (1 or 2). `length` is the TOTAL
         // float count (frames × outCh) so the LRU budget — bytes = length × 4 — is correct for stereo.
-        int outCh = _metadata[sampleId].Channels;
+        var outCh = _metadata[sampleId].Channels;
 
         if (outCh == 2)
         {
@@ -198,11 +198,11 @@ internal sealed class SfzSampleSource : ISampleSource
             }
             else if (srcCh > 2)
             {
-                for (int f = 0; f < frames; f++) { int b = f * srcCh; buf2[f * 2] = src[b]; buf2[f * 2 + 1] = src[b + 1]; }
+                for (var f = 0; f < frames; f++) { var b = f * srcCh; buf2[f * 2] = src[b]; buf2[f * 2 + 1] = src[b + 1]; }
             }
             else
             {
-                for (int f = 0; f < frames; f++) { buf2[f * 2] = src[f]; buf2[f * 2 + 1] = src[f]; }
+                for (var f = 0; f < frames; f++) { buf2[f * 2] = src[f]; buf2[f * 2 + 1] = src[f]; }
             }
             return (buf2, frames * 2, true);
         }
@@ -215,11 +215,11 @@ internal sealed class SfzSampleSource : ISampleSource
         }
         else
         {
-            float inv = 1f / srcCh;
-            for (int f = 0; f < frames; f++)
+            var inv = 1f / srcCh;
+            for (var f = 0; f < frames; f++)
             {
-                float sum = 0f; int b = f * srcCh;
-                for (int c = 0; c < srcCh; c++) sum += src[b + c];
+                var sum = 0f; var b = f * srcCh;
+                for (var c = 0; c < srcCh; c++) sum += src[b + c];
                 buf[f] = sum * inv;
             }
         }

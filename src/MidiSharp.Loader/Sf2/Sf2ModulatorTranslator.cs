@@ -56,7 +56,7 @@ internal static class Sf2ModulatorTranslator
         ApplyAdd(entries, presetLocal);
 
         var routes = new ModulationRoute[entries.Count];
-        for (int i = 0; i < entries.Count; i++)
+        for (var i = 0; i < entries.Count; i++)
             routes[i] = entries[i].Route;
         return routes;
     }
@@ -76,8 +76,8 @@ internal static class Sf2ModulatorTranslator
         {
             var route = TryTranslate(m);
             if (route == null) continue;
-            ulong id = IdentityOf(m);
-            int idx = IndexOf(entries, id);
+            var id = IdentityOf(m);
+            var idx = IndexOf(entries, id);
             if (idx >= 0) entries[idx] = new Entry(id, route);
             else entries.Add(new Entry(id, route));
         }
@@ -90,8 +90,8 @@ internal static class Sf2ModulatorTranslator
         {
             var route = TryTranslate(m);
             if (route == null) continue;
-            ulong id = IdentityOf(m);
-            int idx = IndexOf(entries, id);
+            var id = IdentityOf(m);
+            var idx = IndexOf(entries, id);
             if (idx < 0) { entries.Add(new Entry(id, route)); continue; }
 
             // Identical modulator already present (a default or an instrument mod):
@@ -110,7 +110,7 @@ internal static class Sf2ModulatorTranslator
 
     private static int IndexOf(List<Entry> entries, ulong id)
     {
-        for (int i = 0; i < entries.Count; i++)
+        for (var i = 0; i < entries.Count; i++)
             if (entries[i].Identity == id) return i;
         return -1;
     }
@@ -145,8 +145,8 @@ internal static class Sf2ModulatorTranslator
 
     private static ModSource? MapSource(ushort srcOp)
     {
-        bool isCc = ((srcOp >> 7) & 0x1) == 1;
-        int index = srcOp & 0x7F;
+        var isCc = ((srcOp >> 7) & 0x1) == 1;
+        var index = srcOp & 0x7F;
 
         if (isCc) return new ModSource.ChannelController((byte)index);
 
@@ -228,9 +228,9 @@ internal static class Sf2ModulatorTranslator
     /// </summary>
     private static ModTransform MapTransform(ushort srcOp)
     {
-        int type = (srcOp >> 10) & 0x3F;
-        bool reverse = ((srcOp >> 8) & 0x1) == 1;   // direction D
-        bool bipolar = ((srcOp >> 9) & 0x1) == 1;   // polarity P
+        var type = (srcOp >> 10) & 0x3F;
+        var reverse = ((srcOp >> 8) & 0x1) == 1;   // direction D
+        var bipolar = ((srcOp >> 9) & 0x1) == 1;   // polarity P
 
         return type switch
         {

@@ -1,5 +1,6 @@
-﻿using MidiSharp.Audio.Vorbis.Contracts;
-using System;
+﻿using System;
+using System.IO;
+using MidiSharp.Audio.Vorbis.Contracts;
 
 namespace MidiSharp.Audio.Vorbis
 {
@@ -28,41 +29,41 @@ namespace MidiSharp.Audio.Vorbis
             _blockFlag = packet.ReadBit();
             if (0 != packet.ReadBits(32))
             {
-                throw new System.IO.InvalidDataException("Mode header had invalid window or transform type!");
+                throw new InvalidDataException("Mode header had invalid window or transform type!");
             }
 
             var mappingIdx = (int)packet.ReadBits(8);
             if (mappingIdx >= mappings.Length)
             {
-                throw new System.IO.InvalidDataException("Mode header had invalid mapping index!");
+                throw new InvalidDataException("Mode header had invalid mapping index!");
             }
             _mapping = mappings[mappingIdx];
 
             if (_blockFlag)
             {
                 _blockSize = block1Size;
-                _windows = new float[][]
-                {
+                _windows =
+                [
                     CalcWindow(block0Size, block1Size, block0Size),
                     CalcWindow(block1Size, block1Size, block0Size),
                     CalcWindow(block0Size, block1Size, block1Size),
-                    CalcWindow(block1Size, block1Size, block1Size),
-                };
-                _overlapInfo = new OverlapInfo[]
-                {
+                    CalcWindow(block1Size, block1Size, block1Size)
+                ];
+                _overlapInfo =
+                [
                     CalcOverlap(block0Size, block1Size, block0Size),
                     CalcOverlap(block1Size, block1Size, block0Size),
                     CalcOverlap(block0Size, block1Size, block1Size),
-                    CalcOverlap(block1Size, block1Size, block1Size),
-                };
+                    CalcOverlap(block1Size, block1Size, block1Size)
+                ];
             }
             else
             {
                 _blockSize = block0Size;
-                _windows = new float[][]
-                {
-                    CalcWindow(block0Size, block0Size, block0Size),
-                };
+                _windows =
+                [
+                    CalcWindow(block0Size, block0Size, block0Size)
+                ];
             }
         }
 
@@ -77,19 +78,19 @@ namespace MidiSharp.Audio.Vorbis
             var leftbegin = wnd / 4 - left / 2;
             var rightbegin = wnd - wnd / 4 - right / 2;
 
-            for (int i = 0; i < left; i++)
+            for (var i = 0; i < left; i++)
             {
                 var x = (float)Math.Sin((i + .5) / left * M_PI2);
                 x *= x;
                 array[leftbegin + i] = (float)Math.Sin(x * M_PI2);
             }
 
-            for (int i = leftbegin + left; i < rightbegin; i++)
+            for (var i = leftbegin + left; i < rightbegin; i++)
             {
                 array[i] = 1.0f;
             }
 
-            for (int i = 0; i < right; i++)
+            for (var i = 0; i < right; i++)
             {
                 var x = (float)Math.Sin((right - i - .5) / right * M_PI2);
                 x *= x;

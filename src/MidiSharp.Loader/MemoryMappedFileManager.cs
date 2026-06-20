@@ -99,14 +99,14 @@ internal sealed unsafe class MemoryMappedFileManager : MemoryManager<byte>, IPre
             {
                 // madvise requires a page-aligned address; round down and extend the length.
                 long page = Environment.SystemPageSize;
-                long a = addr.ToInt64();
-                long aligned = a & ~(page - 1);
+                var a = addr.ToInt64();
+                var aligned = a & ~(page - 1);
                 madvise((IntPtr)aligned, (UIntPtr)(length + (a - aligned)), MADV_WILLNEED);
             }
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 var entry = new WIN32_MEMORY_RANGE_ENTRY { VirtualAddress = addr, NumberOfBytes = (UIntPtr)length };
-                PrefetchVirtualMemory(GetCurrentProcess(), (UIntPtr)1, new[] { entry }, 0);
+                PrefetchVirtualMemory(GetCurrentProcess(), (UIntPtr)1, [entry], 0);
             }
         }
         catch { /* advisory only */ }

@@ -1,6 +1,5 @@
 using System;
 using MidiSharp.SoundBank;
-using MidiSharp.Synth;
 using Xunit;
 using IRBank = MidiSharp.SoundBank.SoundBank;
 
@@ -27,7 +26,7 @@ public sealed class RandomRrVelCurveTests
         var synth = NewSynth(bank);
 
         int loud = 0, silent = 0;
-        for (int n = 0; n < 64; n++)
+        for (var n = 0; n < 64; n++)
         {
             synth.NoteOn(0, 60, 100);
             Assert.Equal(1, synth.ActiveVoiceCount);     // never both, never none — ranges tile [0,1)
@@ -50,7 +49,7 @@ public sealed class RandomRrVelCurveTests
         {
             var synth = NewSynth(bank);
             var seq = new bool[32];
-            for (int n = 0; n < seq.Length; n++)
+            for (var n = 0; n < seq.Length; n++)
             {
                 synth.NoteOn(0, 60, 100);
                 seq[n] = RenderPeak(synth) > 0.1f;
@@ -69,7 +68,7 @@ public sealed class RandomRrVelCurveTests
         var curve = new double[128];
         curve[40] = 0.0;
         curve[120] = 1.0;
-        for (int v = 0; v < 128; v++) curve[v] = v <= 40 ? 0.0 : v >= 120 ? 1.0 : (v - 40) / 80.0;
+        for (var v = 0; v < 128; v++) curve[v] = v <= 40 ? 0.0 : v >= 120 ? 1.0 : (v - 40) / 80.0;
 
         var bank = MakeBank(Zone(sampleId: 0, ampVelCurve: curve));   // loud base sample
         var synth = NewSynth(bank);
@@ -86,7 +85,7 @@ public sealed class RandomRrVelCurveTests
 
     private static Synthesizer NewSynth(IRBank bank)
     {
-        var synth = new Synthesizer(Rate);
+        var synth = new Synthesizer();
         synth.LoadSoundFont(bank);
         return synth;
     }
@@ -97,7 +96,7 @@ public sealed class RandomRrVelCurveTests
         var r = new float[frames];
         synth.Generate(l, r);
         float peak = 0;
-        for (int i = 0; i < frames; i++) peak = Math.Max(peak, Math.Abs(l[i]));
+        for (var i = 0; i < frames; i++) peak = Math.Max(peak, Math.Abs(l[i]));
         return peak;
     }
 
@@ -113,11 +112,11 @@ public sealed class RandomRrVelCurveTests
     private static IRBank MakeBank(params PatchZone[] zones)
     {
         var samples = new PreDecodedFloatSampleSource(
-            new[] { Constant(0.5f, 2000), Constant(0.0f, 2000) },
-            new[] { Meta(), Meta() });
+            [Constant(0.5f, 2000), Constant(0.0f, 2000)],
+            [Meta(), Meta()]);
         return new IRBank
         {
-            Patches = new[] { new Patch { Bank = 0, Program = 0, Zones = zones } },
+            Patches = [new Patch { Bank = 0, Program = 0, Zones = zones }],
             Samples = samples,
         };
     }

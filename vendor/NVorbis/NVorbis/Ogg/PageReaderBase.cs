@@ -1,7 +1,7 @@
-﻿using MidiSharp.Audio.Vorbis.Contracts.Ogg;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using MidiSharp.Audio.Vorbis.Contracts.Ogg;
 
 namespace MidiSharp.Audio.Vorbis.Ogg
 {
@@ -10,7 +10,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
         internal static Func<ICrc> CreateCrc { get; set; } = () => new Crc();
 
         private readonly ICrc _crc = CreateCrc();
-        private readonly HashSet<int> _ignoredSerials = new HashSet<int>();
+        private readonly HashSet<int> _ignoredSerials = [];
         private readonly byte[] _headerBuf = new byte[305]; // 27 - 4 + 27 + 255 (found sync at end of first buffer, and found page has full segment count)
         private byte[] _overflowBuf;
         private int _overflowBufIndex;
@@ -258,7 +258,8 @@ namespace MidiSharp.Audio.Vorbis.Ogg
                             cnt = 0;
                             break;
                         }
-                        else if (pageBuf != null)
+
+                        if (pageBuf != null)
                         {
                             EnqueueData(pageBuf, bytesRead);
                         }

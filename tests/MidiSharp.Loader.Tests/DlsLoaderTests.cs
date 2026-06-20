@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using MidiSharp.Loader;
 using MidiSharp.Loader.Dls;
 using MidiSharp.SoundBank;
 using Xunit;
@@ -37,7 +36,7 @@ public sealed class DlsLoaderTests : IDisposable
 
     /// <summary>Seconds → DLS time-cents scale (16.16). sec = 2^(tc/1200).</summary>
     private static int Tc(double seconds) => (int)Math.Round(1200.0 * Math.Log2(seconds) * 65536.0);
-    private static double TcToSec(int scale) { double tc = scale / 65536.0; return tc <= -12000 ? 0 : Math.Pow(2, tc / 1200.0); }
+    private static double TcToSec(int scale) { var tc = scale / 65536.0; return tc <= -12000 ? 0 : Math.Pow(2, tc / 1200.0); }
 
     /// <summary>Hz → DLS absolute-cents scale (16.16). Hz = 8.176 · 2^(cents/1200).</summary>
     private static int AbsCents(double hz) => (int)Math.Round(1200.0 * Math.Log2(hz / 8.176) * 65536.0);
@@ -55,8 +54,8 @@ public sealed class DlsLoaderTests : IDisposable
         var dls = MakeDls(
             Instrument(bank: 0, prog: 5, drum: false, name: "Test Piano",
                 instArts: null,
-                regions: new[] { Region(48, 72, 0, 127, keyGroup: 0, tableIndex: 0, arts: null, rgnWsmp: null) }),
-            new[] { Wave(unity: 60, fine: 0, gainCb1616: 0, pcm: pcm, loop: null) });
+                regions: [Region(48, 72, 0, 127, keyGroup: 0, tableIndex: 0, arts: null, rgnWsmp: null)]),
+            [Wave(unity: 60, fine: 0, gainCb1616: 0, pcm: pcm, loop: null)]);
 
         using var bank = Load(dls);
 
@@ -108,7 +107,7 @@ public sealed class DlsLoaderTests : IDisposable
     [Fact]
     public void Filter_cutoff_and_q_from_connections()
     {
-        int cutoffScale = AbsCents(2000);
+        var cutoffScale = AbsCents(2000);
         var arts = Art2(
             Conn(ConnectionSource.None, ConnectionDestination.FilterCutoff, cutoffScale),
             Conn(ConnectionSource.None, ConnectionDestination.FilterQ, Fixed16(120)));   // 12.0 dB (cB→dB)
@@ -123,7 +122,7 @@ public sealed class DlsLoaderTests : IDisposable
     [Fact]
     public void Vibrato_lfo_from_connections()
     {
-        int freqScale = AbsCents(6.0);   // 6 Hz
+        var freqScale = AbsCents(6.0);   // 6 Hz
         var arts = Art2(
             Conn(ConnectionSource.None, ConnectionDestination.VibratoFrequency, freqScale),
             Conn(ConnectionSource.None, ConnectionDestination.VibratoStartDelay, Tc(0.5)),
@@ -139,7 +138,7 @@ public sealed class DlsLoaderTests : IDisposable
     [Fact]
     public void Mod_lfo_targets_pitch_volume_and_filter()
     {
-        int freqScale = AbsCents(5.0);
+        var freqScale = AbsCents(5.0);
         var arts = Art2(
             Conn(ConnectionSource.None, ConnectionDestination.LfoFrequency, freqScale),
             Conn(ConnectionSource.Lfo, ConnectionDestination.Pitch, Fixed16(25)),         // 25 cents
@@ -183,8 +182,8 @@ public sealed class DlsLoaderTests : IDisposable
         var dls = MakeDls(
             Instrument(bank: 0, prog: 0, drum: true, name: "Drums",
                 instArts: null,
-                regions: new[] { Region(35, 81, 0, 127, 0, 0, null, null) }),
-            new[] { Wave(60, 0, 0, new short[] { 1, 2, 3, 4 }, null) });
+                regions: [Region(35, 81, 0, 127, 0, 0, null, null)]),
+            [Wave(60, 0, 0, [1, 2, 3, 4], null)]);
 
         using var bank = Load(dls);
         Assert.NotNull(bank.FindPatch(128, 0));   // drum-kit flag forces bank 128
@@ -198,8 +197,8 @@ public sealed class DlsLoaderTests : IDisposable
         var dls = MakeDls(
             Instrument(0, 0, false, "Looped",
                 instArts: null,
-                regions: new[] { Region(0, 127, 0, 127, 0, 0, null, null) }),
-            new[] { WaveWithWsmp(new short[100], wsmp) });
+                regions: [Region(0, 127, 0, 127, 0, 0, null, null)]),
+            [WaveWithWsmp(new short[100], wsmp)]);
 
         using var bank = Load(dls);
         var z = bank.FindPatch(0, 0)!.Zones[0];
@@ -214,13 +213,13 @@ public sealed class DlsLoaderTests : IDisposable
         var pcm = new[] { 0.75f, 0.123f, 0.75f, 0.123f };
         var dls = MakeDls(
             Instrument(0, 0, false, "FloatExt", null,
-                new[] { Region(0, 127, 0, 127, 0, 0, null, null) }),
-            new[] { WaveFloatExtensible(pcm) });
+                [Region(0, 127, 0, 127, 0, 0, null, null)]),
+            [WaveFloatExtensible(pcm)]);
 
         using var bank = Load(dls);
-        int id = bank.FindPatch(0, 0)!.Zones[0].Sample.SampleId;
+        var id = bank.FindPatch(0, 0)!.Zones[0].Sample.SampleId;
         var buf = new float[pcm.Length];
-        int n = bank.Samples.ReadFrames(id, 0, buf);
+        var n = bank.Samples.ReadFrames(id, 0, buf);
 
         Assert.Equal(pcm.Length, n);
         // Decoded as float → matches the source. Misread as integer PCM would map every value to ~0.49
@@ -236,8 +235,8 @@ public sealed class DlsLoaderTests : IDisposable
         var wsmp = new WsmpSpec(unity: 60, fineCents: 0, gainCb1616: -Fixed16(60), loop: null);  // 60 cB = 6 dB down
         var dls = MakeDls(
             Instrument(0, 0, false, "Quiet", null,
-                new[] { Region(0, 127, 0, 127, 0, 0, null, null) }),
-            new[] { WaveWithWsmp(new short[16], wsmp) });
+                [Region(0, 127, 0, 127, 0, 0, null, null)]),
+            [WaveWithWsmp(new short[16], wsmp)]);
 
         using var bank = Load(dls);
         var z = bank.FindPatch(0, 0)!.Zones[0];
@@ -248,7 +247,7 @@ public sealed class DlsLoaderTests : IDisposable
 
     private IRBank Load(byte[] dls)
     {
-        string path = Path.Combine(_dir, "bank.dls");
+        var path = Path.Combine(_dir, "bank.dls");
         File.WriteAllBytes(path, dls);
         return SoundBankLoader.Load(path);
     }
@@ -258,8 +257,8 @@ public sealed class DlsLoaderTests : IDisposable
         var dls = MakeDls(
             Instrument(0, 0, false, "Inst",
                 instArts: arts,
-                regions: new[] { Region(0, 127, 0, 127, 0, 0, null, null) }),
-            new[] { Wave(60, 0, 0, new short[] { 0, 1, 2, 3, 4, 5, 6, 7 }, null) });
+                regions: [Region(0, 127, 0, 127, 0, 0, null, null)]),
+            [Wave(60, 0, 0, [0, 1, 2, 3, 4, 5, 6, 7], null)]);
         return Load(dls).FindPatch(0, 0)!.Zones[0];
     }
 
@@ -272,7 +271,7 @@ public sealed class DlsLoaderTests : IDisposable
 
     private static byte[] Instrument(uint bank, uint prog, bool drum, string name, byte[]? instArts, byte[][] regions)
     {
-        uint localeBank = drum ? (bank | 0x80000000u) : bank;
+        var localeBank = drum ? (bank | 0x80000000u) : bank;
         var parts = new List<byte[]>
         {
             Chunk("insh", Cat(U32((uint)regions.Length), U32(localeBank), U32(prog))),
@@ -317,7 +316,7 @@ public sealed class DlsLoaderTests : IDisposable
         var data = new byte[pcm.Length * 4];
         Buffer.BlockCopy(pcm, 0, data, 0, data.Length);
         // KSDATAFORMAT_SUBTYPE_IEEE_FLOAT = {00000003-0000-0010-8000-00AA00389B71}; leading word = 0x0003.
-        byte[] floatSubformat = { 0x03, 0, 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xAA, 0, 0x38, 0x9B, 0x71 };
+        byte[] floatSubformat = [0x03, 0, 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xAA, 0, 0x38, 0x9B, 0x71];
         var fmt = Cat(
             U16(0xFFFE), U16(1), U32(44100), U32(44100 * 4), U16(4), U16(32),  // extensible, mono, 32-bit
             U16(22), U16(32), U32(0),    // cbSize, wValidBitsPerSample, dwChannelMask
@@ -366,7 +365,7 @@ public sealed class DlsLoaderTests : IDisposable
     private static byte[] U16(int v) => BitConverter.GetBytes((ushort)v);
     private static byte[] S16(short v) => BitConverter.GetBytes(v);
     private static byte[] S32(int v) => BitConverter.GetBytes(v);
-    private static byte[] Zstr(string s) => Cat(Encoding.ASCII.GetBytes(s), new byte[] { 0 });
+    private static byte[] Zstr(string s) => Cat(Encoding.ASCII.GetBytes(s), [0]);
     private static byte[] Cat(params byte[][] parts) => parts.SelectMany(p => p).ToArray();
 
     /// <summary>Sustain level (0..1 linear) → DLS cB-of-attenuation value (the loader inverts back).</summary>

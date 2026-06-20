@@ -1,11 +1,10 @@
 using System;
 using System.Collections.Generic;
+using MidiSharp.Audio;
 using MidiSharp.Loader.Sf2;
 using MidiSharp.Loader.Sf2.Enums;
 using MidiSharp.Loader.Sf2.Model;
-using MidiSharp.Audio;
 using MidiSharp.SoundBank;
-
 using IRBank = MidiSharp.SoundBank.SoundBank;
 namespace MidiSharp.Loader.Sf3;
 
@@ -43,18 +42,18 @@ internal static class Sf3BankLoader
         var metadata = new SampleMetadata[sf.SampleHeaders.Count];
         var entries = new (int ByteStart, int ByteLength, int Channels)[sf.SampleHeaders.Count];
 
-        for (int i = 0; i < sf.SampleHeaders.Count; i++)
+        for (var i = 0; i < sf.SampleHeaders.Count; i++)
         {
             var hdr = sf.SampleHeaders[i];
 
             // SF3 convention: SHDR.Start and SHDR.End are *byte* offsets into the
             // smpl chunk (not int16 frame indices as in SF2). Each [Start, End)
             // window contains one complete Ogg Vorbis bitstream.
-            int byteStart = (int)hdr.Start;
-            int byteEnd = (int)hdr.End;
-            int byteLen = Math.Max(0, byteEnd - byteStart);
+            var byteStart = (int)hdr.Start;
+            var byteEnd = (int)hdr.End;
+            var byteLen = Math.Max(0, byteEnd - byteStart);
 
-            int channels = 1;
+            var channels = 1;
             long decodedFrames = 0;
             if (byteLen > 0 && byteStart + byteLen <= smpl.Length)
             {
@@ -90,7 +89,7 @@ internal static class Sf3BankLoader
     {
         try
         {
-            VorbisDecoder.Peek(blob, out int channels, out long frames);
+            VorbisDecoder.Peek(blob, out var channels, out var frames);
             return (channels, frames);
         }
         catch

@@ -18,10 +18,10 @@ public sealed class TrackUsage
     public string? Name { get; init; }
 
     /// <summary>MIDI channels (0..15) this track sounds at least one note on, ascending.</summary>
-    public IReadOnlyList<int> Channels { get; init; } = Array.Empty<int>();
+    public IReadOnlyList<int> Channels { get; init; } = [];
 
     /// <summary>Distinct resolved programs (0..127) this track's notes play, ascending.</summary>
-    public IReadOnlyList<int> Programs { get; init; } = Array.Empty<int>();
+    public IReadOnlyList<int> Programs { get; init; } = [];
 
     /// <summary>
     /// The base font's name for what this track plays first (after the synth's bank-0 fallback),

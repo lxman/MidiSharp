@@ -1,10 +1,12 @@
-﻿namespace MidiSharp.Audio.Vorbis
+﻿using System;
+
+namespace MidiSharp.Audio.Vorbis
 {
     static class Utils
     {
         static internal int ilog(int x)
         {
-            int cnt = 0;
+            var cnt = 0;
             while (x > 0)
             {
                 ++cnt;
@@ -55,7 +57,7 @@
             //     Either way, we'll play it safe and let the BCL calculate it.
 
             // now switch to single-precision and calc the return value
-            return mantissa * (float)System.Math.Pow(2.0, exponent);
+            return mantissa * (float)Math.Pow(2.0, exponent);
         }
     }
 }

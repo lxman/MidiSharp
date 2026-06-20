@@ -17,7 +17,7 @@ namespace MidiSharp.PatchMap;
 /// </remarks>
 public sealed class PatchMapSession(IRBank baseBank) : IDisposable
 {
-    private readonly List<IRBank> _sources = new();
+    private readonly List<IRBank> _sources = [];
     private readonly Dictionary<(int Bank, int Program), PatchRef> _overrides = new();
     private readonly Dictionary<int, PatchRef> _trackOverrides = new();
     private bool _disposed;

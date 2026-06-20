@@ -84,11 +84,11 @@ internal static class SfzOpcodes
 
     // Open-ended families of the shape "{prefix}{N}" the translator handles.
     private static readonly string[] NumberedPrefixes =
-    {
+    [
         "locc", "hicc", "on_locc", "on_hicc", "amp_velcurve_",
         "xfin_locc", "xfin_hicc", "xfout_locc", "xfout_hicc",   // live CC crossfades
-        "set_hdcc", "set_cc",   // initial controller seeds (set_hdcc before set_cc — longer prefix first)
-    };
+        "set_hdcc", "set_cc" // initial controller seeds (set_hdcc before set_cc — longer prefix first)
+    ];
 
     // The "{param}_oncc{N}" / "{param}_cc{N}" modulation params actually routed.
     private static readonly HashSet<string> ModParams = new(StringComparer.Ordinal)
@@ -150,7 +150,7 @@ internal static class SfzOpcodes
                 && AllDigits(opcode, p.Length))
                 return true;
 
-        if (TryGetModParam(opcode, out string param) && ModParams.Contains(param))
+        if (TryGetModParam(opcode, out var param) && ModParams.Contains(param))
             return true;
 
         if (HandledFamilies.Contains(Family(opcode)))
@@ -211,7 +211,7 @@ internal static class SfzOpcodes
 
     private static bool AllDigits(string s, int start)
     {
-        for (int i = start; i < s.Length; i++)
+        for (var i = start; i < s.Length; i++)
             if (!char.IsDigit(s[i])) return false;
         return start < s.Length;
     }
@@ -220,8 +220,8 @@ internal static class SfzOpcodes
     private static bool TryGetModParam(string key, out string param)
     {
         param = string.Empty;
-        int marker = key.IndexOf("_oncc", StringComparison.Ordinal);
-        int len = 5;
+        var marker = key.IndexOf("_oncc", StringComparison.Ordinal);
+        var len = 5;
         if (marker < 0) { marker = key.IndexOf("_cc", StringComparison.Ordinal); len = 3; }
         if (marker <= 0) return false;
         if (!AllDigits(key, marker + len)) return false;

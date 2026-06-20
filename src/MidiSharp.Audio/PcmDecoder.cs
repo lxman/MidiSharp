@@ -20,29 +20,29 @@ public static class PcmDecoder
         ReadOnlySpan<byte> bytes, int channels, int bitsPerSample, bool isFloat)
     {
         if (channels < 1) channels = 1;
-        int bytesPerSample = (bitsPerSample + 7) / 8;
-        int bytesPerFrame = bytesPerSample * channels;
+        var bytesPerSample = (bitsPerSample + 7) / 8;
+        var bytesPerFrame = bytesPerSample * channels;
         if (bytesPerFrame <= 0 || bytes.Length < bytesPerFrame)
-            return (Array.Empty<float>(), 0);
+            return ([], 0);
 
         long frames = bytes.Length / bytesPerFrame;
-        int totalSamples = (int)(frames * channels);
+        var totalSamples = (int)(frames * channels);
         var output = new float[totalSamples];
 
         if (isFloat && bitsPerSample == 32)
         {
             // BinaryPrimitives.ReadSingleLittleEndian doesn't exist on netstandard2.1.
-            for (int i = 0; i < totalSamples; i++)
+            for (var i = 0; i < totalSamples; i++)
             {
-                int bits = BinaryPrimitives.ReadInt32LittleEndian(bytes.Slice(i * 4, 4));
+                var bits = BinaryPrimitives.ReadInt32LittleEndian(bytes.Slice(i * 4, 4));
                 output[i] = BitConverter.Int32BitsToSingle(bits);
             }
         }
         else if (isFloat && bitsPerSample == 64)
         {
-            for (int i = 0; i < totalSamples; i++)
+            for (var i = 0; i < totalSamples; i++)
             {
-                long bits = BinaryPrimitives.ReadInt64LittleEndian(bytes.Slice(i * 8, 8));
+                var bits = BinaryPrimitives.ReadInt64LittleEndian(bytes.Slice(i * 8, 8));
                 output[i] = (float)BitConverter.Int64BitsToDouble(bits);
             }
         }
@@ -52,7 +52,7 @@ public static class PcmDecoder
             {
                 // WAV 8-bit is unsigned, biased to 128.
                 const float Scale = 1.0f / 128.0f;
-                for (int i = 0; i < totalSamples; i++)
+                for (var i = 0; i < totalSamples; i++)
                     output[i] = (bytes[i] - 128) * Scale;
                 break;
             }
@@ -62,19 +62,19 @@ public static class PcmDecoder
                 if (BitConverter.IsLittleEndian)
                     SampleConvert.Int16ToFloat(MemoryMarshal.Cast<byte, short>(bytes.Slice(0, totalSamples * 2)), output, Scale);
                 else
-                    for (int i = 0; i < totalSamples; i++)
+                    for (var i = 0; i < totalSamples; i++)
                         output[i] = BinaryPrimitives.ReadInt16LittleEndian(bytes.Slice(i * 2, 2)) * Scale;
                 break;
             }
             case 24:
             {
                 const float Scale = 1.0f / 8388608.0f;
-                for (int i = 0; i < totalSamples; i++)
+                for (var i = 0; i < totalSamples; i++)
                 {
                     int b0 = bytes[i * 3];
                     int b1 = bytes[i * 3 + 1];
                     int b2 = (sbyte)bytes[i * 3 + 2]; // sign-extend high byte
-                    int v = (b2 << 16) | (b1 << 8) | b0;
+                    var v = (b2 << 16) | (b1 << 8) | b0;
                     output[i] = v * Scale;
                 }
                 break;
@@ -82,7 +82,7 @@ public static class PcmDecoder
             case 32:
             {
                 const float Scale = 1.0f / 2147483648.0f;
-                for (int i = 0; i < totalSamples; i++)
+                for (var i = 0; i < totalSamples; i++)
                     output[i] = BinaryPrimitives.ReadInt32LittleEndian(bytes.Slice(i * 4, 4)) * Scale;
                 break;
             }
@@ -92,17 +92,17 @@ public static class PcmDecoder
                 // depths (40/48/56/64-bit) and sub-byte depths (12/20) stored MSB-justified in their byte
                 // container. Normalised by the container's full range, so a byte-aligned depth is exact;
                 // a sub-byte depth left-justified in the container reads correctly too. >64-bit is bogus.
-                if (bytesPerSample is < 1 or > 8) return (Array.Empty<float>(), 0);
-                int containerBits = bytesPerSample * 8;
-                bool full64 = containerBits >= 64;
-                double scale = full64 ? 1.0 / 9223372036854775808.0 : 1.0 / (1L << (containerBits - 1));
-                long signMask = full64 ? 0 : 1L << (containerBits - 1);
-                long extend = full64 ? 0 : 1L << containerBits;
-                for (int i = 0; i < totalSamples; i++)
+                if (bytesPerSample is < 1 or > 8) return ([], 0);
+                var containerBits = bytesPerSample * 8;
+                var full64 = containerBits >= 64;
+                var scale = full64 ? 1.0 / 9223372036854775808.0 : 1.0 / (1L << (containerBits - 1));
+                var signMask = full64 ? 0 : 1L << (containerBits - 1);
+                var extend = full64 ? 0 : 1L << containerBits;
+                for (var i = 0; i < totalSamples; i++)
                 {
-                    int off = i * bytesPerSample;
+                    var off = i * bytesPerSample;
                     long v = 0;
-                    for (int b = 0; b < bytesPerSample; b++)
+                    for (var b = 0; b < bytesPerSample; b++)
                         v |= (long)bytes[off + b] << (8 * b);
                     if (signMask != 0 && (v & signMask) != 0) v -= extend;   // sign-extend from the container
                     output[i] = (float)(v * scale);
@@ -121,7 +121,7 @@ public static class PcmDecoder
     /// </summary>
     public static float NormalizeInt(int sample, int bitsPerSample)
     {
-        float scale = 1.0f / (1 << (bitsPerSample - 1));
+        var scale = 1.0f / (1 << (bitsPerSample - 1));
         return sample * scale;
     }
 }

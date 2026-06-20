@@ -1,5 +1,6 @@
-﻿using MidiSharp.Audio.Vorbis.Contracts;
-using System;
+﻿using System;
+using System.IO;
+using MidiSharp.Audio.Vorbis.Contracts;
 
 namespace MidiSharp.Audio.Vorbis
 {
@@ -37,7 +38,7 @@ namespace MidiSharp.Audio.Vorbis
                 var angle = (int)packet.ReadBits(couplingBits);
                 if (magnitude == angle || magnitude > channels - 1 || angle > channels - 1)
                 {
-                    throw new System.IO.InvalidDataException("Invalid magnitude or angle in mapping header!");
+                    throw new InvalidDataException("Invalid magnitude or angle in mapping header!");
                 }
                 _couplingAngle[j] = angle;
                 _couplingMangitude[j] = magnitude;
@@ -45,7 +46,7 @@ namespace MidiSharp.Audio.Vorbis
 
             if (0 != packet.ReadBits(2))
             {
-                throw new System.IO.InvalidDataException("Reserved bits not 0 in mapping header.");
+                throw new InvalidDataException("Reserved bits not 0 in mapping header.");
             }
 
             var mux = new int[channels];
@@ -56,7 +57,7 @@ namespace MidiSharp.Audio.Vorbis
                     mux[c] = (int)packet.ReadBits(4);
                     if (mux[c] > submapCount)
                     {
-                        throw new System.IO.InvalidDataException("Invalid channel mux submap index in mapping header!");
+                        throw new InvalidDataException("Invalid channel mux submap index in mapping header!");
                     }
                 }
             }
@@ -69,12 +70,12 @@ namespace MidiSharp.Audio.Vorbis
                 var floorNum = (int)packet.ReadBits(8);
                 if (floorNum >= floors.Length)
                 {
-                    throw new System.IO.InvalidDataException("Invalid floor number in mapping header!");
+                    throw new InvalidDataException("Invalid floor number in mapping header!");
                 }
                 var residueNum = (int)packet.ReadBits(8);
                 if (residueNum >= residues.Length)
                 {
-                    throw new System.IO.InvalidDataException("Invalid residue number in mapping header!");
+                    throw new InvalidDataException("Invalid residue number in mapping header!");
                 }
 
                 _submapFloor[j] = floors[floorNum];

@@ -17,8 +17,8 @@ namespace MidiSharp.Dsp;
 public sealed class ProcessorChain : IAudioProcessor
 {
     private readonly object _gate = new();
-    private readonly List<IAudioProcessor> _items = new();
-    private volatile IAudioProcessor[] _snapshot = Array.Empty<IAudioProcessor>();
+    private readonly List<IAudioProcessor> _items = [];
+    private volatile IAudioProcessor[] _snapshot = [];
 
     /// <summary>When true, <see cref="Process"/> leaves the block untouched (the whole chain is bypassed).</summary>
     public bool Bypass { get; set; }
@@ -40,7 +40,7 @@ public sealed class ProcessorChain : IAudioProcessor
     {
         lock (_gate)
         {
-            bool removed = _items.Remove(processor);
+            var removed = _items.Remove(processor);
             if (removed) _snapshot = _items.ToArray();
             return removed;
         }
@@ -51,7 +51,7 @@ public sealed class ProcessorChain : IAudioProcessor
         lock (_gate)
         {
             _items.Clear();
-            _snapshot = Array.Empty<IAudioProcessor>();
+            _snapshot = [];
         }
     }
 
@@ -65,7 +65,7 @@ public sealed class ProcessorChain : IAudioProcessor
         lock (_gate)
         {
             _items.Clear();
-            for (int i = 0; i < processors.Count; i++)
+            for (var i = 0; i < processors.Count; i++)
             {
                 if (processors[i] == null) throw new ArgumentException("null processor", nameof(processors));
                 _items.Add(processors[i]);
@@ -78,14 +78,14 @@ public sealed class ProcessorChain : IAudioProcessor
     {
         if (Bypass) return;
         var chain = _snapshot;            // single volatile read; stable for this block
-        for (int i = 0; i < chain.Length; i++)
+        for (var i = 0; i < chain.Length; i++)
             chain[i].Process(interleavedStereo);
     }
 
     public void Reset()
     {
         var chain = _snapshot;
-        for (int i = 0; i < chain.Length; i++)
+        for (var i = 0; i < chain.Length; i++)
             chain[i].Reset();
     }
 }

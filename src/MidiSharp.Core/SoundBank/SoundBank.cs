@@ -29,7 +29,7 @@ public sealed class SoundBank : IDisposable
 
     public SoundBankFormat SourceFormat { get; init; }
 
-    public IReadOnlyList<Patch> Patches { get; init; } = Array.Empty<Patch>();
+    public IReadOnlyList<Patch> Patches { get; init; } = [];
 
     /// <summary>
     /// The bank's sample source. Disposed when this bank is disposed.

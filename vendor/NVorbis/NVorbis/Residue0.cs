@@ -1,6 +1,6 @@
-﻿using MidiSharp.Audio.Vorbis.Contracts;
-using System;
+﻿using System;
 using System.IO;
+using MidiSharp.Audio.Vorbis.Contracts;
 
 namespace MidiSharp.Audio.Vorbis
 {
@@ -43,7 +43,7 @@ namespace MidiSharp.Audio.Vorbis
 
             _cascade = new int[_classifications];
             var acc = 0;
-            for (int i = 0; i < _classifications; i++)
+            for (var i = 0; i < _classifications; i++)
             {
                 var low_bits = (int)packet.ReadBits(3);
                 if (packet.ReadBit())
@@ -80,14 +80,14 @@ namespace MidiSharp.Audio.Vorbis
             acc = 0;
             var maxstage = 0;
             int stages;
-            for (int j = 0; j < _classifications; j++)
+            for (var j = 0; j < _classifications; j++)
             {
                 stages = Utils.ilog(_cascade[j]);
                 _books[j] = new ICodebook[stages];
                 if (stages > 0)
                 {
                     maxstage = Math.Max(maxstage, stages);
-                    for (int k = 0; k < stages; k++)
+                    for (var k = 0; k < stages; k++)
                     {
                         if ((_cascade[j] & (1 << k)) > 0)
                         {
@@ -99,12 +99,12 @@ namespace MidiSharp.Audio.Vorbis
             _maxStages = maxstage;
 
             _decodeMap = new int[partvals][];
-            for (int j = 0; j < partvals; j++)
+            for (var j = 0; j < partvals; j++)
             {
                 var val = j;
                 var mult = partvals / _classifications;
                 _decodeMap[j] = new int[_classBook.Dimensions];
-                for (int k = 0; k < _classBook.Dimensions; k++)
+                for (var k = 0; k < _classBook.Dimensions; k++)
                 {
                     var deco = val / mult;
                     val -= deco * mult;

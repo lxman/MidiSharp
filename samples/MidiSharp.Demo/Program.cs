@@ -1,18 +1,20 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
+using MidiSharp.Dsp;
+using MidiSharp.IO;
 using MidiSharp.Loader;
 using MidiSharp.Loader.Sfz;
-using MidiSharp.IO;
 using MidiSharp.Model.Events;
 using MidiSharp.PatchMap;
 using MidiSharp.SoundBank;
 using MidiSharp.Synth;
 using MidiSharp.Synth.OwnAudio;
-using MidiSharp.Dsp;
 using IRBank = MidiSharp.SoundBank.SoundBank;
 
 // Flags may appear anywhere; everything else is positional (<midi> <sf2> [out.wav]).
@@ -48,7 +50,7 @@ for (var i = 0; i < args.Length; i++)
             // Optional numeric ceiling in dBFS follows; default -1.0. A dense mix can overshoot 0 dBFS
             // and clip on export — this brickwalls the master output so it never does.
             limiterCeilingDb = -1.0;
-            if (i + 1 < args.Length && double.TryParse(args[i + 1], System.Globalization.CultureInfo.InvariantCulture, out var parsedCeil))
+            if (i + 1 < args.Length && double.TryParse(args[i + 1], CultureInfo.InvariantCulture, out var parsedCeil))
             { limiterCeilingDb = parsedCeil; i++; }
             break;
         default: positionals.Add(args[i]); break;
@@ -89,11 +91,11 @@ if (setupSpec != null)
 {
     setup = SetupSupport.Resolve(setupSpec, out var setupError);
     if (setup == null) { Console.WriteLine(setupError); return 1; }
-    midiPath = setup.midiPath;
-    sf2Path = setup.soundfontPath;
+    midiPath = setup.MidiPath;
+    sf2Path = setup.SoundfontPath;
     renderPath = positionals.Count >= 1 ? positionals[0] : null;
-    Console.WriteLine($"Setup: {setup.name}  ({setup.overrides?.Length ?? 0} patch + " +
-                      $"{setup.trackOverrides?.Length ?? 0} track override(s))");
+    Console.WriteLine($"Setup: {setup.Name}  ({setup.Overrides?.Length ?? 0} patch + " +
+                      $"{setup.TrackOverrides?.Length ?? 0} track override(s))");
 }
 else
 {
@@ -146,7 +148,7 @@ if (listPatches)
 var playBank = soundBank;
 PatchMapSession? session = null;
 IReadOnlyDictionary<int, (int Bank, int Program)>? trackPatchMap = null;
-if (setup != null && ((setup.overrides?.Length ?? 0) > 0 || (setup.trackOverrides?.Length ?? 0) > 0))
+if (setup != null && ((setup.Overrides?.Length ?? 0) > 0 || (setup.TrackOverrides?.Length ?? 0) > 0))
 {
     try
     {
@@ -154,12 +156,12 @@ if (setup != null && ((setup.overrides?.Length ?? 0) > 0 || (setup.trackOverride
         var resolved = session.BuildResolved();
         playBank = resolved.Bank;
         trackPatchMap = resolved.TrackPatchMap;
-        foreach (var o in setup.overrides ?? [])
-            Console.WriteLine($"  override prog {o.logicalProgram} → {Path.GetFileName(o.sourcePath)} " +
-                              $"(bank {o.sourceBank}, prog {o.sourceProgram})");
-        foreach (var o in setup.trackOverrides ?? [])
-            Console.WriteLine($"  track {o.trackIndex} ({o.trackName ?? "?"}) → {Path.GetFileName(o.sourcePath)} " +
-                              $"(bank {o.sourceBank}, prog {o.sourceProgram})");
+        foreach (var o in setup.Overrides ?? [])
+            Console.WriteLine($"  override prog {o.LogicalProgram} → {Path.GetFileName(o.SourcePath)} " +
+                              $"(bank {o.SourceBank}, prog {o.SourceProgram})");
+        foreach (var o in setup.TrackOverrides ?? [])
+            Console.WriteLine($"  track {o.TrackIndex} ({o.TrackName ?? "?"}) → {Path.GetFileName(o.SourcePath)} " +
+                              $"(bank {o.SourceBank}, prog {o.SourceProgram})");
     }
     catch (Exception ex)
     {
@@ -209,13 +211,13 @@ if (trackPatchMap != null) synth.SetTrackPatchMap(trackPatchMap);
 // Zero is skipped so an all-zero setup stays on the synth's bit-identical pre-mixer path.
 if (setup != null)
 {
-    foreach (var o in setup.overrides ?? [])
-        if (o.gainDb != 0)
-            synth.GetInstrumentMix(o.logicalBank, o.logicalProgram).GainDb = o.gainDb;
+    foreach (var o in setup.Overrides ?? [])
+        if (o.GainDb != 0)
+            synth.GetInstrumentMix(o.LogicalBank, o.LogicalProgram).GainDb = o.GainDb;
     if (trackPatchMap != null)
-        foreach (var o in setup.trackOverrides ?? [])
-            if (o.gainDb != 0 && trackPatchMap.TryGetValue(o.trackIndex, out var addr))
-                synth.GetInstrumentMix(addr.Bank, addr.Program).GainDb = o.gainDb;
+        foreach (var o in setup.TrackOverrides ?? [])
+            if (o.GainDb != 0 && trackPatchMap.TryGetValue(o.TrackIndex, out var addr))
+                synth.GetInstrumentMix(addr.Bank, addr.Program).GainDb = o.GainDb;
 }
 
 // Optional master DSP chain (caller-side, outside the synth). --limiter inserts a brickwall limiter
@@ -256,11 +258,11 @@ static int RunSfzReport(string target)
     else { Console.WriteLine($"Not found: {target}"); return 1; }
 
     if (files.Count == 0) { Console.WriteLine($"No .sfz files under {target}"); return 0; }
-    bool single = files.Count == 1;
+    var single = files.Count == 1;
 
     // family -> (#fonts using it, total regions across fonts, note)
     var rollup = new Dictionary<string, (int Fonts, int Regions, string? Note)>(StringComparer.Ordinal);
-    int withFindings = 0;
+    var withFindings = 0;
 
     foreach (var f in files)
     {
@@ -308,19 +310,19 @@ static IRBank LoadBank(string spec, SoundBankLoadOptions options)
     {
         var parts = spec.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var files = new List<(string, int)>();
-        for (int i = 0; i < parts.Length; i++) files.Add((parts[i], i == 0 ? 0 : 128));
+        for (var i = 0; i < parts.Length; i++) files.Add((parts[i], i == 0 ? 0 : 128));
         return SoundBankLoader.LoadSfz(files, options);
     }
 
     if (spec.EndsWith(".sfz", StringComparison.OrdinalIgnoreCase) &&
         spec.Contains("Melodic", StringComparison.OrdinalIgnoreCase))
     {
-        int i = spec.IndexOf("Melodic", StringComparison.OrdinalIgnoreCase);
-        string drums = spec[..i] + "Drums" + spec[(i + "Melodic".Length)..];
+        var i = spec.IndexOf("Melodic", StringComparison.OrdinalIgnoreCase);
+        var drums = spec[..i] + "Drums" + spec[(i + "Melodic".Length)..];
         if (File.Exists(drums))
         {
             Console.WriteLine($"  (auto-pairing percussion: {Path.GetFileName(drums)} → bank 128)");
-            return SoundBankLoader.LoadSfz(new[] { (spec, 0), (drums, 128) }, options);
+            return SoundBankLoader.LoadSfz([(spec, 0), (drums, 128)], options);
         }
     }
 
@@ -476,11 +478,11 @@ static void WriteWavHeader(Stream s, int sampleRate, int channels, long frames)
     var byteRate = sampleRate * channels * 2;
     var dataSize = (int)(frames * channels * 2);
     var fileSize = 36 + dataSize;
-    var bw = new BinaryWriter(s, System.Text.Encoding.ASCII, leaveOpen: true);
-    bw.Write(System.Text.Encoding.ASCII.GetBytes("RIFF"));
+    var bw = new BinaryWriter(s, Encoding.ASCII, leaveOpen: true);
+    bw.Write(Encoding.ASCII.GetBytes("RIFF"));
     bw.Write(fileSize);
-    bw.Write(System.Text.Encoding.ASCII.GetBytes("WAVE"));
-    bw.Write(System.Text.Encoding.ASCII.GetBytes("fmt "));
+    bw.Write(Encoding.ASCII.GetBytes("WAVE"));
+    bw.Write(Encoding.ASCII.GetBytes("fmt "));
     bw.Write(16);                          // fmt chunk size
     bw.Write((short)1);                    // PCM
     bw.Write((short)channels);
@@ -488,7 +490,7 @@ static void WriteWavHeader(Stream s, int sampleRate, int channels, long frames)
     bw.Write(byteRate);
     bw.Write((short)(channels * 2));       // block align
     bw.Write((short)16);                   // bits per sample
-    bw.Write(System.Text.Encoding.ASCII.GetBytes("data"));
+    bw.Write(Encoding.ASCII.GetBytes("data"));
     bw.Write(dataSize);
     bw.Flush();
 }

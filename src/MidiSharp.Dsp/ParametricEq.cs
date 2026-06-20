@@ -28,8 +28,8 @@ public readonly record struct EqBandSpec(BiquadType Type, double FrequencyHz, do
 public sealed class ParametricEq : IAudioProcessor
 {
     private readonly int _sampleRate;
-    private BiquadFilter[] _left = Array.Empty<BiquadFilter>();
-    private BiquadFilter[] _right = Array.Empty<BiquadFilter>();
+    private BiquadFilter[] _left = [];
+    private BiquadFilter[] _right = [];
     private int _count;
 
     public ParametricEq(int sampleRate)
@@ -48,14 +48,14 @@ public sealed class ParametricEq : IAudioProcessor
     /// </summary>
     public void SetBands(IReadOnlyList<EqBandSpec> bands)
     {
-        int n = bands?.Count ?? 0;
+        var n = bands?.Count ?? 0;
         if (_left.Length < n)
         {
             var newLeft = new BiquadFilter[n];
             var newRight = new BiquadFilter[n];
             Array.Copy(_left, newLeft, _left.Length);
             Array.Copy(_right, newRight, _right.Length);
-            for (int i = _left.Length; i < n; i++)
+            for (var i = _left.Length; i < n; i++)
             {
                 newLeft[i] = new BiquadFilter(_sampleRate);
                 newRight[i] = new BiquadFilter(_sampleRate);
@@ -64,7 +64,7 @@ public sealed class ParametricEq : IAudioProcessor
             _right = newRight;
         }
 
-        for (int i = 0; i < n; i++)
+        for (var i = 0; i < n; i++)
         {
             var b = bands![i];
             _left[i].Configure(b.Type, b.FrequencyHz, b.Q, b.GainDb);
@@ -76,13 +76,13 @@ public sealed class ParametricEq : IAudioProcessor
     public void Process(Span<float> interleavedStereo)
     {
         if (_count == 0) return;
-        int frames = interleavedStereo.Length / 2;
-        for (int f = 0; f < frames; f++)
+        var frames = interleavedStereo.Length / 2;
+        for (var f = 0; f < frames; f++)
         {
             int li = f * 2, ri = li + 1;
             double l = interleavedStereo[li];
             double r = interleavedStereo[ri];
-            for (int b = 0; b < _count; b++)
+            for (var b = 0; b < _count; b++)
             {
                 l = _left[b].Process(l);
                 r = _right[b].Process(r);
@@ -94,7 +94,7 @@ public sealed class ParametricEq : IAudioProcessor
 
     public void Reset()
     {
-        for (int i = 0; i < _count; i++)
+        for (var i = 0; i < _count; i++)
         {
             _left[i].Reset();
             _right[i].Reset();

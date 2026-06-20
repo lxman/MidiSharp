@@ -1,6 +1,5 @@
 using System;
 using MidiSharp.SoundBank;
-using MidiSharp.Synth;
 using Xunit;
 using IRBank = MidiSharp.SoundBank.SoundBank;
 
@@ -20,16 +19,16 @@ public sealed class TailSingletonRenderTests
     public void Sustain_cc_reassignment_makes_cc90_hold_notes()
     {
         // Reassigned bank: CC90 is the pedal. Hold it, release the key → the note keeps sounding.
-        float held = LevelAfterPedalledNoteOff(sustainCc: 90, pedalCc: 90);
+        var held = LevelAfterPedalledNoteOff(sustainCc: 90, pedalCc: 90);
         // Default bank: CC90 is not the pedal, so the same sequence releases the note → it decays away.
-        float notHeld = LevelAfterPedalledNoteOff(sustainCc: 64, pedalCc: 90);
+        var notHeld = LevelAfterPedalledNoteOff(sustainCc: 64, pedalCc: 90);
         Assert.True(held > notHeld * 5.0,
             $"CC90 should hold only when reassigned as sustain (held {held}, notHeld {notHeld})");
     }
 
     private static float LevelAfterPedalledNoteOff(int sustainCc, int pedalCc)
     {
-        var synth = new Synthesizer(Rate);
+        var synth = new Synthesizer();
         synth.LoadSoundFont(MakeBank(releaseShape: 0, releaseSeconds: 0.01, sustainCc: sustainCc));
         synth.NoteOn(0, 60, 110);
         Render(synth, 200);                 // let it reach sustain
@@ -46,15 +45,15 @@ public sealed class TailSingletonRenderTests
     {
         // Mid-release, a concave shape (+6 → exponent 0.5) holds a higher level than a convex one
         // (−6 → exponent 2), proving the shape exponent is applied to the release ramp.
-        float concave = ReleaseLevelMidway(shape: 6);
-        float convex = ReleaseLevelMidway(shape: -6);
+        var concave = ReleaseLevelMidway(shape: 6);
+        var convex = ReleaseLevelMidway(shape: -6);
         Assert.True(concave > convex * 1.3,
             $"concave (+6) should sit above convex (−6) mid-release (concave {concave}, convex {convex})");
     }
 
     private static float ReleaseLevelMidway(double shape)
     {
-        var synth = new Synthesizer(Rate);
+        var synth = new Synthesizer();
         synth.LoadSoundFont(MakeBank(releaseShape: shape, releaseSeconds: 0.2, sustainCc: 64));
         synth.NoteOn(0, 60, 110);
         Render(synth, 200);          // reach sustain
@@ -68,14 +67,14 @@ public sealed class TailSingletonRenderTests
     [Fact]
     public void Region_polyphony_caps_simultaneous_voices()
     {
-        var capped = new Synthesizer(Rate);
+        var capped = new Synthesizer();
         capped.LoadSoundFont(MakeRangeBank(polyphony: 1));
         capped.NoteOn(0, 60, 100);
         capped.NoteOn(0, 62, 100);   // same region — steals the first
         Render(capped, 100);
         Assert.Equal(1, capped.ActiveVoiceCount);
 
-        var open = new Synthesizer(Rate);
+        var open = new Synthesizer();
         open.LoadSoundFont(MakeRangeBank(polyphony: -1));
         open.NoteOn(0, 60, 100);
         open.NoteOn(0, 62, 100);
@@ -98,7 +97,7 @@ public sealed class TailSingletonRenderTests
         var r = new float[frames];
         synth.Generate(l, r);
         float peak = 0;
-        for (int i = 0; i < frames; i++) peak = Math.Max(peak, Math.Abs(l[i]));
+        for (var i = 0; i < frames; i++) peak = Math.Max(peak, Math.Abs(l[i]));
         return peak;
     }
 
@@ -117,7 +116,7 @@ public sealed class TailSingletonRenderTests
                 ReleaseShape = releaseShape,
             },
         };
-        return BankFrom(new[] { zone }, sustainCc);
+        return BankFrom([zone], sustainCc);
     }
 
     private static IRBank MakeRangeBank(int polyphony)
@@ -130,7 +129,7 @@ public sealed class TailSingletonRenderTests
             VolumeEnvelope = new EnvelopeSettings { AttackSeconds = 0.001, SustainLevel = 1.0, ReleaseSeconds = 0.1 },
             Polyphony = polyphony,
         };
-        return BankFrom(new[] { zone }, sustainCc: 64);
+        return BankFrom([zone], sustainCc: 64);
     }
 
     private static IRBank BankFrom(PatchZone[] zones, int sustainCc)
@@ -139,7 +138,7 @@ public sealed class TailSingletonRenderTests
         var meta = new[] { new SampleMetadata { SampleRate = Rate, Channels = 1, LengthFrames = 44100, RootKey = 60 } };
         return new IRBank
         {
-            Patches = new[] { new Patch { Bank = 0, Program = 0, Zones = zones } },
+            Patches = [new Patch { Bank = 0, Program = 0, Zones = zones }],
             Samples = new PreDecodedFloatSampleSource(data, meta),
             SustainCc = sustainCc,
         };

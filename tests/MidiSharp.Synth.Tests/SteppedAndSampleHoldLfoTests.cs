@@ -1,7 +1,6 @@
 using System;
 using System.Linq;
 using MidiSharp.SoundBank;
-using MidiSharp.Synth;
 using Xunit;
 using IRBank = MidiSharp.SoundBank.SoundBank;
 
@@ -22,7 +21,7 @@ public sealed class SteppedAndSampleHoldLfoTests
     public void Stepped_lfo_walks_its_step_table_as_held_levels()
     {
         // Two steps: +1 (loud) for the first half-period, -1 (quiet) for the second, held flat within each.
-        var lfo = VolumeLfo(wave: 13, steps: new[] { 1.0, -1.0 });
+        var lfo = VolumeLfo(wave: 13, steps: [1.0, -1.0]);
         var amp = RenderAmplitude(lfo, Period * 2);
 
         double early0 = amp[Period / 8], late0 = amp[3 * Period / 8];     // two points inside step 0
@@ -52,7 +51,7 @@ public sealed class SteppedAndSampleHoldLfoTests
         // Random, not a fixed 2-level square: sample the centre of six successive half-periods and expect
         // several distinct held levels.
         var centres = Enumerable.Range(0, 6)
-            .Select(h => Math.Round((double)a[(int)((h + 0.5) * Period / 2)], 4))
+            .Select(h => Math.Round(a[(int)((h + 0.5) * Period / 2)], 4))
             .Distinct().Count();
         Assert.True(centres >= 3, $"expected varied S&H levels, got {centres} distinct");
     }
@@ -60,21 +59,21 @@ public sealed class SteppedAndSampleHoldLfoTests
     // Renders n frames and returns per-frame |left| amplitude.
     private static float[] RenderAmplitude(GenericLfo lfo, int n)
     {
-        var synth = new Synthesizer(Rate);
+        var synth = new Synthesizer();
         synth.LoadSoundFont(MakeBank(ZoneWith(lfo)));
         synth.NoteOn(0, 60, 120);
         var l = new float[n];
         var r = new float[n];
         synth.Generate(l, r);
-        for (int i = 0; i < n; i++) l[i] = Math.Abs(l[i]);
+        for (var i = 0; i < n; i++) l[i] = Math.Abs(l[i]);
         return l;
     }
 
     private static GenericLfo VolumeLfo(int wave, double[]? steps) => new()
     {
         FrequencyHz = LfoHz,
-        Stages = new[] { new LfoStage(wave, 1.0, 1.0, 0.0) { Steps = steps } },
-        Targets = new[] { new LfoTarget { Destination = LfoDestination.Volume, Depth = 12.0 } },
+        Stages = [new LfoStage(wave, 1.0, 1.0, 0.0) { Steps = steps }],
+        Targets = [new LfoTarget { Destination = LfoDestination.Volume, Depth = 12.0 }],
     };
 
     private static PatchZone ZoneWith(GenericLfo lfo) => new()
@@ -84,18 +83,18 @@ public sealed class SteppedAndSampleHoldLfoTests
         Sample = new SampleRef { SampleId = 0, OverridingRootKey = 60 },
         // Flat envelope so amplitude is purely LFO-driven.
         VolumeEnvelope = new EnvelopeSettings { AttackSeconds = 0.0, SustainLevel = 1.0, ReleaseSeconds = 0.1 },
-        Lfos = new[] { lfo },
+        Lfos = [lfo],
     };
 
     private static IRBank MakeBank(PatchZone zone)
     {
         // Low constant amplitude so a +12 dB LFO peak doesn't clip.
         var samples = new PreDecodedFloatSampleSource(
-            new[] { Constant(0.1f, Period * 4) },
-            new[] { new SampleMetadata { SampleRate = Rate, Channels = 1, LengthFrames = Period * 4, RootKey = 60 } });
+            [Constant(0.1f, Period * 4)],
+            [new SampleMetadata { SampleRate = Rate, Channels = 1, LengthFrames = Period * 4, RootKey = 60 }]);
         return new IRBank
         {
-            Patches = new[] { new Patch { Bank = 0, Program = 0, Zones = new[] { zone } } },
+            Patches = [new Patch { Bank = 0, Program = 0, Zones = [zone] }],
             Samples = samples,
         };
     }

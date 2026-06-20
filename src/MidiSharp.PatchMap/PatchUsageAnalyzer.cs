@@ -42,7 +42,7 @@ public static class PatchUsageAnalyzer
         var state = new ChannelBankState[16];
         for (var i = 0; i < 16; i++)
         {
-            state[i].DrumBank = (ushort)BankResolution.GmDrumBank;
+            state[i].DrumBank = BankResolution.GmDrumBank;
             if (i == 9) state[i].IsDrum = true;   // channel 10 = percussion (GM default)
         }
 
@@ -69,7 +69,7 @@ public static class PatchUsageAnalyzer
                     var key = (bank, (int)s.Program);
                     if (!channelsByKey.TryGetValue(key, out var chans))
                     {
-                        chans = new SortedSet<int>();
+                        chans = [];
                         channelsByKey[key] = chans;
                         order.Add(key);
                     }

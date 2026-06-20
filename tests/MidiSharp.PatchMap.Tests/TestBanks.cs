@@ -15,11 +15,11 @@ internal static class TestBanks
         var data = new[] { new[] { sampleValue, sampleValue, sampleValue, sampleValue } };
         var meta = new[] { new SampleMetadata { SampleRate = 44100, Channels = 1, LengthFrames = 4, RootKey = 60 } };
         var zone = new PatchZone { Sample = new SampleRef { SampleId = 0 } };
-        var patch = new Patch { Bank = bank, Program = program, Name = patchName, Zones = new[] { zone } };
+        var patch = new Patch { Bank = bank, Program = program, Name = patchName, Zones = [zone] };
         return new IRBank
         {
             Name = name,
-            Patches = new[] { patch },
+            Patches = [patch],
             Samples = new PreDecodedFloatSampleSource(data, meta),
         };
     }

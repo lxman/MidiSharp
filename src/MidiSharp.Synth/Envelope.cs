@@ -201,7 +201,7 @@ public sealed class Envelope
     private int ScaleSamples(int samples, double octaves)
     {
         if (samples <= 0) return 0;
-        double scaled = samples * Math.Pow(2.0, octaves);
+        var scaled = samples * Math.Pow(2.0, octaves);
         if (scaled <= 0) return 0;
         if (scaled >= int.MaxValue) return int.MaxValue;
         return Math.Max(1, (int)scaled);
@@ -329,7 +329,7 @@ public sealed class Envelope
                 {
                     // ARIA shaped release: level = startLevel · (1−p)^k over the release window.
                     _releaseElapsed++;
-                    double p = (double)_releaseElapsed / _releaseSamples;
+                    var p = (double)_releaseElapsed / _releaseSamples;
                     _currentLevel = p >= 1.0 ? 0.0 : _releaseStartLevel * Math.Pow(1.0 - p, _releaseShapeExp);
                 }
                 else

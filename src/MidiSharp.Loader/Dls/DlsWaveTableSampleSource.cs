@@ -27,13 +27,13 @@ internal sealed class DlsWaveTableSampleSource : ISampleSource
 
     public DlsWaveTableSampleSource(IReadOnlyList<DlsWave> waves)
     {
-        int n = waves.Count;
+        var n = waves.Count;
         _samples = new float[n][];
         _metadata = new SampleMetadata[n];
-        for (int i = 0; i < n; i++)
+        for (var i = 0; i < n; i++)
         {
             var w = waves[i];
-            bool isFloat = w.FormatTag == WaveFormatTag.IeeeFloat;
+            var isFloat = w.FormatTag == WaveFormatTag.IeeeFloat;
             var (decoded, frames) = PcmDecoder.Decode(w.Data.Span, w.Channels, w.BitsPerSample, isFloat);
             _samples[i] = decoded;
 
@@ -63,11 +63,11 @@ internal sealed class DlsWaveTableSampleSource : ISampleSource
     public int ReadFrames(int sampleId, long frameOffset, Span<float> dest)
     {
         var src = _samples[sampleId];
-        int channels = _metadata[sampleId].Channels;
-        long firstFloat = frameOffset * channels;
+        var channels = _metadata[sampleId].Channels;
+        var firstFloat = frameOffset * channels;
         if (firstFloat < 0 || firstFloat >= src.Length) return 0;
 
-        int available = (int)Math.Min(dest.Length, src.Length - firstFloat);
+        var available = (int)Math.Min(dest.Length, src.Length - firstFloat);
         new ReadOnlySpan<float>(src, (int)firstFloat, available).CopyTo(dest);
         return available / channels;
     }

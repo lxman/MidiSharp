@@ -43,7 +43,7 @@ internal static class Sf2DefaultModulators
     private const ushort DestPitch = 59;         // synthetic GEN_PITCH (FluidSynth convention)
 
     public static readonly DefaultModulator[] Defaults =
-    {
+    [
         // #1: NoteOnVelocity → InitialAttenuation, 960 cB, concave-unipolar-negative.
         // The bedrock of SF2 dynamic range: lower velocity → more attenuation.
         new DefaultModulator(0x0502, DestAttenuation, 0x0000, 0, new ModulationRoute
@@ -138,8 +138,8 @@ internal static class Sf2DefaultModulators
             Amount = 12700.0,
             Transform = ModTransform.Linear,
             AmountModulator = new ModSource.RpnValue(0, 0),
-        }),
-    };
+        })
+    ];
 
     /// <summary>
     /// The 10 default routes alone — used directly by zones that declare no
@@ -150,7 +150,7 @@ internal static class Sf2DefaultModulators
     private static ModulationRoute[] BuildAll()
     {
         var routes = new ModulationRoute[Defaults.Length];
-        for (int i = 0; i < Defaults.Length; i++)
+        for (var i = 0; i < Defaults.Length; i++)
             routes[i] = Defaults[i].Route;
         return routes;
     }

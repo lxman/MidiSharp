@@ -388,7 +388,7 @@ public sealed class ChannelState
         VibratoDelayCc = 64;
         SelectedKeyswitch = -1;
         _roundRobinCounters = null;
-        for (int i = 0; i < _genericCc.Length; i++) _genericCc[i] = 0;
+        for (var i = 0; i < _genericCc.Length; i++) _genericCc[i] = 0;
         // Per GS spec, "Reset All Controllers" does NOT clear drum NRPN overrides.
         // Only a full GM/GS Reset (handled by Synthesizer.Reset) clears DrumOverrides.
     }

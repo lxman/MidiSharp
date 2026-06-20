@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using MidiSharp.Loader.Sf2.Enums;
 using MidiSharp.Loader.Sf2.Model;
 using MidiSharp.SoundBank;
-
 using IRBank = MidiSharp.SoundBank.SoundBank;
 namespace MidiSharp.Loader.Sf2;
 
@@ -43,11 +42,11 @@ internal static class Sf2BankLoader
     internal static IReadOnlyList<Patch> BuildPatches(SoundFont sf)
     {
         var instrumentsByIndex = new Dictionary<int, Instrument>(sf.Instruments.Count);
-        for (int i = 0; i < sf.Instruments.Count; i++)
+        for (var i = 0; i < sf.Instruments.Count; i++)
             instrumentsByIndex[i] = sf.Instruments[i];
 
         var sampleIdByHeader = new Dictionary<SampleHeader, int>(sf.SampleHeaders.Count);
-        for (int i = 0; i < sf.SampleHeaders.Count; i++)
+        for (var i = 0; i < sf.SampleHeaders.Count; i++)
             sampleIdByHeader[sf.SampleHeaders[i]] = i;
 
         var patches = new List<Patch>(sf.Presets.Count);
@@ -145,13 +144,13 @@ internal static class Sf2BankLoader
         var metadata = new SampleMetadata[sf.SampleHeaders.Count];
         var entries = new (long AbsoluteStart, long LengthFrames)[sf.SampleHeaders.Count];
 
-        for (int i = 0; i < sf.SampleHeaders.Count; i++)
+        for (var i = 0; i < sf.SampleHeaders.Count; i++)
         {
             var hdr = sf.SampleHeaders[i];
             long absStart = hdr.Start;
-            long length = (long)hdr.End - hdr.Start;
-            long loopStart = (long)hdr.StartLoop - hdr.Start;
-            long loopEnd = (long)hdr.EndLoop - hdr.Start;
+            var length = (long)hdr.End - hdr.Start;
+            var loopStart = (long)hdr.StartLoop - hdr.Start;
+            var loopEnd = (long)hdr.EndLoop - hdr.Start;
 
             entries[i] = (absStart, length);
 

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using MidiSharp.Loader.Sf2.Enums;
 using MidiSharp.Loader.Sf2.Model;
@@ -101,12 +102,12 @@ internal sealed class Sf2GeneratorState
         {
             // KeyRange / VelRange use intersection semantics, not SET or ADD.
             case SFGenerator.KeyRange:
-                KeyRangeLow = System.Math.Max(KeyRangeLow, a.Range.Low);
-                KeyRangeHigh = System.Math.Min(KeyRangeHigh, a.Range.High);
+                KeyRangeLow = Math.Max(KeyRangeLow, a.Range.Low);
+                KeyRangeHigh = Math.Min(KeyRangeHigh, a.Range.High);
                 break;
             case SFGenerator.VelRange:
-                VelRangeLow = System.Math.Max(VelRangeLow, a.Range.Low);
-                VelRangeHigh = System.Math.Min(VelRangeHigh, a.Range.High);
+                VelRangeLow = Math.Max(VelRangeLow, a.Range.Low);
+                VelRangeHigh = Math.Min(VelRangeHigh, a.Range.High);
                 break;
 
             case SFGenerator.StartAddrsOffset:           AddOrSet(ref StartAddrsOffset, a.Signed, isPresetLevel); break;
@@ -176,7 +177,7 @@ internal sealed class Sf2GeneratorState
 
     private static void AddOrSet(ref short field, int delta, bool add)
     {
-        int v = add ? field + delta : delta;
+        var v = add ? field + delta : delta;
         if (v > short.MaxValue) v = short.MaxValue;
         else if (v < short.MinValue) v = short.MinValue;
         field = (short)v;

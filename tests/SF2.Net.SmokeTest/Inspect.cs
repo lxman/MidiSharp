@@ -39,7 +39,7 @@ internal static class Inspect
                     if ((subSize & 1) != 0) subPos++;
                     if (subTag.Length != 4 || !subTag.All(ch => ch is >= ' ' and < (char)127))
                     {
-                        Console.WriteLine($"        *** non-ascii tag, stopping inner walk ***");
+                        Console.WriteLine("        *** non-ascii tag, stopping inner walk ***");
                         break;
                     }
                 }

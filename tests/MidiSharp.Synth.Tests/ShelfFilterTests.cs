@@ -1,6 +1,5 @@
 using System;
 using MidiSharp.SoundBank;
-using MidiSharp.Synth;
 using Xunit;
 
 namespace MidiSharp.Synth.Tests;
@@ -65,10 +64,10 @@ public sealed class ShelfFilterTests
     {
         const int n = Rate;                  // 1 s — long enough for steady state
         double inSumSq = 0, outSumSq = 0;
-        for (int i = 0; i < n; i++)
+        for (var i = 0; i < n; i++)
         {
-            double x = Math.Sin(2.0 * Math.PI * freq * i / Rate);
-            double y = f.Process(x);
+            var x = Math.Sin(2.0 * Math.PI * freq * i / Rate);
+            var y = f.Process(x);
             if (i >= Rate / 2)               // measure the second half (skip the warm-up transient)
             {
                 inSumSq += x * x;

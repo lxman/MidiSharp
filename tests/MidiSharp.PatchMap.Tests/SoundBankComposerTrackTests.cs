@@ -1,6 +1,6 @@
 using System.Collections.Generic;
-using IRBank = MidiSharp.SoundBank.SoundBank;
 using Xunit;
+using IRBank = MidiSharp.SoundBank.SoundBank;
 
 namespace MidiSharp.PatchMap.Tests;
 

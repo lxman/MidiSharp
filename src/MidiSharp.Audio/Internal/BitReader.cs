@@ -20,13 +20,13 @@ internal sealed class BitReader(byte[] data, long startByte)
         uint result = 0;
         while (n > 0)
         {
-            int byteIndex = (int)(_bitPos >> 3);
-            int bitOffset = (int)(_bitPos & 7);
-            int bitsLeft = 8 - bitOffset;
-            int take = Math.Min(n, bitsLeft);
-            int shift = bitsLeft - take;
-            uint mask = (uint)((1 << take) - 1);
-            uint bits = (uint)((data[byteIndex] >> shift) & mask);
+            var byteIndex = (int)(_bitPos >> 3);
+            var bitOffset = (int)(_bitPos & 7);
+            var bitsLeft = 8 - bitOffset;
+            var take = Math.Min(n, bitsLeft);
+            var shift = bitsLeft - take;
+            var mask = (uint)((1 << take) - 1);
+            var bits = (uint)((data[byteIndex] >> shift) & mask);
             result = (result << take) | bits;
             _bitPos += take;
             n -= take;
@@ -38,7 +38,7 @@ internal sealed class BitReader(byte[] data, long startByte)
     public int ReadBitsSigned(int n)
     {
         if (n == 0) return 0;
-        uint v = ReadBits(n);
+        var v = ReadBits(n);
         if (n < 32 && (v & (1u << (n - 1))) != 0)
             return (int)(v - (1u << n));
         return (int)v;
@@ -47,13 +47,13 @@ internal sealed class BitReader(byte[] data, long startByte)
     /// <summary>Count zero bits up to and consuming the terminating 1 bit (FLAC Rice quotient).</summary>
     public int ReadUnary()
     {
-        int count = 0;
+        var count = 0;
         while (true)
         {
-            int byteIndex = (int)(_bitPos >> 3);
-            int bitOffset = (int)(_bitPos & 7);
+            var byteIndex = (int)(_bitPos >> 3);
+            var bitOffset = (int)(_bitPos & 7);
             // Scan the rest of the current byte for a set bit.
-            int b = data[byteIndex] << bitOffset & 0xFF;
+            var b = data[byteIndex] << bitOffset & 0xFF;
             if (b == 0)
             {
                 count += 8 - bitOffset;
@@ -61,7 +61,7 @@ internal sealed class BitReader(byte[] data, long startByte)
                 continue;
             }
             // Leading zeros within the remaining bits of this byte.
-            int lead = 0;
+            var lead = 0;
             while ((b & 0x80) == 0) { b <<= 1; lead++; }
             count += lead;
             _bitPos += lead + 1;  // consume the zeros and the terminating 1

@@ -1,7 +1,7 @@
-﻿using MidiSharp.Audio.Vorbis.Contracts;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using MidiSharp.Audio.Vorbis.Contracts;
 
 namespace MidiSharp.Audio.Vorbis
 {
@@ -39,7 +39,7 @@ namespace MidiSharp.Audio.Vorbis
 
             _ampDiv = (1 << _ampBits) - 1;
 
-            for (int i = 0; i < _books.Length; i++)
+            for (var i = 0; i < _books.Length; i++)
             {
                 var num = (int)packet.ReadBits(8);
                 if (num < 0 || num >= codebooks.Length) throw new InvalidDataException();
@@ -70,7 +70,7 @@ namespace MidiSharp.Audio.Vorbis
 
             var map = new int[n + 1];
 
-            for (int i = 0; i < n - 1; i++)
+            for (var i = 0; i < n - 1; i++)
             {
                 map[i] = Math.Min(_bark_map_size - 1, (int)Math.Floor(toBARK((_rate / 2f) / n * i) * scale));
             }
@@ -88,7 +88,7 @@ namespace MidiSharp.Audio.Vorbis
             var wdel = (float)(Math.PI / _bark_map_size);
 
             var map = new float[n];
-            for (int i = 0; i < n; i++)
+            for (var i = 0; i < n; i++)
             {
                 map[i] = 2f * (float)Math.Cos(wdel * i);
             }
@@ -120,7 +120,7 @@ namespace MidiSharp.Audio.Vorbis
                 var book = _books[bookNum];
 
                 // first, the book decode...
-                for (int i = 0; i < _order;)
+                for (var i = 0; i < _order;)
                 {
                     var entry = book.DecodeScalar(packet);
                     if (entry == -1)
@@ -129,7 +129,7 @@ namespace MidiSharp.Audio.Vorbis
                         data.Amp = 0;
                         return data;
                     }
-                    for (int j = 0; i < _order && j < book.Dimensions; j++, i++)
+                    for (var j = 0; i < _order && j < book.Dimensions; j++, i++)
                     {
                         data.Coeff[i] = book[entry, j];
                     }
@@ -137,9 +137,9 @@ namespace MidiSharp.Audio.Vorbis
 
                 // then, the "averaging"
                 var last = 0f;
-                for (int j = 0; j < _order;)
+                for (var j = 0; j < _order;)
                 {
-                    for (int k = 0; j < _order && k < book.Dimensions; j++, k++)
+                    for (var k = 0; j < _order && k < book.Dimensions; j++, k++)
                     {
                         data.Coeff[j] += last;
                     }
@@ -161,7 +161,7 @@ namespace MidiSharp.Audio.Vorbis
                 var barkMap = _barkMaps[blockSize];
                 var wMap = _wMap[blockSize];
 
-                int i = 0;
+                var i = 0;
                 for (i = 0; i < _order; i++)
                 {
                     data.Coeff[i] = 2f * (float)Math.Cos(data.Coeff[i]);

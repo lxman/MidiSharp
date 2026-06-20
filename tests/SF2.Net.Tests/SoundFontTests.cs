@@ -82,7 +82,7 @@ public class SoundFontTests
     public void Banks_ReturnsDistinctSortedBanks()
     {
         var sf = SoundFont.Load(SyntheticSoundFont.Build());
-        Assert.Equal(new[] { 0 }, sf.Banks);
+        Assert.Equal([0], sf.Banks);
     }
 
     [Fact]

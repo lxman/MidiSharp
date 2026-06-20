@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text;
-using MidiSharp.Loader;
+using System.Threading;
 using MidiSharp.Loader.Sfz;
 using MidiSharp.SoundBank;
 using Xunit;
@@ -36,14 +36,14 @@ public sealed class SfzLoaderTests : IDisposable
 
     private string WriteSfz(string body)
     {
-        string path = Path.Combine(_dir, "instrument.sfz");
+        var path = Path.Combine(_dir, "instrument.sfz");
         File.WriteAllText(path, body, Encoding.UTF8);
         return path;
     }
 
     private string WriteNamed(string name, string body)
     {
-        string path = Path.Combine(_dir, name);
+        var path = Path.Combine(_dir, name);
         File.WriteAllText(path, body, Encoding.UTF8);
         return path;
     }
@@ -51,14 +51,14 @@ public sealed class SfzLoaderTests : IDisposable
     /// <summary>Writes a minimal 16-bit mono PCM WAV (a quiet ramp); optional smpl loop.</summary>
     private void WriteWav(string relPath, int frames = 256, int sampleRate = 44100, (int start, int end)? loop = null)
     {
-        string full = Path.Combine(_dir, relPath);
+        var full = Path.Combine(_dir, relPath);
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         using var fs = File.Create(full);
         using var w = new BinaryWriter(fs);
 
-        int dataBytes = frames * 2;
-        bool hasLoop = loop.HasValue;
-        int smplBytes = hasLoop ? 36 + 24 : 0;
+        var dataBytes = frames * 2;
+        var hasLoop = loop.HasValue;
+        var smplBytes = hasLoop ? 36 + 24 : 0;
 
         w.Write(Encoding.ASCII.GetBytes("RIFF"));
         w.Write(4 + 8 + 16 + (hasLoop ? 8 + smplBytes : 0) + 8 + dataBytes);
@@ -77,7 +77,7 @@ public sealed class SfzLoaderTests : IDisposable
         {
             w.Write(Encoding.ASCII.GetBytes("smpl"));
             w.Write(smplBytes);
-            for (int i = 0; i < 7; i++) w.Write(0);  // manuf..smpteOffset
+            for (var i = 0; i < 7; i++) w.Write(0);  // manuf..smpteOffset
             w.Write(1);                               // numLoops
             w.Write(0);                               // samplerData
             w.Write(0);                               // cuePointId
@@ -90,7 +90,7 @@ public sealed class SfzLoaderTests : IDisposable
 
         w.Write(Encoding.ASCII.GetBytes("data"));
         w.Write(dataBytes);
-        for (int i = 0; i < frames; i++)
+        for (var i = 0; i < frames; i++)
             w.Write((short)(i % 64 * 32));  // tiny ramp, well below clipping
     }
 
@@ -117,17 +117,17 @@ public sealed class SfzLoaderTests : IDisposable
 
         // Lazy: the first read kicks a background decode and returns silence (0); poll until it lands.
         var buf = new float[256];
-        int n = 0;
+        var n = 0;
         var deadline = DateTime.UtcNow.AddSeconds(5);
         while (n == 0 && DateTime.UtcNow < deadline)
         {
             n = bank.Samples.ReadFrames(0, 0, buf);
-            if (n == 0) System.Threading.Thread.Sleep(5);
+            if (n == 0) Thread.Sleep(5);
         }
 
         Assert.True(n > 0, "background decode never produced data");
         // WriteWav lays down a known ramp: sample i = (i % 64 * 32) as int16, normalised by 1/32768.
-        for (int i = 0; i < n; i++)
+        for (var i = 0; i < n; i++)
             Assert.Equal((short)(i % 64 * 32) / 32768.0, buf[i], 5);
     }
 
@@ -147,10 +147,10 @@ public sealed class SfzLoaderTests : IDisposable
         using var bank = SoundBankLoader.Load(path, new SoundBankLoadOptions { BlockingSampleDecode = true });
 
         var buf = new float[256];
-        int n = bank.Samples.ReadFrames(0, 0, buf);   // single call, no polling
+        var n = bank.Samples.ReadFrames(0, 0, buf);   // single call, no polling
 
         Assert.True(n > 0, "blocking decode should return data on the first read");
-        for (int i = 0; i < n; i++)
+        for (var i = 0; i < n; i++)
             Assert.Equal((short)(i % 64 * 32) / 32768.0, buf[i], 5);
     }
 
@@ -239,8 +239,8 @@ public sealed class SfzLoaderTests : IDisposable
         Assert.Equal(0.5, lfo.FadeSeconds, 3);
         Assert.Equal(1, lfo.Stages[0].Wave);   // sine
         Assert.Equal(2, lfo.Targets.Length);
-        Assert.Contains(lfo.Targets, t => t.Destination == MidiSharp.SoundBank.LfoDestination.Pitch && t.Depth == 50);
-        Assert.Contains(lfo.Targets, t => t.Destination == MidiSharp.SoundBank.LfoDestination.Volume && t.Depth == 3);
+        Assert.Contains(lfo.Targets, t => t.Destination == LfoDestination.Pitch && t.Depth == 50);
+        Assert.Contains(lfo.Targets, t => t.Destination == LfoDestination.Volume && t.Depth == 3);
     }
 
     [Fact]
@@ -255,7 +255,7 @@ public sealed class SfzLoaderTests : IDisposable
         Assert.Equal(117, Assert.Single(lfo.FreqCc!).Cc);
         Assert.Equal(8.0, lfo.FreqCc![0].Amount, 3);
         var pitch = Assert.Single(lfo.Targets);   // created from the _oncc alone (no base lfo01_pitch)
-        Assert.Equal(MidiSharp.SoundBank.LfoDestination.Pitch, pitch.Destination);
+        Assert.Equal(LfoDestination.Pitch, pitch.Destination);
         Assert.Equal(0.0, pitch.Depth, 3);
         Assert.Equal(50.0, Assert.Single(pitch.DepthCc!).Amount, 3);
     }
@@ -293,7 +293,7 @@ public sealed class SfzLoaderTests : IDisposable
         Assert.Equal(0.0, band.GainDb, 3);
         var lfo = Assert.Single(z.Lfos!);
         var eqT = Assert.Single(lfo.Targets);
-        Assert.Equal(MidiSharp.SoundBank.LfoDestination.EqGain, eqT.Destination);
+        Assert.Equal(LfoDestination.EqGain, eqT.Destination);
         Assert.Equal(2, eqT.EqBand);
         Assert.Equal(6.0, Assert.Single(eqT.DepthCc!).Amount, 3);
     }
@@ -324,7 +324,7 @@ public sealed class SfzLoaderTests : IDisposable
         Assert.True(ve.Dynamic);
         Assert.Equal(0.1, ve.AttackSeconds, 3);   // base only — not baked (would be ~1.1 if baked at cc1=64)
         var mod = Assert.Single(ve.CcMods!);
-        Assert.Equal(MidiSharp.SoundBank.EnvStage.Attack, mod.Stage);
+        Assert.Equal(EnvStage.Attack, mod.Stage);
         Assert.Equal(1, mod.Cc);
         Assert.Equal(2.0, mod.Amount, 3);
     }
@@ -417,7 +417,7 @@ public sealed class SfzLoaderTests : IDisposable
             <region> sample=a.wav key=60 tune_oncc34=1200 tune_curvecc34=16
             """)).FindPatch(0, 0)!.Zones[0];
         // The tune route carries the resolved custom curve (the bend route has none).
-        var route = z.Routes.Single(rt => rt.Dest == MidiSharp.SoundBank.ModDestination.PitchCents && rt.CurveTable != null);
+        var route = z.Routes.Single(rt => rt.Dest == ModDestination.PitchCents && rt.CurveTable != null);
         Assert.Equal(0.0, route.CurveTable![0], 3);    // v000
         Assert.True(route.CurveTable[64] > 0.9);       // v064 peak
         Assert.Equal(0.0, route.CurveTable[127], 3);   // v127
@@ -435,7 +435,7 @@ public sealed class SfzLoaderTests : IDisposable
         Assert.Equal(31, Assert.Single(z.WidthCc!).Cc);
         Assert.Equal(100.0, z.WidthCc![0].Amount, 1);
         // tune_oncc34 is a CC → PitchCents route with the given cents amount.
-        Assert.Contains(z.Routes, rt => rt.Dest == MidiSharp.SoundBank.ModDestination.PitchCents
+        Assert.Contains(z.Routes, rt => rt.Dest == ModDestination.PitchCents
                                         && Math.Abs(rt.Amount - (-2400)) < 1);
     }
 
@@ -453,7 +453,7 @@ public sealed class SfzLoaderTests : IDisposable
         Assert.Equal(-1.0, eg.Stages[0].Level, 3);
         Assert.Equal(1, eg.SustainStage);
         var t = Assert.Single(eg.Targets);
-        Assert.Equal(MidiSharp.SoundBank.LfoDestination.Pitch, t.Destination);
+        Assert.Equal(LfoDestination.Pitch, t.Destination);
         Assert.Equal(140, Assert.Single(t.DepthCc!).Cc);
     }
 
@@ -504,9 +504,9 @@ public sealed class SfzLoaderTests : IDisposable
         var z = SoundBankLoader.Load(WriteSfz(
             "<region> sample=a.wav key=60 fil_type=lpf_2p cutoff=2000 fil2_type=hpf_1p cutoff2=300 cutoff2_cc1=1200"))
             .FindPatch(0, 0)!.Zones[0];
-        Assert.Equal(MidiSharp.SoundBank.FilterType.LowPass, z.Filter!.Type);
+        Assert.Equal(FilterType.LowPass, z.Filter!.Type);
         Assert.NotNull(z.Filter2);
-        Assert.Equal(MidiSharp.SoundBank.FilterType.HighPass, z.Filter2!.Type);
+        Assert.Equal(FilterType.HighPass, z.Filter2!.Type);
         Assert.Equal(300.0, z.Filter2.CutoffHz, 1);
         Assert.Equal(1, Assert.Single(z.Filter2CutoffCc!).Cc);
         Assert.Equal(1200.0, z.Filter2CutoffCc![0].Amount, 1);
@@ -687,15 +687,15 @@ public sealed class SfzLoaderTests : IDisposable
         Assert.Equal(1, bank.Samples.Count);   // *sine registers a placeholder instead of being dropped
 
         var buf = new float[64];
-        int n = 0;
+        var n = 0;
         var deadline = DateTime.UtcNow.AddSeconds(3);
         while (n == 0 && DateTime.UtcNow < deadline)
         {
             n = bank.Samples.ReadFrames(0, 0, buf);
-            if (n == 0) System.Threading.Thread.Sleep(5);
+            if (n == 0) Thread.Sleep(5);
         }
         Assert.True(n > 0);
-        for (int i = 0; i < n; i++) Assert.Equal(0f, buf[i]);   // silent placeholder
+        for (var i = 0; i < n; i++) Assert.Equal(0f, buf[i]);   // silent placeholder
     }
 
     [Fact]
@@ -976,7 +976,7 @@ public sealed class SfzLoaderTests : IDisposable
         var melodic = WriteNamed("melodic.sfz", "<region> sample=piano.wav");
         var drums = WriteNamed("drums.sfz", "<region> sample=kick.wav key=36");
 
-        using var bank = SoundBankLoader.LoadSfz(new[] { (melodic, 0), (drums, 128) });
+        using var bank = SoundBankLoader.LoadSfz([(melodic, 0), (drums, 128)]);
 
         // Melodic on bank 0, drum kit on bank 128 (where the synth routes channel 10).
         Assert.NotNull(bank.FindPatch(0, 0));
@@ -1069,7 +1069,7 @@ public sealed class SfzLoaderTests : IDisposable
     [Fact]
     public void Real_clavecin_loads_with_twelve_multisamples()
     {
-        string clavecin = Path.Combine(
+        var clavecin = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             "soundfonts", "sfz", "Clavecin", "Clavecin.sfz");
         if (!File.Exists(clavecin)) return;  // asset not present — skip
@@ -1093,7 +1093,7 @@ public sealed class SfzLoaderTests : IDisposable
     [Fact]
     public void Real_discord_gm_loads_flac_instruments_per_program()
     {
-        string melodic = Path.Combine(
+        var melodic = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             "soundfonts", "sfz", "Discord-SFZ-GM-Bank", "Discord GM", "Discord GM Bank - Melodic.sfz");
         if (!File.Exists(melodic)) return;  // asset not present — skip

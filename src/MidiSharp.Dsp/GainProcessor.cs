@@ -16,8 +16,8 @@ public sealed class GainProcessor : IAudioProcessor
     public void Process(Span<float> interleavedStereo)
     {
         if (GainDb == 0.0) return;
-        float g = (float)Math.Pow(10.0, GainDb / 20.0);
-        for (int i = 0; i < interleavedStereo.Length; i++)
+        var g = (float)Math.Pow(10.0, GainDb / 20.0);
+        for (var i = 0; i < interleavedStereo.Length; i++)
             interleavedStereo[i] *= g;
     }
 

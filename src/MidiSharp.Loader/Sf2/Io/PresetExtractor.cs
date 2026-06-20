@@ -297,7 +297,7 @@ internal sealed class PresetExtractor(SoundFont sf, SdtaChunkReader sdta)
         var sdta1 = WrapList("sdta", [("smpl", smplBytes)]);
 
         // Build pdta LIST.
-        var pdtaParts = new (string, byte[])[]
+        var pdtaParts = new[]
         {
             ("phdr", PadEven(phdr.ToArray())),
             ("pbag", PadEven(pbag.ToArray())),
@@ -313,7 +313,7 @@ internal sealed class PresetExtractor(SoundFont sf, SdtaChunkReader sdta)
 
         // Build INFO LIST.
         var infoBody = InfoAssembler.Build(sf.Info, overrideBankName: preset.Name);
-        var info = WrapList("INFO", [((string)null!, infoBody)], infoBodyRaw: true);
+        var info = WrapList("INFO", [(null!, infoBody)], infoBodyRaw: true);
 
         // Final RIFF/sfbk.
         return BuildRiffSfbk(info, sdta1, pdta);

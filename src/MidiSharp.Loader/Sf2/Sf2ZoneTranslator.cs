@@ -56,14 +56,14 @@ internal static class Sf2ZoneTranslator
         {
             SampleId = sampleId,
             LoopMode = loopMode,
-            OverridingRootKey = state.OverridingRootKey >= 0 ? state.OverridingRootKey : (int?)null,
+            OverridingRootKey = state.OverridingRootKey >= 0 ? state.OverridingRootKey : null,
             FineTuneCents = 0,                          // folded into PitchSettings; sample-level is on metadata
             CoarseTuneSemitones = 0,
             ScaleTuningCentsPerKey = state.ScaleTuning,
-            StartOffset = state.StartAddrsOffset != 0 ? state.StartAddrsOffset : (long?)null,
-            EndOffset = state.EndAddrsOffset != 0 ? state.EndAddrsOffset : (long?)null,
-            LoopStartOffset = state.StartloopAddrsOffset != 0 ? state.StartloopAddrsOffset : (long?)null,
-            LoopEndOffset = state.EndloopAddrsOffset != 0 ? state.EndloopAddrsOffset : (long?)null,
+            StartOffset = state.StartAddrsOffset != 0 ? state.StartAddrsOffset : null,
+            EndOffset = state.EndAddrsOffset != 0 ? state.EndAddrsOffset : null,
+            LoopStartOffset = state.StartloopAddrsOffset != 0 ? state.StartloopAddrsOffset : null,
+            LoopEndOffset = state.EndloopAddrsOffset != 0 ? state.EndloopAddrsOffset : null,
         };
     }
 

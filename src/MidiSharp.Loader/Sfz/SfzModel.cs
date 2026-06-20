@@ -69,7 +69,7 @@ internal sealed class SfzRegion(Dictionary<string, string> opcodes)
     public int? GetKey(string key, SfzControl control)
     {
         var v = Get(key);
-        if (v == null || !SfzNoteNames.TryParse(v, out int midi)) return null;
+        if (v == null || !SfzNoteNames.TryParse(v, out var midi)) return null;
         return Math.Clamp(midi + control.KeyOffset, 0, 127);
     }
 
@@ -85,7 +85,7 @@ internal sealed class SfzRegion(Dictionary<string, string> opcodes)
             if (kv.Key.Length > prefix.Length &&
                 kv.Key.StartsWith(prefix, StringComparison.Ordinal) &&
                 int.TryParse(kv.Key.Substring(prefix.Length), NumberStyles.Integer,
-                             CultureInfo.InvariantCulture, out int cc) &&
+                             CultureInfo.InvariantCulture, out var cc) &&
                 cc is >= 0 and <= 127)
             {
                 yield return (cc, kv.Value);
@@ -103,16 +103,16 @@ internal sealed class SfzRegion(Dictionary<string, string> opcodes)
     {
         foreach (var kv in opcodes)
         {
-            string key = kv.Key;
-            int marker = key.IndexOf("_oncc", StringComparison.Ordinal);
-            int markerLen = 5;
+            var key = kv.Key;
+            var marker = key.IndexOf("_oncc", StringComparison.Ordinal);
+            var markerLen = 5;
             if (marker < 0) { marker = key.IndexOf("_cc", StringComparison.Ordinal); markerLen = 3; }
             if (marker <= 0) continue;
 
-            string ccPart = key.Substring(marker + markerLen);
-            if (!int.TryParse(ccPart, NumberStyles.Integer, CultureInfo.InvariantCulture, out int cc))
+            var ccPart = key.Substring(marker + markerLen);
+            if (!int.TryParse(ccPart, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cc))
                 continue;  // not a numeric-CC suffix (e.g. *_curvecc, *_smoothcc handled elsewhere)
-            if (!double.TryParse(kv.Value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double val))
+            if (!double.TryParse(kv.Value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var val))
                 continue;
 
             yield return (key.Substring(0, marker), cc, val);
@@ -124,7 +124,7 @@ internal sealed class SfzRegion(Dictionary<string, string> opcodes)
 internal sealed class SfzInstrument
 {
     public SfzControl Control { get; init; } = new();
-    public IReadOnlyList<SfzRegion> Regions { get; init; } = Array.Empty<SfzRegion>();
+    public IReadOnlyList<SfzRegion> Regions { get; init; } = [];
 
     /// <summary>
     /// Non-cascading headers the parser skipped (e.g. <c>curve</c>, <c>effect</c>,

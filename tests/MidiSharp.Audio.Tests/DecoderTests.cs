@@ -42,7 +42,7 @@ public sealed class DecoderTests : IDisposable
     public void Aiff_matches_wav_sample_exact()
     {
         if (!CodecFixtures.FfmpegAvailable) return;
-        string aiff = Path.Combine(_dir, "out.aiff");
+        var aiff = Path.Combine(_dir, "out.aiff");
         Assert.True(CodecFixtures.Transcode(_wav, aiff));
 
         var d = AudioCodecs.Decode(aiff);
@@ -56,7 +56,7 @@ public sealed class DecoderTests : IDisposable
     public void AiffC_sowt_little_endian_matches_wav_sample_exact()
     {
         if (!CodecFixtures.FfmpegAvailable) return;
-        string aifc = Path.Combine(_dir, "out_sowt.aifc");
+        var aifc = Path.Combine(_dir, "out_sowt.aifc");
         // ffmpeg's aiff muxer writes AIFF-C sowt when the codec is pcm_s16le.
         if (!CodecFixtures.Transcode(_wav, aifc, "-c:a pcm_s16le -f aiff")) return;
 
@@ -68,7 +68,7 @@ public sealed class DecoderTests : IDisposable
     public void Flac_matches_wav_sample_exact()
     {
         if (!CodecFixtures.FfmpegAvailable) return;
-        string flac = Path.Combine(_dir, "out.flac");
+        var flac = Path.Combine(_dir, "out.flac");
         Assert.True(CodecFixtures.Transcode(_wav, flac));
 
         var d = AudioCodecs.Decode(flac);
@@ -82,7 +82,7 @@ public sealed class DecoderTests : IDisposable
     public void Vorbis_decodes_to_correct_shape_and_low_error()
     {
         if (!CodecFixtures.FfmpegAvailable) return;
-        string ogg = Path.Combine(_dir, "out.ogg");
+        var ogg = Path.Combine(_dir, "out.ogg");
         if (!CodecFixtures.Transcode(_wav, ogg, "-c:a libvorbis -q:a 6")) return;
 
         var d = AudioCodecs.Decode(ogg);
@@ -91,7 +91,7 @@ public sealed class DecoderTests : IDisposable
         // Vorbis is lossy + adds encoder delay, so don't compare sample-exact —
         // just confirm it produced a comparable amount of non-silent audio.
         Assert.True(d.FrameCount > _reference.FrameCount * 0.8, $"frames={d.FrameCount}");
-        double rms = Rms(d.Samples);
+        var rms = Rms(d.Samples);
         Assert.True(rms > 0.05 && rms < 0.5, $"rms={rms}");
     }
 
@@ -99,15 +99,15 @@ public sealed class DecoderTests : IDisposable
     public void VorbisDecodePcmInto_matches_DecodePcm()
     {
         if (!CodecFixtures.FfmpegAvailable) return;
-        string ogg = Path.Combine(_dir, "into.ogg");
+        var ogg = Path.Combine(_dir, "into.ogg");
         if (!CodecFixtures.Transcode(_wav, ogg, "-c:a libvorbis -q:a 6")) return;
 
         var bytes = File.ReadAllBytes(ogg);
         var reference = VorbisDecoder.DecodePcm(bytes, out _, out _, out _);
 
-        VorbisDecoder.Peek(bytes, out int ch, out long frames);
+        VorbisDecoder.Peek(bytes, out var ch, out var frames);
         var buf = new float[(int)(frames * ch)];
-        int n = VorbisDecoder.DecodePcmInto(bytes, buf, buf.Length, out _, out _);
+        var n = VorbisDecoder.DecodePcmInto(bytes, buf, buf.Length, out _, out _);
 
         Assert.Equal(reference.Length, n);
         Assert.True(buf.AsSpan(0, n).SequenceEqual(reference.AsSpan()), "DecodePcmInto differs from DecodePcm");
@@ -146,7 +146,7 @@ public sealed class DecoderTests : IDisposable
     {
         if (!CodecFixtures.FfmpegAvailable) return;
         // No extension hint → must dispatch purely on header bytes.
-        string flac = Path.Combine(_dir, "headeronly.bin");
+        var flac = Path.Combine(_dir, "headeronly.bin");
         Assert.True(CodecFixtures.Transcode(_wav, Path.Combine(_dir, "tmp.flac")));
         File.Copy(Path.Combine(_dir, "tmp.flac"), flac, overwrite: true);
 
@@ -159,7 +159,7 @@ public sealed class DecoderTests : IDisposable
     public void Real_flac_instrument_matches_ffmpeg_decode_sample_exact()
     {
         if (!CodecFixtures.FfmpegAvailable) return;
-        string flac = Path.Combine(
+        var flac = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             "soundfonts", "sfz", "Discord-SFZ-GM-Bank", "Discord GM", "Melodic", "112-Shanai", "Shn16.flac");
         if (!File.Exists(flac)) return;  // asset not present — skip
@@ -167,7 +167,7 @@ public sealed class DecoderTests : IDisposable
         // ffmpeg decodes the FLAC to a 16-bit WAV; our FLAC decode of the original
         // must match it bit-for-bit (real instrument data → exercises LPC, varied
         // Rice partitions, mid/side — not just the synthetic sine path).
-        string refWav = Path.Combine(_dir, "shanai_ref.wav");
+        var refWav = Path.Combine(_dir, "shanai_ref.wav");
         Assert.True(CodecFixtures.Transcode(flac, refWav, "-c:a pcm_s16le"));
 
         var mine = AudioCodecs.Decode(flac);
@@ -181,11 +181,11 @@ public sealed class DecoderTests : IDisposable
     public void Flac_reserved_channel_assignment_is_rejected()
     {
         if (!CodecFixtures.FfmpegAvailable) return;
-        string flac = Path.Combine(_dir, "reserved.flac");
+        var flac = Path.Combine(_dir, "reserved.flac");
         if (!CodecFixtures.Transcode(_wav, flac)) return;
         var bytes = File.ReadAllBytes(flac);
 
-        int frame = FirstFrameOffset(bytes);
+        var frame = FirstFrameOffset(bytes);
         // Sanity: a FLAC frame begins with the 0xFF F8/F9 sync; bail if we mis-located it.
         Assert.True(frame > 0 && frame + 3 < bytes.Length && bytes[frame] == 0xFF && (bytes[frame + 1] & 0xFC) == 0xF8,
             "could not locate the first FLAC frame header");
@@ -204,11 +204,11 @@ public sealed class DecoderTests : IDisposable
     {
         if (b.Length < 4 || b[0] != (byte)'f' || b[1] != (byte)'L' || b[2] != (byte)'a' || b[3] != (byte)'C')
             return -1;
-        int p = 4;
+        var p = 4;
         while (p + 4 <= b.Length)
         {
-            bool last = (b[p] & 0x80) != 0;
-            int len = (b[p + 1] << 16) | (b[p + 2] << 8) | b[p + 3];
+            var last = (b[p] & 0x80) != 0;
+            var len = (b[p + 1] << 16) | (b[p + 2] << 8) | b[p + 3];
             p += 4 + len;
             if (last) break;
         }
@@ -233,7 +233,7 @@ public sealed class DecoderTests : IDisposable
     private static double Rms(float[] s)
     {
         double sum = 0;
-        foreach (float v in s) sum += (double)v * v;
+        foreach (var v in s) sum += (double)v * v;
         return Math.Sqrt(sum / Math.Max(1, s.Length));
     }
 }

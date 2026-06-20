@@ -1,8 +1,8 @@
-﻿using MidiSharp.Audio.Vorbis.Contracts;
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using MidiSharp.Audio.Vorbis.Contracts;
 
 namespace MidiSharp.Audio.Vorbis
 {
@@ -76,7 +76,7 @@ namespace MidiSharp.Audio.Vorbis
         private void InitTree(IPacket packet, IHuffman huffman)
         {
             bool sparse;
-            int total = 0;
+            var total = 0;
 
             int maxLen;
             if (packet.ReadBit())
@@ -172,7 +172,7 @@ namespace MidiSharp.Audio.Vorbis
         bool ComputeCodewords(bool sparse, int[] codewords, int[] codewordLengths, int[] len, int n, int[] values)
         {
             int i, k, m = 0;
-            uint[] available = new uint[32];
+            var available = new uint[32];
 
             for (k = 0; k < n; ++k) if (len[k] > 0) break;
             if (k == n) return true;
@@ -252,7 +252,7 @@ namespace MidiSharp.Audio.Vorbis
                     for (var i = 0; i < Dimensions; i++)
                     {
                         var moff = (idx / idxDiv) % lookupValueCount;
-                        var value = (float)multiplicands[moff] * deltaValue + minValue + last;
+                        var value = multiplicands[moff] * deltaValue + minValue + last;
                         lookupTable[idx * Dimensions + i] = (float)value;
 
                         if (sequence_p) last = value;

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Text.Json;
 using MidiSharp.Loader;
 using MidiSharp.PatchMap;
@@ -14,20 +13,20 @@ using IRBank = MidiSharp.SoundBank.SoundBank;
 // fields the CLI player acts on are modelled — System.Text.Json ignores any extra fields the server
 // adds later (mixer/EQ/automation), so this stays forward-compatible without code changes.
 
-internal sealed record SetupPatchOverride(int logicalBank, int logicalProgram, string sourcePath, int sourceBank, int sourceProgram, double gainDb = 0);
+internal sealed record SetupPatchOverride(int LogicalBank, int LogicalProgram, string SourcePath, int SourceBank, int SourceProgram, double GainDb = 0);
 
-internal sealed record SetupTrackOverride(int trackIndex, string? trackName, string sourcePath, int sourceBank, int sourceProgram, double gainDb = 0);
+internal sealed record SetupTrackOverride(int TrackIndex, string? TrackName, string SourcePath, int SourceBank, int SourceProgram, double GainDb = 0);
 
 internal sealed record SetupFile(
-    string name,
-    string midiPath,
-    string? midiName,
-    string soundfontPath,
-    string? soundfontName,
-    SetupPatchOverride[]? overrides,
-    SetupTrackOverride[]? trackOverrides,
-    string? savedAt = null,
-    int version = 1);
+    string Name,
+    string MidiPath,
+    string? MidiName,
+    string SoundfontPath,
+    string? SoundfontName,
+    SetupPatchOverride[]? Overrides,
+    SetupTrackOverride[]? TrackOverrides,
+    string? SavedAt = null,
+    int Version = 1);
 
 internal static class SetupSupport
 {
@@ -54,7 +53,7 @@ internal static class SetupSupport
             foreach (var file in Directory.EnumerateFiles(root, "*.json"))
             {
                 var s = Read(file, out _);
-                if (s != null && string.Equals(s.name, spec, StringComparison.OrdinalIgnoreCase))
+                if (s != null && string.Equals(s.Name, spec, StringComparison.OrdinalIgnoreCase))
                 {
                     error = null;
                     return s;
@@ -100,13 +99,13 @@ internal static class SetupSupport
             return src;
         }
 
-        foreach (var o in setup.overrides ?? [])
-            session.SetOverride(o.logicalBank, o.logicalProgram,
-                new PatchRef(Source(o.sourcePath), o.sourceBank, o.sourceProgram));
+        foreach (var o in setup.Overrides ?? [])
+            session.SetOverride(o.LogicalBank, o.LogicalProgram,
+                new PatchRef(Source(o.SourcePath), o.SourceBank, o.SourceProgram));
 
-        foreach (var o in setup.trackOverrides ?? [])
-            session.SetTrackOverride(o.trackIndex,
-                new PatchRef(Source(o.sourcePath), o.sourceBank, o.sourceProgram));
+        foreach (var o in setup.TrackOverrides ?? [])
+            session.SetTrackOverride(o.TrackIndex,
+                new PatchRef(Source(o.SourcePath), o.SourceBank, o.SourceProgram));
 
         return session;
     }

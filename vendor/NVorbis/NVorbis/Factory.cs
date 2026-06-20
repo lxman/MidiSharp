@@ -1,4 +1,5 @@
-﻿using MidiSharp.Audio.Vorbis.Contracts;
+﻿using System.IO;
+using MidiSharp.Audio.Vorbis.Contracts;
 
 namespace MidiSharp.Audio.Vorbis
 {
@@ -26,7 +27,7 @@ namespace MidiSharp.Audio.Vorbis
             {
                 case 0: return new Floor0();
                 case 1: return new Floor1();
-                default: throw new System.IO.InvalidDataException("Invalid floor type!");
+                default: throw new InvalidDataException("Invalid floor type!");
             }
         }
 
@@ -34,7 +35,7 @@ namespace MidiSharp.Audio.Vorbis
         {
             if (packet.ReadBits(16) != 0)
             {
-                throw new System.IO.InvalidDataException("Invalid mapping type!");
+                throw new InvalidDataException("Invalid mapping type!");
             }
 
             return new Mapping();
@@ -53,7 +54,7 @@ namespace MidiSharp.Audio.Vorbis
                 case 0: return new Residue0();
                 case 1: return new Residue1();
                 case 2: return new Residue2();
-                default: throw new System.IO.InvalidDataException("Invalid residue type!");
+                default: throw new InvalidDataException("Invalid residue type!");
             }
         }
     }

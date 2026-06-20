@@ -15,7 +15,7 @@ namespace MidiSharp.Loader.Sfz;
 internal static class SfzDefaultRoutes
 {
     public static readonly ModulationRoute[] Routes =
-    {
+    [
         // CC7 Channel Volume → attenuation (96 dB concave, quieter as CC falls).
         new ModulationRoute
         {
@@ -39,8 +39,8 @@ internal static class SfzDefaultRoutes
             Dest = ModDestination.PanNormalized,
             Amount = 1.0,
             Transform = ModTransform.LinearBipolar,
-        },
+        }
         // Pitch wheel is NOT here — SFZ scales it by the region's bend_up/bend_down (not the channel
         // RPN range), so SfzZoneTranslator emits a per-zone pitch-bend route instead.
-    };
+    ];
 }

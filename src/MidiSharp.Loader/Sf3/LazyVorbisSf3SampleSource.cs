@@ -33,7 +33,7 @@ internal sealed class LazyVorbisSf3SampleSource : ISampleSource
 
     private readonly object _cacheLock = new();
     private readonly Dictionary<int, CacheNode> _cache = new();
-    private readonly LinkedList<int> _lru = new();
+    private readonly LinkedList<int> _lru = [];
     private long _cachedBytes;
     private bool _disposed;
 
@@ -46,7 +46,7 @@ internal sealed class LazyVorbisSf3SampleSource : ISampleSource
 
     private sealed class CacheNode
     {
-        public float[] Data = Array.Empty<float>();
+        public float[] Data = [];
         public int Length;          // valid floats (Data may be longer when pool-rented)
         public bool Pooled;         // Data came from ArrayPool and must be returned when dropped
         public LinkedListNode<int>? LruNode;
@@ -67,7 +67,7 @@ internal sealed class LazyVorbisSf3SampleSource : ISampleSource
         _smplBytes = smplBytes;
         _metadata = new SampleMetadata[metadata.Count];
         _entries = new Entry[entries.Count];
-        for (int i = 0; i < metadata.Count; i++)
+        for (var i = 0; i < metadata.Count; i++)
         {
             _metadata[i] = metadata[i];
             var e = entries[i];
@@ -117,7 +117,7 @@ internal sealed class LazyVorbisSf3SampleSource : ISampleSource
         // dest is interleaved floats (channels per frame), so its frame capacity is dest.Length/channels.
         // Dividing here was missing: a stereo sample would copy framesAvailable*channels floats into a
         // dest sized for framesAvailable frames — overflowing it (crash) and miscounting frames.
-        int framesAvailable = (int)Math.Min(frameCount - frameOffset, dest.Length / channels);
+        var framesAvailable = (int)Math.Min(frameCount - frameOffset, dest.Length / channels);
         node.Data.AsSpan((int)(frameOffset * channels), framesAvailable * channels).CopyTo(dest);
         return framesAvailable;
     }
@@ -143,7 +143,7 @@ internal sealed class LazyVorbisSf3SampleSource : ISampleSource
     {
         while (_cachedBytes + incoming > _cacheBudgetBytes && _lru.Count > 0)
         {
-            int victim = _lru.First!.Value;
+            var victim = _lru.First!.Value;
             _lru.RemoveFirst();
             if (_cache.TryGetValue(victim, out var victimNode))
             {
@@ -157,17 +157,17 @@ internal sealed class LazyVorbisSf3SampleSource : ISampleSource
     private (float[] data, int length, bool pooled) Decode(int sampleId)
     {
         var entry = _entries[sampleId];
-        if (entry.ByteLength <= 0) return (Array.Empty<float>(), 0, false);
+        if (entry.ByteLength <= 0) return ([], 0, false);
 
         var slice = _smplBytes.Slice(entry.ByteStart, entry.ByteLength);
 
         // Known length → decode straight into a pooled buffer (the common case).
-        VorbisDecoder.Peek(slice, out int channels, out long frames);
+        VorbisDecoder.Peek(slice, out var channels, out var frames);
         if (frames > 0 && frames <= int.MaxValue / Math.Max(1, channels))
         {
-            int floats = (int)(frames * channels);
+            var floats = (int)(frames * channels);
             var buf = ArrayPool<float>.Shared.Rent(floats);
-            int read = VorbisDecoder.DecodePcmInto(slice, buf, floats, out _, out _);
+            var read = VorbisDecoder.DecodePcmInto(slice, buf, floats, out _, out _);
             return (buf, read, true);
         }
 

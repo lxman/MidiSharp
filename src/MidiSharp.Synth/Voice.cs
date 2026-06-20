@@ -128,10 +128,10 @@ public sealed class Voice
     private double _smoothedPitchRouteCents;
     private bool _pitchSmoothPrimed;
     // SFZ v2 generic LFOs (lfoN_*) — reusable runners; only the first _genericLfoCount are active.
-    private GenericLfoRunner[] _genericLfos = System.Array.Empty<GenericLfoRunner>();
+    private GenericLfoRunner[] _genericLfos = [];
     private int _genericLfoCount;
     // SFZ v2 generic flex envelopes (egN_*) — reusable runners; first _genericEgCount are active.
-    private GenericEgRunner[] _genericEgs = System.Array.Empty<GenericEgRunner>();
+    private GenericEgRunner[] _genericEgs = [];
     private int _genericEgCount;
     private double _pitchCorrectionCents;
     private double _coarseTuneSemitones;
@@ -176,7 +176,7 @@ public sealed class Voice
 
     // ── Modulation routes (from zone) ─────────────────────────────────
 
-    private IReadOnlyList<ModulationRoute> _routes = Array.Empty<ModulationRoute>();
+    private IReadOnlyList<ModulationRoute> _routes = [];
 
     // ── Voice / MIDI state ────────────────────────────────────────────
 
@@ -246,7 +246,7 @@ public sealed class Voice
         _filterRight = new LowPassFilter(sampleRate);
         _eq = new PeakingEqFilter[MaxEqBands];
         _eqRight = new PeakingEqFilter[MaxEqBands];
-        for (int i = 0; i < MaxEqBands; i++)
+        for (var i = 0; i < MaxEqBands; i++)
         {
             _eq[i] = new PeakingEqFilter(sampleRate);
             _eqRight[i] = new PeakingEqFilter(sampleRate);
@@ -269,7 +269,7 @@ public sealed class Voice
         _polyPressure = 0;
         _portamentoCents = 0;
         _portamentoStepPerSample = 0;
-        _routes = Array.Empty<ModulationRoute>();
+        _routes = [];
         _ampVelCurveFactor = 1.0;
         _cachedPitchCents = double.NaN;
         _cachedFilterCents = double.NaN;
@@ -284,7 +284,7 @@ public sealed class Voice
         _filter2Right.Reset();
         _hasFilter2 = false;
         _filter2CutoffCc = null;
-        for (int i = 0; i < MaxEqBands; i++) { _eq[i].Reset(); _eqRight[i].Reset(); }
+        for (var i = 0; i < MaxEqBands; i++) { _eq[i].Reset(); _eqRight[i].Reset(); }
         _eqBandCount = 0;
     }
 
@@ -361,11 +361,11 @@ public sealed class Voice
             if (_genericLfos.Length < zoneLfos.Length)
             {
                 var grown = new GenericLfoRunner[zoneLfos.Length];
-                System.Array.Copy(_genericLfos, grown, _genericLfos.Length);
-                for (int i = _genericLfos.Length; i < grown.Length; i++) grown[i] = new GenericLfoRunner();
+                Array.Copy(_genericLfos, grown, _genericLfos.Length);
+                for (var i = _genericLfos.Length; i < grown.Length; i++) grown[i] = new GenericLfoRunner();
                 _genericLfos = grown;
             }
-            for (int i = 0; i < zoneLfos.Length; i++) _genericLfos[i].Configure(zoneLfos[i], _sampleRate);
+            for (var i = 0; i < zoneLfos.Length; i++) _genericLfos[i].Configure(zoneLfos[i], _sampleRate);
             _genericLfoCount = zoneLfos.Length;
         }
         else
@@ -379,11 +379,11 @@ public sealed class Voice
             if (_genericEgs.Length < zoneEgs.Length)
             {
                 var grown = new GenericEgRunner[zoneEgs.Length];
-                System.Array.Copy(_genericEgs, grown, _genericEgs.Length);
-                for (int i = _genericEgs.Length; i < grown.Length; i++) grown[i] = new GenericEgRunner();
+                Array.Copy(_genericEgs, grown, _genericEgs.Length);
+                for (var i = _genericEgs.Length; i < grown.Length; i++) grown[i] = new GenericEgRunner();
                 _genericEgs = grown;
             }
-            for (int i = 0; i < zoneEgs.Length; i++) _genericEgs[i].Configure(zoneEgs[i], _sampleRate);
+            for (var i = 0; i < zoneEgs.Length; i++) _genericEgs[i].Configure(zoneEgs[i], _sampleRate);
             _genericEgCount = zoneEgs.Length;
         }
         else
@@ -394,7 +394,7 @@ public sealed class Voice
         // Sample addressing — IR fields are sample-relative frames. The metadata's
         // base length/loop points are overridable by the zone's optional offset
         // generators (SF2 StartAddrsOffset etc.).
-        long fullLength = metadata.LengthFrames;
+        var fullLength = metadata.LengthFrames;
         _sampleStart = sampleRef.StartOffset ?? 0;
         _sampleEnd = sampleRef.EndOffset ?? fullLength;
         _loopStart = sampleRef.LoopStartOffset ?? metadata.LoopStartFrames;
@@ -439,7 +439,7 @@ public sealed class Voice
         // those amounts are 0 for SF2/SF3/DLS and SFZ without them, so the values below are unchanged
         // (and bit-identical) there.
         var ve = zone.VolumeEnvelope;
-        double velNorm = velocity / 127.0;
+        var velNorm = velocity / 127.0;
 
         // SFZ ampeg_dynamic: evaluate the envelope's CC-modulated stages from the LIVE controller now,
         // at note-on. Null for everything else (SF2/DLS, non-dynamic SFZ), so all those stay
@@ -449,7 +449,7 @@ public sealed class Voice
         if (ve.CcMods is { } envMods)
             foreach (var m in envMods)
             {
-                double o = m.Amount * AriaCurve.Eval(m.Curve, channelState.GetCC(m.Cc) / 127.0);
+                var o = m.Amount * AriaCurve.Eval(m.Curve, channelState.GetCC(m.Cc) / 127.0);
                 switch (m.Stage)
                 {
                     case EnvStage.Delay:   envDelayCc += o; break;
@@ -584,11 +584,11 @@ public sealed class Voice
         // loop skips it entirely (bit-identical there).
         _eqBandCount = Math.Min(zone.EqBands.Count, MaxEqBands);
         _hasCcEq = false;
-        for (int i = 0; i < _eqBandCount; i++)
+        for (var i = 0; i < _eqBandCount; i++)
         {
             var band = zone.EqBands[i];
             // SFZ eqN_vel2gain: velocity adds to this band's gain (fixed per note).
-            double eqGain = band.GainDb + velNorm * band.VelToGainDb;
+            var eqGain = band.GainDb + velNorm * band.VelToGainDb;
             _eqBaseFreq[i] = band.FrequencyHz;
             _eqBaseBw[i] = band.BandwidthOctaves;
             _eqBaseGain[i] = eqGain;
@@ -603,25 +603,25 @@ public sealed class Voice
 
         // Mark which EQ bands a generic LFO drives (needs both EQ bands and LFO runners configured).
         _hasLfoEq = false;
-        for (int g = 0; g < _genericLfoCount; g++)
+        for (var g = 0; g < _genericLfoCount; g++)
         {
             var lfo = _genericLfos[g];
-            for (int e = 0; e < lfo.EqCount; e++)
+            for (var e = 0; e < lfo.EqCount; e++)
             {
-                int idx = EqIndexForBand(lfo.EqTargetBand(e));
+                var idx = EqIndexForBand(lfo.EqTargetBand(e));
                 if (idx >= 0) { _eqLfoDriven[idx] = true; _hasLfoEq = true; }
             }
         }
 
         // Stash routes (could be the zone-authored list or empty).
-        _routes = zone.Routes ?? Array.Empty<ModulationRoute>();
+        _routes = zone.Routes ?? [];
 
         // SFZ offset_oncc{N}: the live controller shifts the sample start (frames). The start is fixed
         // once playback begins, so it's baked here from the channel CC, alongside offset_random.
         if (zone.OffsetCc is { } offsetCc)
         {
             long add = 0;
-            for (int i = 0; i < offsetCc.Length; i++)
+            for (var i = 0; i < offsetCc.Length; i++)
                 add += (long)(channelState.GetCC(offsetCc[i].Cc) / 127.0 * offsetCc[i].Amount);
             if (add > 0)
             {
@@ -642,7 +642,7 @@ public sealed class Voice
     /// <summary>Maps an SFZ EQ band number (lfoN_eqNgain/freq target) to its active _eq[] index, or -1.</summary>
     private int EqIndexForBand(int bandNumber)
     {
-        for (int i = 0; i < _eqBandCount; i++)
+        for (var i = 0; i < _eqBandCount; i++)
             if (_eqBandNumber[i] == bandNumber) return i;
         return -1;
     }
@@ -779,7 +779,7 @@ public sealed class Voice
     {
         if (_state == VoiceState.Free) return;
 
-        double releaseSeconds = _offMode switch
+        var releaseSeconds = _offMode switch
         {
             ZoneOffMode.Fast => 0.006,
             ZoneOffMode.Time => _offTimeSeconds,
@@ -854,23 +854,23 @@ public sealed class Voice
 
         // SFZ live CC crossfades (xfin/xfout_locc): a per-block gain from each controller's current
         // value, so sweeping the CC morphs this layer in/out. Constant within the block.
-        double ccCrossfadeGain = 1.0;
+        var ccCrossfadeGain = 1.0;
         if (_ccCrossfades is { } xfades)
-            for (int x = 0; x < xfades.Length; x++)
+            for (var x = 0; x < xfades.Length; x++)
                 ccCrossfadeGain *= xfades[x].Gain[channelState.GetCC(xfades[x].Cc) & 0x7F];
 
         // SFZ v2 generic LFOs: refresh CC-modulated frequency/depths once per block (CC is constant
         // within the block) so lfoN_freq_oncc and lfoN_{target}_oncc (mod-wheel vibrato) track live.
-        for (int g = 0; g < _genericLfoCount; g++)
+        for (var g = 0; g < _genericLfoCount; g++)
             _genericLfos[g].BeginBlock(channelState);
-        for (int e = 0; e < _genericEgCount; e++)
+        for (var e = 0; e < _genericEgCount; e++)
             _genericEgs[e].BeginBlock(channelState);
 
         // SFZ pitchlfo_freq_oncc: add the live CC to the vibrato-LFO frequency this block.
         if (_vibLfoFreqCc is { } vfcc)
         {
-            double hz = _vibLfoFrequencyHz;
-            for (int i = 0; i < vfcc.Length; i++)
+            var hz = _vibLfoFrequencyHz;
+            for (var i = 0; i < vfcc.Length; i++)
                 hz += channelState.GetCC(vfcc[i].Cc) / 127.0 * vfcc[i].Amount;
             _vibratoLfo.SetFrequency(hz);
         }
@@ -879,7 +879,7 @@ public sealed class Voice
         if (_widthCc is { } widthCc)
         {
             double w = 0;
-            for (int i = 0; i < widthCc.Length; i++)
+            for (var i = 0; i < widthCc.Length; i++)
                 w += channelState.GetCC(widthCc[i].Cc) / 127.0 * widthCc[i].Amount / 100.0;
             _widthNorm = _widthBase + w;
         }
@@ -889,9 +889,9 @@ public sealed class Voice
         if (_hasFilter2 && _filter2CutoffCc is { } f2cc)
         {
             double cents = 0;
-            for (int i = 0; i < f2cc.Length; i++)
+            for (var i = 0; i < f2cc.Length; i++)
                 cents += channelState.GetCC(f2cc[i].Cc) / 127.0 * f2cc[i].Amount;
-            double c2 = _filter2BaseCutoffHz * Math.Pow(2.0, cents / 1200.0);
+            var c2 = _filter2BaseCutoffHz * Math.Pow(2.0, cents / 1200.0);
             _filter2.SetParameters(c2, _filter2ResonanceDb);
             if (_channels == 2) _filter2Right.SetParameters(c2, _filter2ResonanceDb);
         }
@@ -901,16 +901,16 @@ public sealed class Voice
         // coefficients, not filter state.
         if (_hasLfoEq || _hasCcEq)
         {
-            for (int b = 0; b < _eqBandCount; b++)
+            for (var b = 0; b < _eqBandCount; b++)
             {
                 if (!_eqLfoDriven[b] && !_eqCcDriven[b]) continue;
                 double gainDelta = 0.0, freqDelta = 0.0, bwDelta = 0.0;
                 if (_eqLfoDriven[b])
                 {
-                    for (int g = 0; g < _genericLfoCount; g++)
+                    for (var g = 0; g < _genericLfoCount; g++)
                     {
                         var lfo = _genericLfos[g];
-                        for (int e = 0; e < lfo.EqCount; e++)
+                        for (var e = 0; e < lfo.EqCount; e++)
                         {
                             if (EqIndexForBand(lfo.EqTargetBand(e)) != b) continue;
                             if (lfo.EqTargetIsFreq(e)) freqDelta += lfo.EqTargetDelta(e);
@@ -922,23 +922,23 @@ public sealed class Voice
                 {
                     var band = _eqBands[b];
                     if (band.FreqCc is { } fcc)
-                        for (int i = 0; i < fcc.Length; i++)
+                        for (var i = 0; i < fcc.Length; i++)
                             freqDelta += channelState.GetCC(fcc[i].Cc) / 127.0 * fcc[i].Amount;
                     if (band.BwCc is { } bcc)
-                        for (int i = 0; i < bcc.Length; i++)
+                        for (var i = 0; i < bcc.Length; i++)
                             bwDelta += channelState.GetCC(bcc[i].Cc) / 127.0 * bcc[i].Amount;
                     if (band.GainCc is { } gcc)
-                        for (int i = 0; i < gcc.Length; i++)
+                        for (var i = 0; i < gcc.Length; i++)
                         {
                             // eqN_gain_curvecc shapes the controller response; else it's linear cc/127.
-                            double x = channelState.GetCC(gcc[i].Cc) / 127.0;
-                            double resp = band.GainCurve is { } gc ? gc[Math.Clamp((int)(x * 127.0 + 0.5), 0, 127)] : x;
+                            var x = channelState.GetCC(gcc[i].Cc) / 127.0;
+                            var resp = band.GainCurve is { } gc ? gc[Math.Clamp((int)(x * 127.0 + 0.5), 0, 127)] : x;
                             gainDelta += resp * gcc[i].Amount;
                         }
                 }
-                double f = _eqBaseFreq[b] + freqDelta;
-                double bw = _eqBaseBw[b] + bwDelta;
-                double gain = _eqBaseGain[b] + gainDelta;
+                var f = _eqBaseFreq[b] + freqDelta;
+                var bw = _eqBaseBw[b] + bwDelta;
+                var gain = _eqBaseGain[b] + gainDelta;
                 _eq[b].SetParameters(f, bw, gain);
                 if (_channels == 2) _eqRight[b].SetParameters(f, bw, gain);
             }
@@ -947,21 +947,21 @@ public sealed class Voice
         // Effective per-block values: zone base + route contribution.
         // The per-instrument mixer pan is an additive offset (0 = untouched), matching the "trim, not
         // override" rule — it rides on top of the channel/zone pan rather than replacing it.
-        double effectiveAttenuationDb = _attenuationDb + contrib.AttenuationDb + extraAttenuationDb;
-        double effectivePan = Math.Clamp(_panNormalized + contrib.PanNormalized + instrumentPanOffset, -1.0, 1.0);
-        double effectiveVibLfoDepthCents =
+        var effectiveAttenuationDb = _attenuationDb + contrib.AttenuationDb + extraAttenuationDb;
+        var effectivePan = Math.Clamp(_panNormalized + contrib.PanNormalized + instrumentPanOffset, -1.0, 1.0);
+        var effectiveVibLfoDepthCents =
             _vibLfoPitchDepthCents + contrib.VibratoLfoPitchDepthCents + extraVibLfoDepthCents;
-        double effectiveModLfoPitchDepthCents = _modLfoPitchDepthCents + contrib.ModulationLfoPitchDepthCents;
-        double effectiveModLfoVolumeDepthDb = _modLfoVolumeDepthDb + contrib.ModulationLfoVolumeDepthDb;
-        double effectiveModLfoFilterDepthCents = _modLfoFilterDepthCents + contrib.ModulationLfoFilterDepthCents;
-        double effectiveModEnvFilterDepthCents = _modEnvFilterDepthCents + contrib.ModulationEnvelopeToFilterCents;
-        double effectiveModEnvPitchDepthCents = _modEnvPitchDepthCents + contrib.ModulationEnvelopeToPitchCents;
+        var effectiveModLfoPitchDepthCents = _modLfoPitchDepthCents + contrib.ModulationLfoPitchDepthCents;
+        var effectiveModLfoVolumeDepthDb = _modLfoVolumeDepthDb + contrib.ModulationLfoVolumeDepthDb;
+        var effectiveModLfoFilterDepthCents = _modLfoFilterDepthCents + contrib.ModulationLfoFilterDepthCents;
+        var effectiveModEnvFilterDepthCents = _modEnvFilterDepthCents + contrib.ModulationEnvelopeToFilterCents;
+        var effectiveModEnvPitchDepthCents = _modEnvPitchDepthCents + contrib.ModulationEnvelopeToPitchCents;
 
         // Per-instrument mixer sends are additive on top of the voice's existing send (0 = untouched).
-        double effectiveReverbSend = Math.Max(0.0, _reverbSend + contrib.ReverbSendAmount + instrumentReverbAdd);
-        double effectiveChorusSend = Math.Max(0.0, _chorusSend + contrib.ChorusSendAmount + instrumentChorusAdd);
-        float reverbSendScale = Math.Max(globalReverbFloor, (float)effectiveReverbSend);
-        float chorusSendScale = Math.Max(globalChorusFloor, (float)effectiveChorusSend);
+        var effectiveReverbSend = Math.Max(0.0, _reverbSend + contrib.ReverbSendAmount + instrumentReverbAdd);
+        var effectiveChorusSend = Math.Max(0.0, _chorusSend + contrib.ChorusSendAmount + instrumentChorusAdd);
+        var reverbSendScale = Math.Max(globalReverbFloor, (float)effectiveReverbSend);
+        var chorusSendScale = Math.Max(globalChorusFloor, (float)effectiveChorusSend);
 
         // Pan + CC 8 balance. A mono sample is positioned with an equal-power pan (the original law).
         // A stereo sample already carries its own image, so pan acts as a balance TRIM (attenuate the
@@ -981,21 +981,21 @@ public sealed class Voice
 
         // SFZ bend_smooth: glide the pitch-route contribution (pitch bend + tune CCs) toward its
         // per-block target with a one-pole filter, instead of jumping. 0 → instant (byte-identical).
-        double pitchRouteCents = contrib.PitchCents;
+        var pitchRouteCents = contrib.PitchCents;
         if (_bendSmoothSeconds > 0.0)
         {
             if (!_pitchSmoothPrimed) { _smoothedPitchRouteCents = pitchRouteCents; _pitchSmoothPrimed = true; }
             else
             {
-                double blockSec = leftBuffer.Length / (double)_sampleRate;
-                double coeff = 1.0 - Math.Exp(-blockSec / _bendSmoothSeconds);
+                var blockSec = leftBuffer.Length / (double)_sampleRate;
+                var coeff = 1.0 - Math.Exp(-blockSec / _bendSmoothSeconds);
                 _smoothedPitchRouteCents += (pitchRouteCents - _smoothedPitchRouteCents) * coeff;
             }
             pitchRouteCents = _smoothedPitchRouteCents;
         }
 
         // Base pitch in cents (not including bend or modulation — those add per sample).
-        double baseStaticPitchCents =
+        var baseStaticPitchCents =
             (_keyNumber - _rootKey) * _scaleTuningCentsPerKey
             + _coarseTuneSemitones * 100.0
             + _fineTuneCents
@@ -1004,39 +1004,39 @@ public sealed class Voice
             + pitchRouteCents;
 
         // Filter resonance can be modulated per block; cutoff changes per sample.
-        double filterResonanceDb = _filterBaseResonanceDb + contrib.FilterResonanceDb;
+        var filterResonanceDb = _filterBaseResonanceDb + contrib.FilterResonanceDb;
         if (_hasFilter && contrib.FilterResonanceDb != 0)
         {
             _filter.SetParameters(_filterBaseCutoffHz, filterResonanceDb);
             if (_channels == 2) _filterRight.SetParameters(_filterBaseCutoffHz, filterResonanceDb);
         }
 
-        for (int i = 0; i < leftBuffer.Length; i++)
+        for (var i = 0; i < leftBuffer.Length; i++)
         {
             // SFZ delay/delay_random: stay silent (envelopes and position frozen) until the onset.
             if (_delayRemaining > 0) { _delayRemaining--; continue; }
 
-            double volEnv = _volumeEnvelope.Process();
-            double modEnv = _hasModulationEnvelope ? _modulationEnvelope.Process() : 0.0;
-            double vibLfo = _vibratoLfo.Process();
-            double modLfo = _hasModulationLfo ? _modulationLfo.Process() : 0.0;
+            var volEnv = _volumeEnvelope.Process();
+            var modEnv = _hasModulationEnvelope ? _modulationEnvelope.Process() : 0.0;
+            var vibLfo = _vibratoLfo.Process();
+            var modLfo = _hasModulationLfo ? _modulationLfo.Process() : 0.0;
 
             // SFZ v2 generic LFOs: advance each every sample and sum its per-destination contributions.
             // Volume depth is positive=louder, so it lowers attenuation (negative dB delta).
             double gLfoPitchCents = 0.0, gLfoCutoffCents = 0.0, gLfoAttenDb = 0.0;
-            for (int g = 0; g < _genericLfoCount; g++)
+            for (var g = 0; g < _genericLfoCount; g++)
             {
                 var lfo = _genericLfos[g];
-                double lv = lfo.Process();
+                var lv = lfo.Process();
                 gLfoPitchCents += lv * lfo.PitchDepthCents;
                 gLfoCutoffCents += lv * lfo.CutoffDepthCents;
                 gLfoAttenDb -= lv * lfo.VolumeDepthDb;
             }
             // SFZ v2 flex envelopes (egN_*): same destinations as the LFOs (volume positive = louder).
-            for (int e = 0; e < _genericEgCount; e++)
+            for (var e = 0; e < _genericEgCount; e++)
             {
                 var eg = _genericEgs[e];
-                double ev = eg.Process();
+                var ev = eg.Process();
                 gLfoPitchCents += ev * eg.PitchDepthCents;
                 gLfoCutoffCents += ev * eg.CutoffDepthCents;
                 gLfoAttenDb -= ev * eg.VolumeDepthDb;
@@ -1049,10 +1049,10 @@ public sealed class Voice
             }
 
             // Pitch modulation (additive cents).
-            double pitchMod = vibLfo * effectiveVibLfoDepthCents
-                            + modLfo * effectiveModLfoPitchDepthCents
-                            + modEnv * effectiveModEnvPitchDepthCents
-                            + gLfoPitchCents;
+            var pitchMod = vibLfo * effectiveVibLfoDepthCents
+                           + modLfo * effectiveModLfoPitchDepthCents
+                           + modEnv * effectiveModEnvPitchDepthCents
+                           + gLfoPitchCents;
 
             if (_portamentoCents != 0.0)
             {
@@ -1069,21 +1069,21 @@ public sealed class Voice
                 }
             }
 
-            double pitchCents = baseStaticPitchCents + pitchMod;
+            var pitchCents = baseStaticPitchCents + pitchMod;
             if (pitchCents != _cachedPitchCents)   // recompute only when the pitch actually moves
             {
                 _cachedPitchCents = pitchCents;
                 _cachedIncrement = Math.Pow(2.0, pitchCents / 1200.0) * _baseSampleRate / _sampleRate;
             }
-            double increment = _cachedIncrement;
+            var increment = _cachedIncrement;
 
             // Filter cutoff modulation (per-sample), shared by both channels of a stereo sample.
             if (_hasFilter)
             {
-                double filterCents = modEnv * effectiveModEnvFilterDepthCents
-                                   + modLfo * effectiveModLfoFilterDepthCents
-                                   + contrib.FilterCutoffCents
-                                   + gLfoCutoffCents;
+                var filterCents = modEnv * effectiveModEnvFilterDepthCents
+                                  + modLfo * effectiveModLfoFilterDepthCents
+                                  + contrib.FilterCutoffCents
+                                  + gLfoCutoffCents;
                 if (filterCents != _cachedFilterCents)   // recompute coefficients only when cutoff moves
                 {
                     _cachedFilterCents = filterCents;
@@ -1095,8 +1095,8 @@ public sealed class Voice
             // Gain: zone attenuation + route contribution + envelope + LFO volume mod,
             // then the SFZ amp_velcurve_N factor (1.0 when no custom curve; a flat
             // multiply so a curve value of 0 yields true silence without a dB log).
-            double volumeMod = modLfo * effectiveModLfoVolumeDepthDb;
-            double totalAttenuationDb = effectiveAttenuationDb + volumeMod + gLfoAttenDb;
+            var volumeMod = modLfo * effectiveModLfoVolumeDepthDb;
+            var totalAttenuationDb = effectiveAttenuationDb + volumeMod + gLfoAttenDb;
             if (totalAttenuationDb != _cachedAttenuationDb)   // dB→linear only when attenuation moves
             {
                 _cachedAttenuationDb = totalAttenuationDb;
@@ -1105,16 +1105,16 @@ public sealed class Voice
             // instrumentGainFactor is the mixer mute/solo gate (1 = pass, 0 = silence); ×1 is
             // bit-identical, so an untouched instrument is unaffected. Envelopes still advance above,
             // so a muted/soloed-out voice keeps correct timing and releases on schedule.
-            double gain = _cachedLinearGain * volEnv * _ampVelCurveFactor * ccCrossfadeGain * instrumentGainFactor;
+            var gain = _cachedLinearGain * volEnv * _ampVelCurveFactor * ccCrossfadeGain * instrumentGainFactor;
 
             if (_channels == 1)
             {
                 // Mono path — arithmetically identical to the original when no filter/EQ.
-                double sample = GetInterpolatedSample(0);
+                var sample = GetInterpolatedSample(0);
                 if (_hasFilter) sample = _filter.Process(sample);
                 if (_hasFilter2) sample = _filter2.Process(sample);
-                for (int e = 0; e < _eqBandCount; e++) sample = _eq[e].Process(sample);
-                float outputSample = (float)(sample * gain);
+                for (var e = 0; e < _eqBandCount; e++) sample = _eq[e].Process(sample);
+                var outputSample = (float)(sample * gain);
                 leftBuffer[i] += outputSample * (float)leftGain;
                 rightBuffer[i] += outputSample * (float)rightGain;
                 if (reverbSendScale > 0f) reverbSendBuffer[i] += outputSample * reverbSendScale;
@@ -1125,8 +1125,8 @@ public sealed class Voice
                 // Stereo path — interpolate each channel at the same fractional position; pan/balance
                 // is the trim computed above. Sends are mono (the two channels averaged) so a centred
                 // stereo sample sends the same energy a mono one would.
-                double sampleL = GetInterpolatedSample(0);
-                double sampleR = GetInterpolatedSample(1);
+                var sampleL = GetInterpolatedSample(0);
+                var sampleR = GetInterpolatedSample(1);
                 if (_hasFilter)
                 {
                     sampleL = _filter.Process(sampleL);
@@ -1137,7 +1137,7 @@ public sealed class Voice
                     sampleL = _filter2.Process(sampleL);
                     sampleR = _filter2Right.Process(sampleR);
                 }
-                for (int e = 0; e < _eqBandCount; e++)
+                for (var e = 0; e < _eqBandCount; e++)
                 {
                     sampleL = _eq[e].Process(sampleL);
                     sampleR = _eqRight[e].Process(sampleR);
@@ -1146,16 +1146,16 @@ public sealed class Voice
                 // -1 → swapped. The 0.5 mid keeps a centred/correlated signal at unity (level comp).
                 if (_widthNorm != 1.0)
                 {
-                    double mid = (sampleL + sampleR) * 0.5;
-                    double side = (sampleL - sampleR) * 0.5 * _widthNorm;
+                    var mid = (sampleL + sampleR) * 0.5;
+                    var side = (sampleL - sampleR) * 0.5 * _widthNorm;
                     sampleL = mid + side;
                     sampleR = mid - side;
                 }
-                float outL = (float)(sampleL * gain);
-                float outR = (float)(sampleR * gain);
+                var outL = (float)(sampleL * gain);
+                var outR = (float)(sampleR * gain);
                 leftBuffer[i] += outL * (float)leftGain;
                 rightBuffer[i] += outR * (float)rightGain;
-                float send = (outL + outR) * 0.5f;
+                var send = (outL + outR) * 0.5f;
                 if (reverbSendScale > 0f) reverbSendBuffer[i] += send * reverbSendScale;
                 if (chorusSendScale > 0f) chorusSendBuffer[i] += send * chorusSendScale;
             }
@@ -1172,7 +1172,7 @@ public sealed class Voice
                 double loopLen = _loopEnd - _loopStart;
                 if (loopLen > 0)
                 {
-                    double overshoot = _position - _loopEnd;
+                    var overshoot = _position - _loopEnd;
                     _position = _loopStart + (overshoot - Math.Floor(overshoot / loopLen) * loopLen);
                 }
                 else
@@ -1198,13 +1198,13 @@ public sealed class Voice
     /// </summary>
     private double GetInterpolatedSample(int channel)
     {
-        int idx = (int)_position;
-        double frac = _position - idx;
+        var idx = (int)_position;
+        var frac = _position - idx;
 
-        int fIdx = (int)(frac * SincInterpolator.FractionSlots);
+        var fIdx = (int)(frac * SincInterpolator.FractionSlots);
         if (fIdx >= SincInterpolator.FractionSlots) fIdx = SincInterpolator.FractionSlots - 1;
         var coeffs = SincInterpolator.Coefficients;
-        int baseOff = fIdx * SincInterpolator.Width;
+        var baseOff = fIdx * SincInterpolator.Width;
 
         return coeffs[baseOff + 0] * ReadSampleAt(idx - 3, channel)
              + coeffs[baseOff + 1] * ReadSampleAt(idx - 2, channel)
@@ -1228,8 +1228,8 @@ public sealed class Voice
             return ReadFrameDirect(_sampleStart, channel);
         }
 
-        bool looping = _loopMode != IRLoopMode.None;
-        long boundary = looping ? _loopEnd : _sampleEnd;
+        var looping = _loopMode != IRLoopMode.None;
+        var boundary = looping ? _loopEnd : _sampleEnd;
         long absoluteFrame;
 
         if (idx < boundary)
@@ -1238,15 +1238,15 @@ public sealed class Voice
         }
         else if (looping)
         {
-            long loopLen = _loopEnd - _loopStart;
+            var loopLen = _loopEnd - _loopStart;
             if (loopLen <= 0) return ReadFrameDirect(_loopStart, channel);
-            long offset = (idx - _loopEnd) % loopLen;
+            var offset = (idx - _loopEnd) % loopLen;
             absoluteFrame = _loopStart + offset;
         }
         else
         {
             // Past the end of a non-looped sample — clamp to last valid frame.
-            absoluteFrame = Math.Min((long)idx, _sampleEnd - 1);
+            absoluteFrame = Math.Min(idx, _sampleEnd - 1);
         }
 
         return ReadFrameDirect(absoluteFrame, channel);
@@ -1259,7 +1259,7 @@ public sealed class Voice
     /// </summary>
     private double ReadFrameDirect(long frame, int channel)
     {
-        long local = frame - _scratchBaseFrame;
+        var local = frame - _scratchBaseFrame;
         if (local < 0 || local >= _scratchFramesAvailable)
         {
             RefillScratch(frame);
@@ -1277,7 +1277,7 @@ public sealed class Voice
     /// </summary>
     private void RefillScratch(long frame)
     {
-        long fillStart = Math.Max(0, frame - ScratchSize / 4);
+        var fillStart = Math.Max(0, frame - ScratchSize / 4);
         _scratchBaseFrame = fillStart;
         // Read up to ScratchSize frames. A frame is _channels floats, so the destination span is
         // ScratchSize*_channels wide; ReadFrames returns the frame count. For mono this is the exact

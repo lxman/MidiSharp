@@ -17,5 +17,5 @@ public sealed class Patch
 
     public string Name { get; init; } = string.Empty;
 
-    public IReadOnlyList<PatchZone> Zones { get; init; } = Array.Empty<PatchZone>();
+    public IReadOnlyList<PatchZone> Zones { get; init; } = [];
 }

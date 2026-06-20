@@ -78,8 +78,7 @@ internal static class SyntheticSoundFont
         WritePhdr(phdr.AsSpan(38, 38), terminalName, 0, 0, 1, 0, 0, 0);
 
         // ----- Wrap chunks ----
-        var pdta = BuildList("pdta", new[]
-        {
+        var pdta = BuildList("pdta", [
             ("phdr", phdr),
             ("pbag", pbag),
             ("pmod", pmod),
@@ -88,13 +87,13 @@ internal static class SyntheticSoundFont
             ("ibag", ibag),
             ("imod", imod),
             ("igen", igen),
-            ("shdr", shdr),
-        });
+            ("shdr", shdr)
+        ]);
 
         // Optional 24-bit extension (one LS byte per frame), aligned 1:1 with the smpl frames.
         var sdta = sm24 is { Length: SampleFrames }
-            ? BuildList("sdta", new[] { ("smpl", smpl), ("sm24", sm24) })
-            : BuildList("sdta", new[] { ("smpl", smpl) });
+            ? BuildList("sdta", [("smpl", smpl), ("sm24", sm24)])
+            : BuildList("sdta", [("smpl", smpl)]);
 
         // ----- INFO LIST ----
         var info = BuildInfoList(bankName);

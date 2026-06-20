@@ -9,14 +9,14 @@ namespace MidiSharp.Audio.Vorbis
         {
             var res = residue[channel];
 
-            for (int i = 0; i < partitionSize;)
+            for (var i = 0; i < partitionSize;)
             {
                 var entry = codebook.DecodeScalar(packet);
                 if (entry == -1)
                 {
                     return true;
                 }
-                for (int j = 0; j < codebook.Dimensions; i++, j++)
+                for (var j = 0; j < codebook.Dimensions; i++, j++)
                 {
                     res[offset + i] += codebook[entry, j];
                 }

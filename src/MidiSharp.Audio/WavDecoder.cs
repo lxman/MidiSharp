@@ -31,14 +31,14 @@ public sealed class WavDecoder : IAudioDecoder
 
         int channels = 1, sampleRate = 44100, bitsPerSample = 16;
         long dataSize = -1, loopStart = -1, loopEnd = -1;
-        int rootKey = -1; double fineTuneCents = 0;
+        var rootKey = -1; double fineTuneCents = 0;
 
-        int off = 12;
+        var off = 12;
         while (off + 8 <= bytes.Length)
         {
             var id = bytes.Slice(off, 4);
-            uint size = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(off + 4, 4));
-            int body = off + 8;
+            var size = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(off + 4, 4));
+            var body = off + 8;
 
             if (Is(id, 'f', 'm', 't', ' ') && body + 16 <= bytes.Length)
             {
@@ -63,14 +63,14 @@ public sealed class WavDecoder : IAudioDecoder
                 }
             }
 
-            long next = (long)body + size + (size & 1);
+            var next = body + size + (size & 1);
             if (next > bytes.Length) break;   // chunk body runs past the prefix — stop walking
             off = (int)next;
         }
 
         if (dataSize < 0) return AudioInfo.None;   // didn't find the data header in the supplied bytes
-        int frameBytes = Math.Max(1, channels * ((bitsPerSample + 7) / 8));
-        long frames = dataSize / frameBytes;
+        var frameBytes = Math.Max(1, channels * ((bitsPerSample + 7) / 8));
+        var frames = dataSize / frameBytes;
         if (loopEnd > frames) loopEnd = frames;
         if (loopStart >= frames) { loopStart = -1; loopEnd = -1; }
 
@@ -95,32 +95,32 @@ public sealed class WavDecoder : IAudioDecoder
             throw new AudioDecodeException("Not a RIFF/WAVE file");
 
         int channels = 1, sampleRate = 44100, bitsPerSample = 16;
-        bool isFloat = false;
+        var isFloat = false;
         ReadOnlySpan<byte> dataChunk = default;
-        int rootKey = -1;
+        var rootKey = -1;
         double fineTuneCents = 0;
         long loopStart = -1, loopEnd = -1;
 
-        int off = 12;
+        var off = 12;
         while (off + 8 <= bytes.Length)
         {
             var id = bytes.Slice(off, 4);
-            uint size = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(off + 4, 4));
-            int body = off + 8;
+            var size = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(off + 4, 4));
+            var body = off + 8;
             long avail = bytes.Length - body;
-            int chunkSize = (int)Math.Min(size, (uint)Math.Max(0, avail));
+            var chunkSize = (int)Math.Min(size, (uint)Math.Max(0, avail));
 
             if (Is(id, 'f', 'm', 't', ' ') && chunkSize >= 16)
             {
                 var f = bytes.Slice(body, chunkSize);
-                ushort tag = BinaryPrimitives.ReadUInt16LittleEndian(f.Slice(0, 2));
+                var tag = BinaryPrimitives.ReadUInt16LittleEndian(f.Slice(0, 2));
                 channels = BinaryPrimitives.ReadUInt16LittleEndian(f.Slice(2, 2));
                 sampleRate = (int)BinaryPrimitives.ReadUInt32LittleEndian(f.Slice(4, 4));
                 bitsPerSample = BinaryPrimitives.ReadUInt16LittleEndian(f.Slice(14, 2));
                 if (tag == 3) isFloat = true;
                 else if (tag == 0xFFFE && chunkSize >= 40)
                 {
-                    ushort sub = BinaryPrimitives.ReadUInt16LittleEndian(f.Slice(24, 2));
+                    var sub = BinaryPrimitives.ReadUInt16LittleEndian(f.Slice(24, 2));
                     if (sub == 3) isFloat = true;
                 }
             }
@@ -132,14 +132,14 @@ public sealed class WavDecoder : IAudioDecoder
             {
                 var s = bytes.Slice(body, chunkSize);
                 rootKey = (int)BinaryPrimitives.ReadUInt32LittleEndian(s.Slice(20, 4));
-                uint pitchFrac = BinaryPrimitives.ReadUInt32LittleEndian(s.Slice(24, 4));
+                var pitchFrac = BinaryPrimitives.ReadUInt32LittleEndian(s.Slice(24, 4));
                 fineTuneCents = pitchFrac / 4294967296.0 * 100.0;
-                uint numLoops = BinaryPrimitives.ReadUInt32LittleEndian(s.Slice(28, 4));
+                var numLoops = BinaryPrimitives.ReadUInt32LittleEndian(s.Slice(28, 4));
                 if (numLoops > 0 && chunkSize >= 36 + 24)
                 {
                     var loop = s.Slice(36, 24);
-                    uint start = BinaryPrimitives.ReadUInt32LittleEndian(loop.Slice(8, 4));
-                    uint end = BinaryPrimitives.ReadUInt32LittleEndian(loop.Slice(12, 4));
+                    var start = BinaryPrimitives.ReadUInt32LittleEndian(loop.Slice(8, 4));
+                    var end = BinaryPrimitives.ReadUInt32LittleEndian(loop.Slice(12, 4));
                     loopStart = start;
                     loopEnd = (long)end + 1;  // smpl loop end is inclusive → exclusive
                 }

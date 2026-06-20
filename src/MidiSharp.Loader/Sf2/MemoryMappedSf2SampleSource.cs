@@ -59,7 +59,7 @@ internal sealed class MemoryMappedSf2SampleSource : ISampleSource
         _backingOwner = backingOwner;
         _metadata = new SampleMetadata[metadata.Count];
         _entries = new SampleEntry[entries.Count];
-        for (int i = 0; i < metadata.Count; i++)
+        for (var i = 0; i < metadata.Count; i++)
         {
             _metadata[i] = metadata[i];
             _entries[i] = new SampleEntry(entries[i].AbsoluteStart, entries[i].LengthFrames);
@@ -76,10 +76,10 @@ internal sealed class MemoryMappedSf2SampleSource : ISampleSource
 
         if (frameOffset < 0 || frameOffset >= entry.LengthFrames) return 0;
 
-        long available = entry.LengthFrames - frameOffset;
-        int framesToRead = (int)Math.Min(available, dest.Length);
+        var available = entry.LengthFrames - frameOffset;
+        var framesToRead = (int)Math.Min(available, dest.Length);
 
-        long sourceStart = entry.AbsoluteStart + frameOffset;   // in int16 frames
+        var sourceStart = entry.AbsoluteStart + frameOffset;   // in int16 frames
         const float Scale = 1.0f / 32768.0f;
 
         if (!_sm24.IsEmpty)
@@ -91,9 +91,9 @@ internal sealed class MemoryMappedSf2SampleSource : ISampleSource
             const float Scale24 = 1.0f / 8388608.0f;
             var hi = _smpl.Span.Slice((int)sourceStart * 2, framesToRead * 2);
             var lo = _sm24.Span.Slice((int)sourceStart, framesToRead);
-            for (int i = 0; i < framesToRead; i++)
+            for (var i = 0; i < framesToRead; i++)
             {
-                int sample24 = (BinaryPrimitives.ReadInt16LittleEndian(hi.Slice(i * 2, 2)) << 8) | lo[i];
+                var sample24 = (BinaryPrimitives.ReadInt16LittleEndian(hi.Slice(i * 2, 2)) << 8) | lo[i];
                 dest[i] = sample24 * Scale24;
             }
             return framesToRead;
@@ -109,7 +109,7 @@ internal sealed class MemoryMappedSf2SampleSource : ISampleSource
         {
             // Big-endian host: SF2 data on disk is little-endian, so read each frame explicitly.
             var bytes = _smpl.Span.Slice((int)sourceStart * 2, framesToRead * 2);
-            for (int i = 0; i < framesToRead; i++)
+            for (var i = 0; i < framesToRead; i++)
                 dest[i] = BinaryPrimitives.ReadInt16LittleEndian(bytes.Slice(i * 2, 2)) * Scale;
         }
 
@@ -123,8 +123,8 @@ internal sealed class MemoryMappedSf2SampleSource : ISampleSource
         // (already resident) — _backingOwner is only IPrefetchable when mmap-backed.
         if (_backingOwner is not IPrefetchable pf) return;
         var e = _entries[sampleId];
-        long byteStart = e.AbsoluteStart * 2;
-        long byteLen = e.LengthFrames * 2;
+        var byteStart = e.AbsoluteStart * 2;
+        var byteLen = e.LengthFrames * 2;
         if (byteStart < 0 || byteLen <= 0 || byteStart >= _smpl.Length) return;
         byteLen = Math.Min(byteLen, _smpl.Length - byteStart);   // clamp; never fault on a bad header
         pf.Prefetch(_smpl.Slice((int)byteStart, (int)byteLen));

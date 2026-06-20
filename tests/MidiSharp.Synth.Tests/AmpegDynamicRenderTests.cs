@@ -1,6 +1,5 @@
 using System;
 using MidiSharp.SoundBank;
-using MidiSharp.Synth;
 using Xunit;
 using IRBank = MidiSharp.SoundBank.SoundBank;
 
@@ -26,28 +25,28 @@ public sealed class AmpegDynamicRenderTests
             SustainLevel = 1.0,
             ReleaseSeconds = 0.1,
             Dynamic = true,
-            CcMods = new[] { new EnvCcMod(EnvStage.Attack, 1, 0.5, 0) },
+            CcMods = [new EnvCcMod(EnvStage.Attack, 1, 0.5, 0)],
         };
 
-        float fast = PeakOver45ms(env, cc1: 0);     // ~5 ms attack → near full within the window
-        float slow = PeakOver45ms(env, cc1: 127);   // ~505 ms attack → barely begun within the window
+        var fast = PeakOver45ms(env, cc1: 0);     // ~5 ms attack → near full within the window
+        var slow = PeakOver45ms(env, cc1: 127);   // ~505 ms attack → barely begun within the window
         Assert.True(fast > slow * 2.0, $"live CC1 should slow the attack (fast {fast}, slow {slow})");
     }
 
     private static float PeakOver45ms(EnvelopeSettings env, int cc1)
     {
-        var synth = new Synthesizer(Rate);
+        var synth = new Synthesizer();
         synth.LoadSoundFont(MakeBank(env));
         synth.ControlChange(0, 1, cc1);
         synth.NoteOn(0, 60, 120);
 
         float peak = 0;
-        for (int blk = 0; blk < 20; blk++)   // 20 × 100 = ~45 ms
+        for (var blk = 0; blk < 20; blk++)   // 20 × 100 = ~45 ms
         {
             var l = new float[100];
             var r = new float[100];
             synth.Generate(l, r);
-            for (int i = 0; i < 100; i++) peak = Math.Max(peak, Math.Abs(l[i]));
+            for (var i = 0; i < 100; i++) peak = Math.Max(peak, Math.Abs(l[i]));
         }
         return peak;
     }
@@ -65,7 +64,7 @@ public sealed class AmpegDynamicRenderTests
         var meta = new[] { new SampleMetadata { SampleRate = Rate, Channels = 1, LengthFrames = 4000, RootKey = 60 } };
         return new IRBank
         {
-            Patches = new[] { new Patch { Bank = 0, Program = 0, Zones = new[] { zone } } },
+            Patches = [new Patch { Bank = 0, Program = 0, Zones = [zone] }],
             Samples = new PreDecodedFloatSampleSource(data, meta),
         };
     }

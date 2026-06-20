@@ -1,6 +1,5 @@
 using System;
 using MidiSharp.SoundBank;
-using MidiSharp.Synth;
 using Xunit;
 using IRBank = MidiSharp.SoundBank.SoundBank;
 
@@ -58,7 +57,7 @@ public sealed class RoundRobinKeySwitchTests
         var synth = NewSynth(bank);
 
         synth.NoteOn(0, 60, 100);                          // default selection (24) → articulation A
-        int afterNote = synth.ActiveVoiceCount;
+        var afterNote = synth.ActiveVoiceCount;
         Assert.Equal(1, afterNote);
 
         synth.NoteOn(0, 25, 100);                          // a switch key — selects, sounds nothing
@@ -94,7 +93,7 @@ public sealed class RoundRobinKeySwitchTests
 
     private static Synthesizer NewSynth(IRBank bank)
     {
-        var synth = new Synthesizer(Rate);
+        var synth = new Synthesizer();
         synth.LoadSoundFont(bank);
         return synth;
     }
@@ -105,7 +104,7 @@ public sealed class RoundRobinKeySwitchTests
         var r = new float[frames];
         synth.Generate(l, r);
         float peak = 0;
-        for (int i = 0; i < frames; i++) peak = Math.Max(peak, Math.Abs(l[i]));
+        for (var i = 0; i < frames; i++) peak = Math.Max(peak, Math.Abs(l[i]));
         return peak;
     }
 
@@ -123,12 +122,12 @@ public sealed class RoundRobinKeySwitchTests
         // Sample 0 is a loud constant; sample 1 is silence — so the rendered peak
         // tells which zone fired.
         var samples = new PreDecodedFloatSampleSource(
-            new[] { Constant(0.5f, 2000), Constant(0.0f, 2000) },
-            new[] { Meta(), Meta() });
+            [Constant(0.5f, 2000), Constant(0.0f, 2000)],
+            [Meta(), Meta()]);
 
         return new IRBank
         {
-            Patches = new[] { new Patch { Bank = 0, Program = 0, Zones = zones } },
+            Patches = [new Patch { Bank = 0, Program = 0, Zones = zones }],
             Samples = samples,
         };
     }

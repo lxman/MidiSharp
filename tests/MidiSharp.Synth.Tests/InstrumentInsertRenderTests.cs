@@ -1,6 +1,5 @@
 using System;
 using MidiSharp.SoundBank;
-using MidiSharp.Synth;
 using Xunit;
 using IRBank = MidiSharp.SoundBank.SoundBank;
 
@@ -23,7 +22,7 @@ public sealed class InstrumentInsertRenderTests
     private sealed class GainInsert : IInstrumentInsert
     {
         public float Gain;
-        public void Process(Span<float> s) { for (int i = 0; i < s.Length; i++) s[i] *= Gain; }
+        public void Process(Span<float> s) { for (var i = 0; i < s.Length; i++) s[i] *= Gain; }
     }
 
     [Fact]
@@ -48,8 +47,8 @@ public sealed class InstrumentInsertRenderTests
     [Fact]
     public void Gain_insert_scales_the_instrument()
     {
-        double flat = Rms(RenderProgram0(null).left);
-        double half = Rms(RenderProgram0(s => s.SetInstrumentInsert(0, 0, new GainInsert { Gain = 0.5f })).left);
+        var flat = Rms(RenderProgram0(null).left);
+        var half = Rms(RenderProgram0(s => s.SetInstrumentInsert(0, 0, new GainInsert { Gain = 0.5f })).left);
         Assert.True(Math.Abs(half / flat - 0.5) < 0.001, $"×0.5 insert should halve RMS (ratio {half / flat:F4})");
     }
 
@@ -68,7 +67,7 @@ public sealed class InstrumentInsertRenderTests
 
     private static (float[] left, float[] right) RenderProgram0(Action<Synthesizer>? setup, int blocks = 40)
     {
-        var synth = new Synthesizer(Rate);
+        var synth = new Synthesizer();
         synth.LoadSoundFont(MakeBank(2));
         setup?.Invoke(synth);
         synth.NoteOn(0, 60, 120);
@@ -77,7 +76,7 @@ public sealed class InstrumentInsertRenderTests
 
     private static (float[] left, float[] right) RenderTwo(IInstrumentInsert? insertOnProg0, bool onlyProgram1)
     {
-        var synth = new Synthesizer(Rate);
+        var synth = new Synthesizer();
         synth.LoadSoundFont(MakeBank(2));
         if (insertOnProg0 != null) synth.SetInstrumentInsert(0, 0, insertOnProg0);
         if (!onlyProgram1) synth.NoteOn(0, 60, 120);     // program 0 on channel 0
@@ -91,7 +90,7 @@ public sealed class InstrumentInsertRenderTests
         const int n = 128;
         var left = new float[blocks * n];
         var right = new float[blocks * n];
-        for (int b = 0; b < blocks; b++)
+        for (var b = 0; b < blocks; b++)
         {
             var l = new float[n];
             var r = new float[n];
@@ -107,19 +106,19 @@ public sealed class InstrumentInsertRenderTests
         var data = new[] { Constant(0.5f, 16000) };
         var meta = new[] { new SampleMetadata { SampleRate = Rate, Channels = 1, LengthFrames = 16000, RootKey = 60 } };
         var patches = new Patch[programs];
-        for (int p = 0; p < programs; p++)
+        for (var p = 0; p < programs; p++)
             patches[p] = new Patch
             {
                 Bank = 0, Program = p,
-                Zones = new[]
-                {
+                Zones =
+                [
                     new PatchZone
                     {
                         Keys = new KeyRange(0, 127), Velocities = new VelocityRange(0, 127),
                         Sample = new SampleRef { SampleId = 0, OverridingRootKey = 60 },
                         VolumeEnvelope = new EnvelopeSettings { AttackSeconds = 0, DecaySeconds = 0, SustainLevel = 1.0, ReleaseSeconds = 0.05 },
-                    },
-                },
+                    }
+                ],
             };
         return new IRBank { Patches = patches, Samples = new PreDecodedFloatSampleSource(data, meta) };
     }
@@ -129,7 +128,7 @@ public sealed class InstrumentInsertRenderTests
     private static double Rms(float[] x)
     {
         double sum = 0;
-        for (int i = 0; i < x.Length; i++) sum += (double)x[i] * x[i];
+        for (var i = 0; i < x.Length; i++) sum += (double)x[i] * x[i];
         return Math.Sqrt(sum / x.Length);
     }
 }

@@ -1,7 +1,8 @@
-﻿using MidiSharp.Audio.Vorbis.Contracts;
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using MidiSharp.Audio.Vorbis.Contracts;
 
 namespace MidiSharp.Audio.Vorbis
 {
@@ -21,14 +22,14 @@ namespace MidiSharp.Audio.Vorbis
                 var parts = comments[i].Split('=');
                 if (parts.Length == 1)
                 {
-                    parts = new[] { parts[0], string.Empty };
+                    parts = [parts[0], string.Empty];
                 }
 
                 var bktIdx = parts[0].IndexOf('[');
                 if (bktIdx > -1)
                 {
                     parts[1] = parts[0].Substring(bktIdx + 1, parts[0].Length - bktIdx - 2)
-                                       .ToUpper(System.Globalization.CultureInfo.CurrentCulture)
+                                       .ToUpper(CultureInfo.CurrentCulture)
                                      + ": "
                                      + parts[1];
                     parts[0] = parts[0].Substring(0, bktIdx);

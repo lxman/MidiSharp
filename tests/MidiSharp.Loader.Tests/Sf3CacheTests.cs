@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using MidiSharp.Loader;
 using MidiSharp.SoundBank;
 using Xunit;
 using IRBank = MidiSharp.SoundBank.SoundBank;
@@ -60,17 +59,17 @@ public class Sf3CacheTests
         {
             if (bank == null) return;   // no SF3 with a stereo sample available — skip
 
-            long expected = src!.Metadata(stereoId).LengthFrames;
+            var expected = src!.Metadata(stereoId).LengthFrames;
             // Interleaved buffer sized to a quarter of the sample so several reads hit the cap. Pre-fix,
             // framesAvailable came from dest.Length (floats) instead of dest.Length/channels (frames), so
             // a capped read copied 2× the buffer and overflowed it (crash) / miscounted frames.
-            int bufFrames = Math.Max(2, (int)(expected / 4));
+            var bufFrames = Math.Max(2, (int)(expected / 4));
             var buf = new float[bufFrames * 2];
             long total = 0;
             long off = 0;
             while (true)
             {
-                int n = src.ReadFrames(stereoId, off, buf);   // must never write past buf
+                var n = src.ReadFrames(stereoId, off, buf);   // must never write past buf
                 if (n <= 0) break;
                 Assert.True(n <= buf.Length / 2, $"returned {n} frames into a {buf.Length / 2}-frame buffer");
                 total += n;
@@ -97,7 +96,7 @@ public class Sf3CacheTests
             IRBank bank;
             try { bank = SoundBankLoader.Load(path); }
             catch { continue; }
-            for (int id = 0; id < bank.Samples.Count; id++)
+            for (var id = 0; id < bank.Samples.Count; id++)
             {
                 var m = bank.Samples.Metadata(id);
                 if (m.Channels == 2 && m.LengthFrames > 8)   // a 2-channel sample big enough to span >1 read

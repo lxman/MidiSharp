@@ -1,6 +1,6 @@
-﻿using MidiSharp.Audio.Vorbis.Contracts;
-using System;
+﻿using System;
 using System.Collections.Generic;
+using MidiSharp.Audio.Vorbis.Contracts;
 
 namespace MidiSharp.Audio.Vorbis
 {
@@ -17,7 +17,7 @@ namespace MidiSharp.Audio.Vorbis
             var list = new HuffmanListNode[lengthList.Length];
 
             var maxLen = 0;
-            for (int i = 0; i < list.Length; i++)
+            for (var i = 0; i < list.Length; i++)
             {
                 list[i] = new HuffmanListNode
                 {
@@ -38,7 +38,7 @@ namespace MidiSharp.Audio.Vorbis
 
             var prefixList = new List<HuffmanListNode>(1 << tableBits);
             List<HuffmanListNode> overflowList = null;
-            for (int i = 0; i < list.Length && list[i].Length < 99999; i++)
+            for (var i = 0; i < list.Length && list[i].Length < 99999; i++)
             {
                 var itemBits = list[i].Length;
                 if (itemBits > tableBits)
@@ -53,7 +53,7 @@ namespace MidiSharp.Audio.Vorbis
                 {
                     var maxVal = 1 << (tableBits - itemBits);
                     var item = list[i];
-                    for (int j = 0; j < maxVal; j++)
+                    for (var j = 0; j < maxVal; j++)
                     {
                         var idx = (j << itemBits) | item.Bits;
                         while (prefixList.Count <= idx)

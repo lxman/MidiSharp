@@ -1,7 +1,7 @@
-﻿using MidiSharp.Audio.Vorbis.Contracts;
-using System;
+﻿using System;
 using System.IO;
 using System.Text;
+using MidiSharp.Audio.Vorbis.Contracts;
 
 namespace MidiSharp.Audio.Vorbis
 {
@@ -142,9 +142,10 @@ namespace MidiSharp.Audio.Vorbis
             return false;
         }
 
-        static private readonly byte[] PacketSignatureStream = { 0x01, 0x76, 0x6f, 0x72, 0x62, 0x69, 0x73, 0x00, 0x00, 0x00, 0x00 };
-        static private readonly byte[] PacketSignatureComments = { 0x03, 0x76, 0x6f, 0x72, 0x62, 0x69, 0x73 };
-        static private readonly byte[] PacketSignatureBooks = { 0x05, 0x76, 0x6f, 0x72, 0x62, 0x69, 0x73 };
+        static private readonly byte[] PacketSignatureStream = [0x01, 0x76, 0x6f, 0x72, 0x62, 0x69, 0x73, 0x00, 0x00, 0x00, 0x00
+        ];
+        static private readonly byte[] PacketSignatureComments = [0x03, 0x76, 0x6f, 0x72, 0x62, 0x69, 0x73];
+        static private readonly byte[] PacketSignatureBooks = [0x05, 0x76, 0x6f, 0x72, 0x62, 0x69, 0x73];
 
         static private bool ValidateHeader(IPacket packet, byte[] expected)
         {

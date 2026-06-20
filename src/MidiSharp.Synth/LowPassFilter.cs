@@ -204,7 +204,7 @@ public sealed class LowPassFilter
     /// </summary>
     private void SetShelfOrPeakCoefficients(double cosOmega, double alpha)
     {
-        double A = Math.Pow(10.0, GainDb / 40.0);
+        var A = Math.Pow(10.0, GainDb / 40.0);
         double b0, b1, b2, a0, a1, a2;
 
         if (Type == FilterType.Peaking)
@@ -218,8 +218,8 @@ public sealed class LowPassFilter
         }
         else
         {
-            double sqrtA = Math.Sqrt(A);
-            double twoSqrtAalpha = 2.0 * sqrtA * alpha;
+            var sqrtA = Math.Sqrt(A);
+            var twoSqrtAalpha = 2.0 * sqrtA * alpha;
             double am1 = A - 1.0, ap1 = A + 1.0;
             if (Type == FilterType.LowShelf)
             {

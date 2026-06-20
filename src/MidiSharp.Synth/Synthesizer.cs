@@ -31,7 +31,7 @@ public sealed class Synthesizer
 
     // SFZ random round-robin (lorand/hirand). Fixed seed → identical note selections
     // for the same event sequence, so renders stay reproducible for A/B comparison.
-    private readonly System.Random _rng = new(0x5F2_A12A);
+    private readonly Random _rng = new(0x5F2_A12A);
 
     private IRBank? _soundBank;
 
@@ -186,14 +186,14 @@ public sealed class Synthesizer
 
         // SFZ sustain_cc reassignment: tell every channel which controller acts as its sustain pedal
         // (CC64 for SF2/SF3/DLS and most SFZ; a half-pedal font may route it elsewhere, e.g. CC90).
-        for (int ch = 0; ch < _channels.Length; ch++)
+        for (var ch = 0; ch < _channels.Length; ch++)
             _channels[ch].SustainCc = soundBank.SustainCc;
 
         // Seed the instrument's expected initial controller values (SFZ set_ccN/set_hdccN) onto every
         // channel so CC-driven routes and locc/hicc gates start where the bank expects. Routed through
         // ControlChange so known CCs hit their fields and the rest land in the generic store.
         if (soundBank.InitialControllers.Count > 0)
-            for (int ch = 0; ch < _channels.Length; ch++)
+            for (var ch = 0; ch < _channels.Length; ch++)
                 foreach (var kv in soundBank.InitialControllers)
                     ControlChange(ch, kv.Key, kv.Value);
     }
@@ -328,11 +328,11 @@ public sealed class Synthesizer
 
         // Determine portamento source (key we should glide from). CC 84 (one-shot) wins
         // over LastNoteKey when set, and falls back only when CC 65 (portamento on) is true.
-        int portamentoSource = channelState.PortamentoSourceKey >= 0
+        var portamentoSource = channelState.PortamentoSourceKey >= 0
             ? channelState.PortamentoSourceKey
-            : channelState.PortamentoOn ? channelState.LastNoteKey : (sbyte)-1;
-        double portamentoStartCents = 0.0;
-        double portamentoTimeSeconds = 0.0;
+            : channelState.PortamentoOn ? channelState.LastNoteKey : -1;
+        var portamentoStartCents = 0.0;
+        var portamentoTimeSeconds = 0.0;
         if (portamentoSource >= 0 && portamentoSource != key)
         {
             portamentoStartCents = (portamentoSource - key) * 100.0;
@@ -344,12 +344,12 @@ public sealed class Synthesizer
         channelState.LastNoteKey = (sbyte)key;
 
         // GM2 sound-controller offsets in octaves (±1 octave at CC=0/127, 0 at CC=64).
-        double attackOctaves = (channelState.AttackTimeCc - 64) / 64.0;
-        double decayOctaves = (channelState.DecayTimeCc - 64) / 64.0;
-        double releaseOctaves = (channelState.ReleaseTimeCc - 64) / 64.0;
-        double vibFreqOctaves = (channelState.VibratoRateCc - 64) / 64.0;
-        double vibDelayOctaves = (channelState.VibratoDelayCc - 64) / 64.0;
-        double filterQDbOffset = channelState.FilterQOffsetCb / 10.0;
+        var attackOctaves = (channelState.AttackTimeCc - 64) / 64.0;
+        var decayOctaves = (channelState.DecayTimeCc - 64) / 64.0;
+        var releaseOctaves = (channelState.ReleaseTimeCc - 64) / 64.0;
+        var vibFreqOctaves = (channelState.VibratoRateCc - 64) / 64.0;
+        var vibDelayOctaves = (channelState.VibratoDelayCc - 64) / 64.0;
+        var filterQDbOffset = channelState.FilterQOffsetCb / 10.0;
 
         var samples = _soundBank.Samples;
 
@@ -376,21 +376,21 @@ public sealed class Synthesizer
 
             // SFZ keyswitch: zone is active only when the channel's selected switch
             // key (or this zone's default, before any switch was pressed) matches.
-            if (zone.KeySwitch is KeySwitch ks)
+            if (zone.KeySwitch is { } ks)
             {
                 int selected = channelState.SelectedKeyswitch >= 0 ? channelState.SelectedKeyswitch : ks.Default;
                 if (selected != ks.SelectingKey) continue;
             }
 
             // SFZ round-robin: rotate seq_position zones across successive NoteOns.
-            if (zone.RoundRobin is RoundRobin rr && rr.Length > 1)
+            if (zone.RoundRobin is { } rr && rr.Length > 1)
             {
                 rrIndex ??= channelState.NextRoundRobin(key);
                 if (rrIndex.Value % rr.Length != rr.Position) continue;
             }
 
             // SFZ random round-robin: zone sounds only if this note's roll is in range.
-            if (zone.Random is RandomRange rand)
+            if (zone.Random is { } rand)
             {
                 roll ??= _rng.NextDouble();
                 if (roll.Value < rand.Lo || roll.Value >= rand.Hi) continue;
@@ -400,7 +400,7 @@ public sealed class Synthesizer
             if (voice == null) continue;
 
             // Exclusive group: silence any sounding voice in the same group on the channel.
-            if (zone.ExclusiveGroup is int eg && eg > 0)
+            if (zone.ExclusiveGroup is { } eg && eg > 0)
                 KillVoicesByExclusiveClass(channel, eg);
 
             voice.Configure(zone, samples, key, velocity, channel, ++_generationCounter, channelState);
@@ -445,12 +445,12 @@ public sealed class Synthesizer
             if (zone.AmpRandomDb != 0 || zone.PitchRandomCents != 0 || zone.FilterRandomCents != 0 ||
                 zone.DelaySeconds != 0 || zone.DelayRandomSeconds != 0 || zone.OffsetRandomFrames != 0)
             {
-                double gainDb = zone.AmpRandomDb != 0 ? _rng.NextDouble() * zone.AmpRandomDb : 0.0;
-                double detune = zone.PitchRandomCents != 0 ? _rng.NextDouble() * zone.PitchRandomCents : 0.0;
-                double delaySec = zone.DelaySeconds
-                                + (zone.DelayRandomSeconds != 0 ? _rng.NextDouble() * zone.DelayRandomSeconds : 0.0);
-                long offFrames = zone.OffsetRandomFrames != 0 ? (long)(_rng.NextDouble() * zone.OffsetRandomFrames) : 0;
-                double filRand = zone.FilterRandomCents != 0 ? _rng.NextDouble() * zone.FilterRandomCents : 0.0;
+                var gainDb = zone.AmpRandomDb != 0 ? _rng.NextDouble() * zone.AmpRandomDb : 0.0;
+                var detune = zone.PitchRandomCents != 0 ? _rng.NextDouble() * zone.PitchRandomCents : 0.0;
+                var delaySec = zone.DelaySeconds
+                               + (zone.DelayRandomSeconds != 0 ? _rng.NextDouble() * zone.DelayRandomSeconds : 0.0);
+                var offFrames = zone.OffsetRandomFrames != 0 ? (long)(_rng.NextDouble() * zone.OffsetRandomFrames) : 0;
+                var filRand = zone.FilterRandomCents != 0 ? _rng.NextDouble() * zone.FilterRandomCents : 0.0;
                 voice.ApplyHumanization(gainDb, detune, delaySec, offFrames, filRand);
             }
         }
@@ -458,7 +458,7 @@ public sealed class Synthesizer
 
     private static bool PassesCCGates(IReadOnlyList<CCGate> gates, ChannelState ch)
     {
-        for (int i = 0; i < gates.Count; i++)
+        for (var i = 0; i < gates.Count; i++)
         {
             var gate = gates[i];
             if (!gate.Contains(ch.GetCC(gate.Controller))) return false;
@@ -474,9 +474,9 @@ public sealed class Synthesizer
     private static bool TrySelectKeyswitch(Patch patch, int key, ChannelState ch)
     {
         var zones = patch.Zones;
-        for (int i = 0; i < zones.Count; i++)
+        for (var i = 0; i < zones.Count; i++)
         {
-            if (zones[i].KeySwitch is KeySwitch ks && key >= ks.Low && key <= ks.High)
+            if (zones[i].KeySwitch is { } ks && key >= ks.Low && key <= ks.High)
             {
                 ch.SelectedKeyswitch = (sbyte)key;
                 return true;
@@ -537,7 +537,7 @@ public sealed class Synthesizer
         // the bank keeps the default (CC64), this is exactly the old behaviour.
         if (controller == channelState.SustainCc)
         {
-            bool on = value >= 64;
+            var on = value >= 64;
             if (channelState.Sustain && !on)
                 ReleaseAllSustainedVoices(channel);
             channelState.Sustain = on;
@@ -846,7 +846,7 @@ public sealed class Synthesizer
         // 0..127). MSB selects which parameter to set on that key.
         if (ch.IsDrumPart && msb >= 0x18 && msb <= 0x1E)
         {
-            ch.DrumOverrides ??= new System.Collections.Generic.Dictionary<int, DrumKeyOverride>();
+            ch.DrumOverrides ??= new Dictionary<int, DrumKeyOverride>();
             if (!ch.DrumOverrides.TryGetValue(lsb, out var ov))
             {
                 ov = new DrumKeyOverride();
@@ -935,7 +935,7 @@ public sealed class Synthesizer
     {
         if ((uint)channel >= ChannelCount) return;
         if ((uint)key >= 128) return;
-        byte clamped = (byte)Math.Clamp(pressure, 0, 127);
+        var clamped = (byte)Math.Clamp(pressure, 0, 127);
 
         foreach (var voice in _voices)
         {
@@ -1339,7 +1339,7 @@ public sealed class Synthesizer
 
         // Tier-1 mixer: only do any per-instrument work when at least one trim exists. While the map is
         // empty this whole layer is skipped and the voice loop is the exact pre-mixer code path.
-        bool mixerActive = _instrumentMixes.Count != 0;
+        var mixerActive = _instrumentMixes.Count != 0;
         if (mixerActive)
         {
             _anySolo = false;
@@ -1350,7 +1350,7 @@ public sealed class Synthesizer
         // Tier-2 inserts: read the immutable snapshot once (stable for this block). When any exist,
         // instruments with an insert render into a private bus instead of straight into master.
         var inserts = _instrumentInserts;
-        bool hasInserts = inserts.Count != 0;
+        var hasInserts = inserts.Count != 0;
         if (hasInserts) PrepareBuses(inserts, frames);
 
         // Process each voice — writes dry signal to L/R AND mono signal to send buses
@@ -1366,14 +1366,14 @@ public sealed class Synthesizer
 
             // GM2 CC 77 (vibrato depth): bipolar around 64, ±50 cents. The route
             // framework uses unipolar sources only, so this stays synth-level.
-            double extraVibCents = (channelState.VibratoDepthCc - 64) * (50.0 / 64.0);
+            var extraVibCents = (channelState.VibratoDepthCc - 64) * (50.0 / 64.0);
 
             // CC 67 (soft pedal / una corda): ≥ 64 = ~6 dB attenuation.
-            double softPedalAttenDb = channelState.SoftPedal >= 64 ? 6.0 : 0.0;
+            var softPedalAttenDb = channelState.SoftPedal >= 64 ? 6.0 : 0.0;
 
             // CC 92 tremolo: sin LFO modulates attenuation symmetrically up to
             // ±TremoloMaxAttenDb at full depth. Phase advances once per Generate.
-            double tremoloAttenDb = 0.0;
+            var tremoloAttenDb = 0.0;
             if (channelState.TremoloDepth > 0)
             {
                 var depth = channelState.TremoloDepth / 127.0;
@@ -1382,13 +1382,13 @@ public sealed class Synthesizer
             }
 
             // CC 8 Balance: post-pan L/R gain multipliers.
-            float balanceLeft = channelState.Balance >= 64 ? 1f : channelState.Balance / 64f;
-            float balanceRight = channelState.Balance <= 64 ? 1f : (127 - channelState.Balance) / 63f;
+            var balanceLeft = channelState.Balance >= 64 ? 1f : channelState.Balance / 64f;
+            var balanceRight = channelState.Balance <= 64 ? 1f : (127 - channelState.Balance) / 63f;
 
             // Non-bend channel-level pitch offset: master tune + master key shift
             // + RPN 0,1 fine tune + RPN 0,2 coarse tune. The pitch-bend portion is
             // handled by the modulation route #10 inside the voice.
-            double nonBendPitchCents =
+            var nonBendPitchCents =
                 channelState.FineTuneCents
                 + channelState.CoarseTuneSemitones * 100.0
                 + _masterTuneCents
@@ -1588,12 +1588,12 @@ public sealed class Synthesizer
     /// </summary>
     private void EnforceRegionPolyphony(PatchZone zone, int channel)
     {
-        int cap = zone.Polyphony;
+        var cap = zone.Polyphony;
         // Count only Playing voices (a stolen voice becomes Released/Free and drops out, so the loop
         // terminates). This caps the simultaneously-held notes from the region; release tails ring on.
         while (true)
         {
-            int count = 0;
+            var count = 0;
             Voice? oldest = null;
             foreach (var voice in _voices)
             {
@@ -1665,13 +1665,13 @@ public sealed class Synthesizer
         {
             if (!_buses.TryGetValue(kv.Key, out var bus)) continue;
             var interleaved = bus.Interleaved;
-            for (int i = 0; i < frames; i++)
+            for (var i = 0; i < frames; i++)
             {
                 interleaved[i * 2] = bus.L[i];
                 interleaved[i * 2 + 1] = bus.R[i];
             }
             kv.Value.Process(interleaved.AsSpan(0, frames * 2));
-            for (int i = 0; i < frames; i++)
+            for (var i = 0; i < frames; i++)
             {
                 left[i] += interleaved[i * 2];
                 right[i] += interleaved[i * 2 + 1];
@@ -1704,8 +1704,8 @@ public sealed class Synthesizer
 
         public void Clear(int frames)
         {
-            System.Array.Clear(L, 0, frames);
-            System.Array.Clear(R, 0, frames);
+            Array.Clear(L, 0, frames);
+            Array.Clear(R, 0, frames);
         }
     }
 }

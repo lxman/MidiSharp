@@ -12,7 +12,7 @@ internal static class GenericLfoWave
 {
     public static double Eval(int wave, double phase)
     {
-        double p = phase - Math.Floor(phase);   // wrap to [0,1)
+        var p = phase - Math.Floor(phase);   // wrap to [0,1)
         switch (wave)
         {
             case 0:  // triangle — starts at 0 rising, +1 at 1/4, -1 at 3/4
@@ -89,7 +89,7 @@ internal sealed class GenericLfoRunner
         _basePitch = _baseVolume = _baseCutoff = 0;
         _pitchCc = _volumeCc = _cutoffCc = null;
 
-        int eqNeeded = 0;
+        var eqNeeded = 0;
         foreach (var t in lfo.Targets)
             if (t.Destination is LfoDestination.EqGain or LfoDestination.EqFreq) eqNeeded++;
         if (_eqBand.Length < eqNeeded)
@@ -125,7 +125,7 @@ internal sealed class GenericLfoRunner
         PitchDepthCents = _basePitch;
         VolumeDepthDb = _baseVolume;
         CutoffDepthCents = _baseCutoff;
-        for (int i = 0; i < _eqCount; i++) _eqDelta[i] = 0;
+        for (var i = 0; i < _eqCount; i++) _eqDelta[i] = 0;
     }
 
     /// <summary>Recomputes frequency, target depths and EQ deltas from the channel's current CCs.</summary>
@@ -138,8 +138,8 @@ internal sealed class GenericLfoRunner
 
         if (_eqCount > 0)
         {
-            double peek = Peek();
-            for (int i = 0; i < _eqCount; i++)
+            var peek = Peek();
+            for (var i = 0; i < _eqCount; i++)
                 _eqDelta[i] = peek * (_eqBaseDepth[i] + SumCc(_eqDepthCc[i], ch));
         }
     }
@@ -149,7 +149,7 @@ internal sealed class GenericLfoRunner
     {
         if (_delayCounter > 0) { _delayCounter--; return 0.0; }
 
-        double v = StageSum();
+        var v = StageSum();
         if (_fadeSamples > 0 && _fadeElapsed < _fadeSamples)
         {
             v *= (double)_fadeElapsed / _fadeSamples;
@@ -157,7 +157,7 @@ internal sealed class GenericLfoRunner
         }
 
         _phase += _phaseInc;
-        if (_phase >= 1.0) { double f = Math.Floor(_phase); _phase -= f; _cycle += (long)f; }
+        if (_phase >= 1.0) { var f = Math.Floor(_phase); _phase -= f; _cycle += (long)f; }
         return v;
     }
 
@@ -165,7 +165,7 @@ internal sealed class GenericLfoRunner
     private double Peek()
     {
         if (_delayCounter > 0) return 0.0;
-        double v = StageSum();
+        var v = StageSum();
         if (_fadeSamples > 0 && _fadeElapsed < _fadeSamples)
             v *= (double)_fadeElapsed / _fadeSamples;
         return v;
@@ -173,11 +173,11 @@ internal sealed class GenericLfoRunner
 
     private double StageSum()
     {
-        double v = 0.0;
-        for (int s = 0; s < _stages.Length; s++)
+        var v = 0.0;
+        for (var s = 0; s < _stages.Length; s++)
         {
             var st = _stages[s];
-            double w = st.Wave switch
+            var w = st.Wave switch
             {
                 // Random sample-and-hold: a new random value twice per period, held between. Deterministic
                 // (hashed from the monotonic half-period index) so renders stay reproducible.
@@ -196,8 +196,8 @@ internal sealed class GenericLfoRunner
     /// per cycle and held — derived from a splitmix64 hash of the half index, so it's reproducible.</summary>
     private static double SampleHold(double monotonicPhase)
     {
-        long halfIndex = (long)Math.Floor(monotonicPhase * 2.0);
-        ulong x = (ulong)halfIndex + 0x9E3779B97F4A7C15UL;
+        var halfIndex = (long)Math.Floor(monotonicPhase * 2.0);
+        var x = (ulong)halfIndex + 0x9E3779B97F4A7C15UL;
         x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9UL;
         x = (x ^ (x >> 27)) * 0x94D049BB133111EBUL;
         x ^= x >> 31;
@@ -208,8 +208,8 @@ internal sealed class GenericLfoRunner
     private static double Stepped(double[]? steps, double phase)
     {
         if (steps is not { Length: > 0 }) return 0.0;
-        double p = phase - Math.Floor(phase);
-        int i = (int)(p * steps.Length);
+        var p = phase - Math.Floor(phase);
+        var i = (int)(p * steps.Length);
         if (i >= steps.Length) i = steps.Length - 1;   // guard the p≈1 boundary
         return steps[i];
     }
@@ -217,8 +217,8 @@ internal sealed class GenericLfoRunner
     private static double SumCc(LfoCcDepth[]? mods, ChannelState ch)
     {
         if (mods == null) return 0.0;
-        double sum = 0.0;
-        for (int i = 0; i < mods.Length; i++)
+        var sum = 0.0;
+        for (var i = 0; i < mods.Length; i++)
             sum += ch.GetCC(mods[i].Cc) / 127.0 * mods[i].Amount;
         return sum;
     }

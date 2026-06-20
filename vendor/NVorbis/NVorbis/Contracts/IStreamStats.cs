@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace MidiSharp.Audio.Vorbis.Contracts
+﻿namespace MidiSharp.Audio.Vorbis.Contracts
 {
     /// <summary>
     /// Describes an interface for reading statistics about the current stream.
