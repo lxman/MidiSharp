@@ -38,6 +38,9 @@ public sealed class Vst3Tests
         return d == null ? null : _format.Load(d, Config);
     }
 
+    private PluginDescriptor? FindSynth()
+        => _format.Scan(_format.DefaultSearchPaths).FirstOrDefault(p => p.Name == "MidiSharp VST3 Synth");
+
     [Fact]
     public void Loads_the_vst3_fixture_and_reads_its_metadata()
     {
@@ -87,5 +90,71 @@ public sealed class Vst3Tests
         Assert.True(Math.Abs(unity - inputRms) < 0.01, $"×1 (got {unity:F5})");
         Assert.True(Math.Abs(half - inputRms * 0.5) < 0.01, $"×0.5 (got {half:F5})");
         Assert.True(Math.Abs(dbl - inputRms * 2.0) < 0.02, $"×2 (got {dbl:F5})");
+    }
+
+    [Fact]
+    public void State_round_trips_through_an_ibstream()
+    {
+        var plugin = LoadGain();
+        Assert.SkipWhen(plugin == null, "VST3 gain fixture not installed.");
+        using var _ = plugin;
+
+        plugin!.SetParameter(0, 0.25);          // a distinctive value
+        var saved = plugin.SaveState();         // component getState → IBStream → bytes
+        Assert.NotEmpty(saved);                 // the fixture writes its 8-byte gain
+        _out.WriteLine($"saved {saved.Length} bytes, param before = {plugin.GetParameter(0):F3}");
+
+        plugin.SetParameter(0, 0.9);            // clobber it
+        Assert.Equal(0.9, plugin.GetParameter(0), 3);
+
+        plugin.LoadState(saved);                // IBStream → component setState restores the gain
+        Assert.Equal(0.25, plugin.GetParameter(0), 3);
+    }
+
+    [Fact]
+    public void Discovers_the_instrument_and_its_separate_controller_parameter()
+    {
+        var d = FindSynth();
+        Assert.SkipWhen(d == null, "VST3 synth fixture not installed.");
+        Assert.True(d!.IsInstrument, "the synth's 'Instrument' subcategory should mark it an instrument.");
+
+        using var plugin = _format.Load(d, Config);   // the component exposes no controller → host creates the separate class
+        _out.WriteLine($"Loaded {plugin.Descriptor.Name}, instrument={plugin.IsInstrument}, {plugin.Parameters.Count} params");
+        Assert.Single(plugin.Parameters);             // the param lives on the SEPARATE controller object
+        Assert.Equal("Volume", plugin.Parameters[0].Name);
+    }
+
+    [Fact]
+    public void Plays_a_note_through_the_event_list()
+    {
+        var d = FindSynth();
+        Assert.SkipWhen(d == null, "VST3 synth fixture not installed.");
+        using var inst = new HostedInstrument(_format.Load(d!, Config), Config);
+
+        // Silent until a note arrives; then an A4 (key 69) sounds at ~440 Hz via the VST3 event list.
+        var buf = new float[Block * 2];
+        inst.Render(buf);
+        double preRms = 0; foreach (var v in buf) preRms += (double)v * v;
+        Assert.True(Math.Sqrt(preRms / buf.Length) < 1e-6, "instrument should be silent before any note.");
+
+        inst.NoteOn(0, channel: 0, key: 69, velocity: 100);
+        const int blocks = 64;
+        var left = new float[blocks * Block];
+        for (var b = 0; b < blocks; b++)
+        {
+            Array.Clear(buf);
+            inst.Render(buf);
+            for (var i = 0; i < Block; i++) left[b * Block + i] = buf[2 * i];
+        }
+
+        double rms = 0; var crossings = 0;
+        for (var i = 0; i < left.Length; i++) rms += (double)left[i] * left[i];
+        rms = Math.Sqrt(rms / left.Length);
+        for (var i = 1; i < left.Length; i++)
+            if ((left[i - 1] < 0f && left[i] >= 0f) || (left[i - 1] >= 0f && left[i] < 0f)) crossings++;
+        var hz = crossings * (double)Rate / (2.0 * left.Length);
+        _out.WriteLine($"note rms={rms:F4} freq={hz:F1}");
+        Assert.True(rms > 0.1, $"the note should sound through the event list (rms {rms:F4}).");
+        Assert.True(Math.Abs(hz - 440.0) < 5.0, $"A4 should sound at ~440 Hz (measured {hz:F1}).");
     }
 }

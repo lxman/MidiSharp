@@ -351,8 +351,30 @@ setupProcessing → activateBus → setActive/setProcessing → planar `process`
 clean-room single-component VST3 gain fixture built in C from `vst3_c_api.h` (factory + IComponent +
 IAudioProcessor + IEditController with `queryInterface`/ref-counting): metadata reads correctly; gain
 tracks the parameter exactly (input 0.28284 → ×1 0.28277, ×0.5 0.14139, ×2 0.56555). Registered in the
-server `PluginHost`. **Follow-ups:** separate component/controller plugins, VST3 event lists (instrument
-MIDI), and IBStream state.
+server `PluginHost`.
+
+**The follow-ups shipped 2026-06-20** — `Vst3Plugin` now covers the full VST3 model:
+- **Separate component/controller.** When the component exposes no `IEditController`, the host reads the
+  controller class id (`getControllerClassId`), creates that class from the factory, initializes it with
+  the host, connects the two via `IConnectionPoint`, and seeds it with the component's state
+  (`setComponentState`). Parameters then live on the distinct controller object.
+- **Event lists (instrument MIDI).** A plugin with an event input bus is fed note-on/off through a
+  host-side `IEventList` (`Vst3EventList` — a fixed-capacity unmanaged event buffer, sample-accurate via
+  the event `sampleOffset`, zero-alloc on the audio thread). `HostedInstrument` drives it.
+- **IBStream state.** `Vst3BStream` is a managed `IBStream` over a growable byte buffer; `SaveState`/
+  `LoadState` round-trip the component's `getState`/`setState` (plus the separate controller's own state
+  and a `setComponentState` re-sync on load), length-prefixed `[compLen][comp][ctrlLen][ctrl]`.
+- **Instrument detection.** The scanner reads `IPluginFactory2::getClassInfo2` subCategories and flags
+  classes carrying `Instrument`, so VST3 instruments surface in the bind-as-instrument UI.
+- **Bundle binary resolution** now prefers the bundle-named `.so` (per VST3 convention), so real bundles
+  that also ship helper libraries (e.g. lsp-plugins' GL renderer) resolve to the actual plugin.
+
+Verified: a clean-room VST3 **instrument with a separate controller** fixture (built in C from
+`vst3_c_api.h`, two factory classes, no `IEditController` on the component) — the host creates the
+separate controller and reads its `Volume` param, and an A4 note played through the event list sounds at
+~440 Hz; the gain fixture's state round-trips through the IBStream (param 0.25 saved, clobbered to 0.9,
+restored to 0.25). Hosting suite 52 pass. Live: the server discovers 196 VST3 plugins (the full
+lsp-plugins suite via the bundle-binary fix) plus both fixtures, the synth flagged `isInstrument`.
 
 
 VST3 is a C++ COM-like ABI (`IPluginFactory`/`IComponent`/`IAudioProcessor`/`IEditController` vtables).
@@ -475,6 +497,9 @@ bind-a-plugin-as-instrument UI shipped 2026-06-20 (part-strip `src` selector →
 on Play and persisted in `SetupDto.Instruments`), per-part gain/pan/mute/solo on summed instruments shipped
 the same day (`StereoTrim.Add` + the part's shared `InstrumentMix` + `Synthesizer.AnySolo`), and per-part
 inserts on a hosted instrument shipped the same day too (the part's `EffectRack` run on the plugin output
-in the callback, with live `/api/insert` parity). **No robustness or persistence gaps remain — the hosted
-instrument now has the full channel strip (substitution, gain/pan/mute/solo, inserts). Remaining work is
-narrow feature depth:** VST3 separate-controller / event-list / IBStream state.
+in the callback, with live `/api/insert` parity). VST3's full model landed 2026-06-20 as well — separate
+component/controller, instrument event lists, and IBStream state, plus instrument detection and real-bundle
+binary resolution. **The plugin-hosting arc is feature-complete:** four formats (CLAP/VST2/VST3/LADSPA),
+effects and instruments, the hosted instrument carries the full channel strip, discovery+load are
+crash-isolated out-of-process, and state persists into setups. The only deferred items are explicitly
+out-of-scope tracks: native plugin GUIs (Phase 7, non-web) and AU (macOS-only) / AAX (parked).

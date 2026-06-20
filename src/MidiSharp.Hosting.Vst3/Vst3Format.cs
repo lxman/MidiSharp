@@ -59,7 +59,9 @@ public sealed unsafe class Vst3Format : IPluginFormat
     }
 
     // A .vst3 is either a single shared library or a bundle directory with the binary under
-    // Contents/<arch>-linux/. Pick the platform binary.
+    // Contents/<arch>-linux/. Pick the platform binary: by VST3 convention the plugin .so is named after
+    // the bundle (e.g. lsp-plugins.vst3 → lsp-plugins.so) — prefer that, since a bundle may also ship
+    // helper libraries (GL renderers, shared deps) that have no plugin factory.
     internal static string? ResolveBinary(string vst3)
     {
         if (File.Exists(vst3)) return vst3;
@@ -67,7 +69,9 @@ public sealed unsafe class Vst3Format : IPluginFormat
         var arch = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "aarch64-linux" : "x86_64-linux";
         var contents = Path.Combine(vst3, "Contents", arch);
         if (!Directory.Exists(contents)) return null;
-        return Directory.EnumerateFiles(contents, "*.so").FirstOrDefault();
+        var named = Path.Combine(contents, Path.GetFileNameWithoutExtension(vst3) + ".so");
+        if (File.Exists(named)) return named;
+        return Directory.EnumerateFiles(contents, "*.so").OrderBy(f => f, StringComparer.Ordinal).FirstOrDefault();
     }
 
     private static IEnumerable<PluginDescriptor> ScanBinary(string binary)
@@ -79,6 +83,13 @@ public sealed unsafe class Vst3Format : IPluginFormat
             var factory = GetFactory(lib);
             if (factory == null) return results;
             var v = (FactoryVtbl*)*(void**)factory;
+            // IPluginFactory2 (if supported) exposes subCategories — that's where "Instrument" lives.
+            void* factory2 = null;
+            fixed (byte* iid2 = IidPluginFactory2)
+                if (!Ok(((delegate* unmanaged[Cdecl]<void*, byte*, void**, int>)(*(IntPtr**)factory)[0])(factory, iid2, &factory2)))
+                    factory2 = null;
+            var f2 = factory2 != null ? (Factory2Vtbl*)*(void**)factory2 : null;
+
             var count = v->CountClasses(factory);
             for (var i = 0; i < count; i++)
             {
@@ -87,14 +98,24 @@ public sealed unsafe class Vst3Format : IPluginFormat
                 if (Ascii(info.Category, 32) != AudioModuleCategory) continue;
                 var cid = new byte[16];
                 for (var b = 0; b < 16; b++) cid[b] = info.Cid[b];
+
+                var isInstrument = false;
+                if (f2 != null)
+                {
+                    PClassInfo2 info2;
+                    if (Ok(f2->GetClassInfo2(factory2, i, &info2)))
+                        isInstrument = Ascii(info2.SubCategories, 128).Contains("Instrument", StringComparison.OrdinalIgnoreCase);
+                }
+
                 results.Add(new PluginDescriptor(
                     Format: "VST3",
                     Id: Convert.ToHexString(cid),
                     Name: Ascii(info.Name, 64),
                     Vendor: "",
-                    IsInstrument: false,   // refined from subcategories later; effects for now
+                    IsInstrument: isInstrument,
                     Path: binary));
             }
+            if (factory2 != null) ((delegate* unmanaged[Cdecl]<void*, uint>)(*(IntPtr**)factory2)[2])(factory2);
         }
         finally { NativeLibrary.Free(lib); }
         return results;
@@ -119,7 +140,9 @@ public sealed unsafe class Vst3Format : IPluginFormat
                 if (!Ok(v->CreateInstance(factory, cidp, iidp, &component)) || component == null)
                     throw new InvalidOperationException($"createInstance failed for VST3 {descriptor.Name}.");
 
-            return new Vst3Plugin(lib, component, descriptor, config);   // wrapper owns lib + releases component
+            // The factory stays valid while the library is loaded — the plugin keeps it to create a separate
+            // edit controller class if the component names one.
+            return new Vst3Plugin(lib, factory, component, descriptor, config);   // wrapper owns lib + releases component
         }
         catch
         {

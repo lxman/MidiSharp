@@ -19,14 +19,22 @@ internal static unsafe class Vst3Abi
     public static readonly string[] FactoryExport = ["GetPluginFactory"];
     public const string AudioModuleCategory = "Audio Module Class";
 
+    public const int kNoteOnEvent = 0;
+    public const int kNoteOffEvent = 1;
+    public const int kIBSeekSet = 0;   // IBStream seek modes
+
     // ── IIDs (non-Windows UID layout: each of the four uint32 stored big-endian) ──
     public static readonly byte[] IidFUnknown = Uid(0x00000000, 0x00000000, 0xC0000000, 0x00000046);
     public static readonly byte[] IidPluginFactory = Uid(0x7A4D811C, 0x52114A1F, 0xAED9D2EE, 0x0B43BF9F);
+    public static readonly byte[] IidPluginFactory2 = Uid(0x0007B650, 0xF24B4C0B, 0xA464EDB9, 0xF00B2ABB);
     public static readonly byte[] IidComponent = Uid(0xE831FF31, 0xF2D54301, 0x928EBBEE, 0x25697802);
     public static readonly byte[] IidAudioProcessor = Uid(0x42043F99, 0xB7DA453C, 0xA569E79D, 0x9AAEC33D);
     public static readonly byte[] IidEditController = Uid(0xDCD7BBE3, 0x7742448D, 0xA874AACC, 0x979C759E);
     public static readonly byte[] IidHostApplication = Uid(0x58E595CC, 0xDB2D4969, 0x8B6AAF8C, 0x36A664E5);
     public static readonly byte[] IidComponentHandler = Uid(0x93A0BEA3, 0x0BD045DB, 0x8E890B0C, 0xC1E46AC6);
+    public static readonly byte[] IidBStream = Uid(0xC3BF6EA2, 0x30994752, 0x9B6BF990, 0x1EE33E9B);
+    public static readonly byte[] IidEventList = Uid(0x3A2C4214, 0x346349FE, 0xB2C4F397, 0xB9695A44);
+    public static readonly byte[] IidConnectionPoint = Uid(0x70A4156F, 0x6E6E4026, 0x989148BF, 0xAA60D8D1);
 
     public static byte[] Uid(uint a, uint b, uint c, uint d) =>
     [
@@ -54,13 +62,14 @@ internal static unsafe class Vst3Abi
         public delegate* unmanaged[Cdecl]<void*, uint> Release;
         public delegate* unmanaged[Cdecl]<void*, void*, int> Initialize;
         public delegate* unmanaged[Cdecl]<void*, int> Terminate;
-        public IntPtr GetControllerClassId, SetIoMode;
+        public delegate* unmanaged[Cdecl]<void*, byte*, int> GetControllerClassId;   // writes a TUID
+        public IntPtr SetIoMode;
         public delegate* unmanaged[Cdecl]<void*, int, int, int> GetBusCount;
         public delegate* unmanaged[Cdecl]<void*, int, int, int, BusInfo*, int> GetBusInfo;
         public IntPtr GetRoutingInfo;
         public delegate* unmanaged[Cdecl]<void*, int, int, int, byte, int> ActivateBus;
         public delegate* unmanaged[Cdecl]<void*, byte, int> SetActive;
-        public IntPtr SetState, GetState;
+        public delegate* unmanaged[Cdecl]<void*, void*, int> SetState, GetState;   // IBStream
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -78,13 +87,76 @@ internal static unsafe class Vst3Abi
     [StructLayout(LayoutKind.Sequential)]
     public struct EditControllerVtbl
     {
-        public IntPtr QueryInterface, AddRef, Release, Initialize, Terminate, SetComponentState, SetState, GetState;
+        public delegate* unmanaged[Cdecl]<void*, byte*, void**, int> QueryInterface;
+        public IntPtr AddRef;
+        public delegate* unmanaged[Cdecl]<void*, uint> Release;
+        public delegate* unmanaged[Cdecl]<void*, void*, int> Initialize;
+        public delegate* unmanaged[Cdecl]<void*, int> Terminate;
+        public delegate* unmanaged[Cdecl]<void*, void*, int> SetComponentState;   // IBStream (sync params to component)
+        public delegate* unmanaged[Cdecl]<void*, void*, int> SetState, GetState;  // controller's own IBStream state
         public delegate* unmanaged[Cdecl]<void*, int> GetParameterCount;
         public delegate* unmanaged[Cdecl]<void*, int, ParameterInfo*, int> GetParameterInfo;
         public IntPtr GetParamStringByValue, GetParamValueByString, NormalizedParamToPlain, PlainParamToNormalized;
         public delegate* unmanaged[Cdecl]<void*, uint, double> GetParamNormalized;
         public delegate* unmanaged[Cdecl]<void*, uint, double, int> SetParamNormalized;
-        public IntPtr SetComponentHandler, CreateView;
+        public delegate* unmanaged[Cdecl]<void*, void*, int> SetComponentHandler;
+        public IntPtr CreateView;
+    }
+
+    // IPluginFactory2 — adds getClassInfo2 (PClassInfo2 carries subCategories, where "Instrument" lives).
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Factory2Vtbl
+    {
+        public IntPtr QueryInterface, AddRef, Release, GetFactoryInfo, CountClasses, GetClassInfo;
+        public delegate* unmanaged[Cdecl]<void*, byte*, byte*, void**, int> CreateInstance;
+        public delegate* unmanaged[Cdecl]<void*, int, PClassInfo2*, int> GetClassInfo2;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ConnectionPointVtbl
+    {
+        public IntPtr QueryInterface, AddRef, Release;
+        public delegate* unmanaged[Cdecl]<void*, void*, int> Connect, Disconnect;
+        public IntPtr Notify;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PClassInfo2
+    {
+        public fixed byte Cid[16];
+        public int Cardinality;
+        public fixed byte Category[32];
+        public fixed byte Name[64];
+        public uint ClassFlags;
+        public fixed byte SubCategories[128];
+        public fixed byte Vendor[64];
+        public fixed byte Version[64];
+        public fixed byte SdkVersion[64];
+    }
+
+    // One VST3 event (kEvent, 48 bytes; union at offset 24). Explicit layout so note-on / note-off members
+    // overlay the union exactly as the C struct does (NoteOff orders velocity/noteId/tuning differently).
+    [StructLayout(LayoutKind.Explicit, Size = 48)]
+    public struct VstEvent
+    {
+        [FieldOffset(0)] public int BusIndex;
+        [FieldOffset(4)] public int SampleOffset;
+        [FieldOffset(8)] public double PpqPosition;
+        [FieldOffset(16)] public ushort Flags;
+        [FieldOffset(18)] public ushort Type;
+        // NoteOnEvent { int16 channel, int16 pitch, float tuning, float velocity, int32 length, int32 noteId }
+        [FieldOffset(24)] public short OnChannel;
+        [FieldOffset(26)] public short OnPitch;
+        [FieldOffset(28)] public float OnTuning;
+        [FieldOffset(32)] public float OnVelocity;
+        [FieldOffset(36)] public int OnLength;
+        [FieldOffset(40)] public int OnNoteId;
+        // NoteOffEvent { int16 channel, int16 pitch, float velocity, int32 noteId, float tuning }
+        [FieldOffset(24)] public short OffChannel;
+        [FieldOffset(26)] public short OffPitch;
+        [FieldOffset(28)] public float OffVelocity;
+        [FieldOffset(32)] public int OffNoteId;
+        [FieldOffset(36)] public float OffTuning;
     }
 
     [StructLayout(LayoutKind.Sequential)]
