@@ -22,6 +22,10 @@ public static class SandboxProtocol
     public const byte RespParamValue = 0x13;
     public const byte RespProcessed = 0x14;
 
+    // scan mode (worker → host, streamed)
+    public const byte ScanDescriptor = 0x20;   // format, id, name, vendor, isInstrument, path
+    public const byte ScanDone = 0x21;
+
     public const int MaxChannels = 2;
 
     /// <summary>Shared-memory size for a given max block: in-L, in-R, out-L, out-R, each maxFrames floats.</summary>

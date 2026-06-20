@@ -361,9 +361,15 @@ killing the worker mid-run makes the proxy go silent without throwing — the ho
 `SandboxedPlugin` out-of-process by default (worker resolved next to the server or from its dev build;
 `MIDISHARP_SANDBOX=0` opts out). Verified live: the server starts with "Plugin sandbox: ON", and fetching
 param info for an **lsp-plugins** plugin — the suite that crashed the server in-process in Phase 2 — now
-loads it in the worker and returns its parameters, with the server staying up (HTTP 200). **Remaining:**
-sandbox the discovery *scan* too (VST2/VST3 scan still instantiates in-process), proxy plugin state, and a
-process-watchdog/timeout for hung workers.
+loads it in the worker and returns its parameters, with the server staying up (HTTP 200).
+
+**Discovery scan sandboxed too (2026-06-20):** `SandboxScanner` runs one worker per format that streams
+descriptors back as it finds them; a plugin that crashes the scan kills only that format's worker (the
+host keeps what streamed; other formats are untouched). `PluginHost.Rescan` uses it when sandboxing is on.
+Verified live: the server discovers all plugins through the sandboxed scan (217: CLAP 196, VST3 1, VST2 1,
+LADSPA 19). With both scan and load out-of-process, the server never instantiates native plugin code
+in-process. **Remaining:** per-file resume so a crash skips only the one plugin (currently loses a format's
+tail after its crasher), proxy plugin state, and a worker watchdog/timeout for hangs.
 
 
 Run plugins in a child process; bridge audio over a shared-memory ring and control over RPC, behind the

@@ -42,6 +42,18 @@ public sealed class SandboxTests
     }
 
     [Fact]
+    public void Sandboxed_scan_discovers_plugins_in_a_worker_process()
+    {
+        var worker = WorkerDll();
+        Assert.SkipWhen(worker == null, "sandbox worker not built.");
+        var found = SandboxScanner.ScanFormat("CLAP", worker!);
+        _out.WriteLine($"sandboxed CLAP scan found {found.Count} plugins");
+        Assert.All(found, p => Assert.Equal("CLAP", p.Format));
+        Assert.SkipWhen(GainDescriptor() == null, "CLAP gain fixture not installed.");
+        Assert.Contains(found, p => p.Id == "midisharp.test.gain");
+    }
+
+    [Fact]
     public void Sandboxed_plugin_processes_audio_correctly_in_another_process()
     {
         var worker = WorkerDll();

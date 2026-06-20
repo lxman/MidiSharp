@@ -11,6 +11,36 @@ using MidiSharp.Hosting.Vst2;
 using MidiSharp.Hosting.Vst3;
 using static MidiSharp.Hosting.Sandbox.SandboxProtocol;
 
+// Scan mode: enumerate ONE format and stream its descriptors back. A native crash here kills only this
+// process; the host keeps whatever streamed. args: --scan <format> <outHandle>
+if (args.Length >= 3 && args[0] == "--scan")
+{
+    using var scanPipe = new AnonymousPipeClientStream(PipeDirection.Out, args[2]);
+    using var scanWriter = new BinaryWriter(scanPipe);
+    try
+    {
+        IPluginFormat sfmt = args[1] switch
+        {
+            "CLAP" => new ClapFormat(),
+            "VST3" => new Vst3Format(),
+            "VST2" => new Vst2Format(),
+            "LADSPA" => new LadspaFormat(),
+            _ => throw new NotSupportedException(args[1]),
+        };
+        foreach (var d in sfmt.Scan(sfmt.DefaultSearchPaths))
+        {
+            scanWriter.Write(SandboxProtocol.ScanDescriptor);
+            scanWriter.Write(d.Format); scanWriter.Write(d.Id); scanWriter.Write(d.Name);
+            scanWriter.Write(d.Vendor); scanWriter.Write(d.IsInstrument); scanWriter.Write(d.Path);
+            scanWriter.Flush();   // stream each result so a later crash still leaves the earlier ones
+        }
+    }
+    catch { /* a managed scan error still completes with DONE; a native crash just exits */ }
+    scanWriter.Write(SandboxProtocol.ScanDone);
+    scanWriter.Flush();
+    return 0;
+}
+
 // args: <inHandle> <outHandle> <mmfPath> <maxFrames> <format> <id> <pluginPath> <sampleRate> <name> <isInstrument>
 if (args.Length < 10)
 {

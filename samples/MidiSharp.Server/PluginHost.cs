@@ -32,9 +32,12 @@ public sealed class PluginHost
         .Register(new Vst2Format())
         .Register(new LadspaFormat());
 
+    private static readonly string[] Formats = ["CLAP", "VST3", "VST2", "LADSPA"];
+
     private readonly int _sampleRate;
     private readonly string? _workerDll;
     private readonly bool _sandbox;
+    private List<PluginDescriptor> _plugins = [];
 
     public PluginHost(int sampleRate)
     {
@@ -46,7 +49,7 @@ public sealed class PluginHost
         Console.WriteLine(_sandbox
             ? $"  Plugin sandbox:  ON  (worker: {_workerDll})"
             : "  Plugin sandbox:  OFF (in-process; set the worker or unset MIDISHARP_SANDBOX=0)");
-        try { _registry.Rescan(); } catch { /* a broken format dir shouldn't sink startup */ }
+        try { Rescan(); } catch { /* a broken format dir shouldn't sink startup */ }
     }
 
     public AudioConfig Config => new(_sampleRate, MaxBlockFrames, ChannelCount: 2);
@@ -54,9 +57,22 @@ public sealed class PluginHost
     /// <summary>True when plugins are hosted out-of-process.</summary>
     public bool Sandboxed => _sandbox;
 
-    public void Rescan() => _registry.Rescan();
+    /// <summary>Re-discover plugins. When sandboxed, the scan itself runs in worker processes (one per
+    /// format), so a plugin that crashes during discovery can't take the server down.</summary>
+    public void Rescan()
+    {
+        if (_sandbox && _workerDll != null)
+        {
+            _plugins = SandboxScanner.ScanAll(Formats, _workerDll);
+        }
+        else
+        {
+            _registry.Rescan();
+            _plugins = _registry.Plugins.ToList();
+        }
+    }
 
-    public IReadOnlyList<PluginDescriptorDto> List() => _registry.Plugins
+    public IReadOnlyList<PluginDescriptorDto> List() => _plugins
         .Select(p => new PluginDescriptorDto(p.Format, p.Id, p.Name, p.Vendor, p.IsInstrument))
         .ToList();
 
@@ -86,7 +102,7 @@ public sealed class PluginHost
         _sandbox ? new SandboxedPlugin(desc, _workerDll!, Config) : _registry.Load(desc, Config);
 
     private PluginDescriptor? Find(string format, string id) =>
-        _registry.Plugins.FirstOrDefault(p => p.Format == format && p.Id == id);
+        _plugins.FirstOrDefault(p => p.Format == format && p.Id == id);
 
     // Locate MidiSharp.Hosting.Worker.dll: an explicit override, then alongside the server (published
     // layout), then the worker's own build output (dev layout: samples/MidiSharp.Server → src/…Worker).
