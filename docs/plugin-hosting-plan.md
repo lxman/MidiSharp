@@ -287,7 +287,22 @@ note events via Phase 3; their stereo output sums into the part the same way syn
 **Acceptance gate:** a CLAP synth plays a MIDI file through MidiSharp's mixer, with per-part gain/pan and
 inserts applied on top — measured against the plugin's standalone render.
 
-### Phase 5 — VST2 adapter
+### Phase 5 — VST2 adapter  — ✅ VERIFIED 2026-06-20
+
+`MidiSharp.Hosting.Vst2`: the VST2 ABI transcribed clean-room (no Steinberg SDK) — `Vst2Abi` (the
+`AEffect` struct + opcode/flag constants + `VstEvents`/`VstMidiEvent`), `Vst2Host` (a shared
+`audioMaster` callback answering version/rate/block/process-level/strings via `UnmanagedCallersOnly`),
+`Vst2Format` (scan = instantiate-and-query since VST2 has no metadata API; load by uniqueID), and
+`Vst2Plugin : IHostedPlugin` (setSampleRate/blockSize/resume → planar `processReplacing` reusing
+`PlanarBridge`/`HostedEffect`; 0..1 parameters via `setParameter`/`getParameter`; MIDI via
+`effProcessEvents` with per-event `deltaFrames`; chunk state via `effGetChunk`/`effSetChunk`; mono output
+duplicated to stereo). Parameter changes are block-granular (the VST2 model); MIDI is sample-accurate.
+Verified against a clean-room VST2 gain fixture (built in C, no SDK): metadata reads correctly; gain
+tracks the parameter exactly (input 0.28284 → ×1 0.28277, ×0.5 0.14139, ×2 0.56555); a MIDI CC#7 event at
+sample 300 steps the gain at exactly 300. Registered in the server `PluginHost` (CLAP + VST2 + LADSPA), so
+VST2 plugins appear in the web rack's discovery. **License:** opt-in adapter, no Steinberg headers
+vendored; VST2's withdrawn license makes redistribution the caller's call.
+
 
 Simple C ABI (`AEffect` + `audioMasterCallback`), so it reuses all Phase 0–4 plumbing. Adds the VST2
 host-callback surface (`audioMasterGetTime`, automation, idle) and `processEvents`/`deltaFrames` event
@@ -362,9 +377,9 @@ through a `ProcessorChain`, with the loader, struct/function-pointer marshaling,
 kernel, no-GC hot path, and `IAudioProcessor` drop-in all validated by measurement. Every cross-cutting
 concern the rest of the plan rests on is proven.
 
-**Phases 0–4 (incl. 4b) done and verified** — LADSPA spike, CLAP effects, discovery/rack/UI/persistence,
-sample-accurate events, CLAP instrument hosting, and live player integration (a MIDI file through a hosted
-synth), all measured against real native plugins. **Next: Phase 5 (VST2)** then **Phase 6 (VST3)**, which
-reuse the whole `PlanarBridge`/`HostedEffect`/`HostedInstrument`/event stack as ABI adapters. Smaller
-follow-ups also open: the bind-a-plugin-as-instrument UI, per-part gain/pan on summed instruments, and
-Phase 8 out-of-process sandboxing (the lsp-plugins in-process crash).
+**Phases 0–5 done and verified** — LADSPA spike, CLAP effects + instruments + live player integration,
+discovery/rack/UI/persistence, sample-accurate events, and the VST2 adapter — all measured against real or
+clean-room native plugins, all reusing one `PlanarBridge`/`HostedEffect`/`HostedInstrument`/event stack.
+**Next: Phase 6 (VST3)** — the heavy lift (C++ COM-like ABI; route TBD: official C-API bridge vs a small
+per-OS C shim). Smaller follow-ups also open: the bind-a-plugin-as-instrument UI, per-part gain/pan on
+summed instruments, and Phase 8 out-of-process sandboxing (the lsp-plugins in-process crash).

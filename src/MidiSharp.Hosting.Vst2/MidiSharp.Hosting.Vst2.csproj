@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    VST2 host adapter (Phase 5). VST2 is a simple C ABI (a struct of function pointers, AEffect, plus a
+    host audioMaster callback), so it reuses the MidiSharp.Hosting core (PlanarBridge / HostedEffect /
+    HostedInstrument / event stack) — this adapter only speaks the VST2 ABI.
+
+    LICENSE NOTE: Steinberg withdrew the VST2 SDK license, so this ships as an opt-in adapter and vendors
+    NO Steinberg headers. The ABI it talks to (the AEffect layout, opcode and flag constants) is interface
+    information, transcribed clean-room here — not copied SDK source. Fine for personal/interop use; gray
+    for redistribution, which is the caller's call. See docs/plugin-hosting-plan.md (Phase 5).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>MidiSharp.Hosting.Vst2</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MidiSharp.Hosting\MidiSharp.Hosting.csproj" />
+  </ItemGroup>
+
+</Project>
