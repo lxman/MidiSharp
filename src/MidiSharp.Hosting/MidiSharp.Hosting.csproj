@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Format-agnostic plugin-hosting core. Holds the host-side abstraction (IHostedPlugin /
+    IPluginFormat), the realtime interleave<->planar bridge, and the HostedEffect adapter that turns a
+    hosted plugin into a MidiSharp.Dsp.IAudioProcessor so it drops straight into a ProcessorChain /
+    EffectRack with no engine change.
+
+    Deliberately contains NO P/Invoke and NO reference to any plugin-format SDK — every native call
+    lives in a per-format adapter project (MidiSharp.Hosting.Ladspa, .Clap, .Vst2, .Vst3).
+
+    Targets net10.0 (not netstandard2.1 like the engine libs): hosting is inherently runtime-coupled —
+    NativeMemory, function-pointer marshaling, and the no-GC realtime discipline want a modern runtime.
+    Packaging into the umbrella is a later (Phase 2+) concern. See docs/plugin-hosting-plan.md.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>MidiSharp.Hosting</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- For HostedEffect : IAudioProcessor — the only engine dependency, and a one-way one. -->
+    <ProjectReference Include="..\MidiSharp.Dsp\MidiSharp.Dsp.csproj" />
+  </ItemGroup>
+
+</Project>

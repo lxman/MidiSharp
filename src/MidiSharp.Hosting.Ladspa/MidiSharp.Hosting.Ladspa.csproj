@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    LADSPA host adapter (Phase 0 spike). LADSPA is the minimal audio-plugin ABI — one C struct of
+    function pointers, effects-only, Linux .so. Its job here is to de-risk the C#<->native realtime
+    boundary (NativeLibrary load, struct + function-pointer marshaling, the interleave<->planar kernel,
+    the no-GC run loop) against the simplest possible format before CLAP. Linux-only; kept afterwards as
+    a cheap optional effects adapter. See docs/plugin-hosting-plan.md (Phase 0).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>MidiSharp.Hosting.Ladspa</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MidiSharp.Hosting\MidiSharp.Hosting.csproj" />
+  </ItemGroup>
+
+</Project>
