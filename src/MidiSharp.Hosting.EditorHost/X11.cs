@@ -38,6 +38,33 @@ internal static class X11
 
     [DllImport(Lib)] public static extern IntPtr XInternAtom(IntPtr display, string name, bool onlyIfExists);
     [DllImport(Lib)] public static extern int XSetWMProtocols(IntPtr display, ulong w, ref IntPtr protocols, int count);
+    [DllImport(Lib)] public static extern int XSendEvent(IntPtr display, ulong w, bool propagate, long eventMask, IntPtr eventSend);
+
+    // XEMBED: after reparenting a client into an embedder window, the host must notify the client so it can
+    // proceed (some plugins' show() blocks until this arrives). See the freedesktop XEMBED spec.
+    private const int XEMBED_EMBEDDED_NOTIFY = 0;
+    private const int ClientMessageType = 33;
+
+    /// <summary>Send XEMBED_EMBEDDED_NOTIFY from <paramref name="embedder"/> to the embedded <paramref name="client"/>.</summary>
+    public static void SendXEmbedNotify(IntPtr display, ulong embedder, ulong client)
+    {
+        var atom = XInternAtom(display, "_XEMBED", false);
+        var ev = Marshal.AllocHGlobal(96);
+        try
+        {
+            for (var i = 0; i < 96; i++) Marshal.WriteByte(ev, i, 0);
+            Marshal.WriteInt32(ev, 0, ClientMessageType);   // type
+            Marshal.WriteInt64(ev, 32, (long)client);        // window (the embedded client)
+            Marshal.WriteInt64(ev, 40, atom.ToInt64());      // message_type = _XEMBED
+            Marshal.WriteInt32(ev, 48, 32);                  // format
+            // data.l @56: [0]=time(0) [1]=XEMBED_EMBEDDED_NOTIFY [2]=detail(0) [3]=embedder [4]=version(0)
+            Marshal.WriteInt64(ev, 56 + 8 * 1, XEMBED_EMBEDDED_NOTIFY);
+            Marshal.WriteInt64(ev, 56 + 8 * 3, (long)embedder);
+            XSendEvent(display, client, false, 0, ev);
+            XFlush(display);
+        }
+        finally { Marshal.FreeHGlobal(ev); }
+    }
 
     // XQueryTree — used to verify an embed: after set_parent the plugin's window appears as a child.
     [DllImport(Lib)]
@@ -56,5 +83,18 @@ internal static class X11
         if (XQueryTree(display, w, out _, out _, out var children, out var n) == 0) return 0;
         if (children != IntPtr.Zero) XFree(children);
         return n;
+    }
+
+    /// <summary>The first direct child window of <paramref name="w"/> (the plugin's embedded editor), or 0.</summary>
+    public static ulong FirstChild(IntPtr display, ulong w)
+    {
+        if (XQueryTree(display, w, out _, out _, out var children, out var n) == 0 || n == 0 || children == IntPtr.Zero)
+        {
+            if (children != IntPtr.Zero) XFree(children);
+            return 0;
+        }
+        var child = (ulong)Marshal.ReadInt64(children);   // children[0]
+        XFree(children);
+        return child;
     }
 }

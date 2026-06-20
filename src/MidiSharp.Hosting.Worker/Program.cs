@@ -130,9 +130,14 @@ unsafe
     writer.Write(plugin.Gui is { HasEditor: true });
     writer.Flush();
 
-    // The plugin's editor window lives here, in the process that holds the live instance. Opened on
-    // command and torn down on close / worker exit.
-    EditorWindow? editor = null;
+    // The plugin's editor runs HERE, on this command thread — the same thread that created the plugin,
+    // which CLAP requires for its GUI calls (they deadlock off the creation thread). While an editor is
+    // open we pump its run loop on this thread and let the command pipe wake the poll, so process/param/
+    // state commands are still serviced (the proxy is lock-step, so at most one is in flight).
+    EditorSession? editor = null;
+    var pipeFd = (int)pipeIn.SafePipeHandle.DangerousGetHandle();   // Unix: the pipe handle is its fd
+    var closeEditor = false;
+    var disposeReq = false;
 
     // Channel pointers into the shared block (fixed for the session; only the frame count varies).
     var inPtrs = (float**)NativeMemory.Alloc(2, (nuint)IntPtr.Size);
@@ -144,89 +149,99 @@ unsafe
 
     var events = new HostEvent[256];
 
+    // Handle one command. Never destroys an open editor session itself (close/dispose set flags the main
+    // loop acts on, so we don't tear down the session we may be pumping inside).
+    void Handle(byte cmd)
+    {
+        if (cmd == CmdProcess)
+        {
+            var frames = reader.ReadInt32();
+            var n = reader.ReadInt32();
+            if (n > events.Length) events = new HostEvent[n];
+            for (var i = 0; i < n; i++)
+                events[i] = new HostEvent
+                {
+                    SampleOffset = reader.ReadInt32(),
+                    Kind = (HostEventKind)reader.ReadByte(),
+                    Status = reader.ReadByte(),
+                    Data1 = reader.ReadByte(),
+                    Data2 = reader.ReadByte(),
+                    ParamIndex = reader.ReadInt32(),
+                    ParamValue = reader.ReadDouble(),
+                };
+            var input = new PlanarBuffers(inPtrs, 2, frames);
+            var output = new PlanarBuffers(outPtrs, 2, frames);
+            plugin.Process(input, output, events.AsSpan(0, n));
+            writer.Write(RespProcessed);
+            writer.Flush();
+        }
+        else if (cmd == CmdSetParam)
+        {
+            var idx = reader.ReadInt32();
+            var val = reader.ReadDouble();
+            plugin.SetParameter(idx, val);
+            writer.Write(RespAck);
+            writer.Flush();
+        }
+        else if (cmd == CmdGetParam)
+        {
+            var idx = reader.ReadInt32();
+            writer.Write(RespParamValue);
+            writer.Write(plugin.GetParameter(idx));
+            writer.Flush();
+        }
+        else if (cmd == CmdSaveState)
+        {
+            var blob = plugin.SaveState();
+            writer.Write(RespState);
+            writer.Write(blob.Length);
+            writer.Write(blob);
+            writer.Flush();
+        }
+        else if (cmd == CmdLoadState)
+        {
+            var len = reader.ReadInt32();
+            var blob = reader.ReadBytes(len);
+            plugin.LoadState(blob);
+            writer.Write(RespAck);
+            writer.Flush();
+        }
+        else if (cmd == CmdOpenEditor)
+        {
+            var title = reader.ReadString();
+            if (editor is { IsOpen: true }) { writer.Write(RespAck); writer.Write(false); writer.Flush(); return; }  // already open
+            editor = EditorSession.Open(plugin.Gui, title);   // on THIS thread — the plugin's creation thread
+            var ok = editor is { IsOpen: true };
+            if (ok)
+                // Wake the editor's poll when a command arrives, and service it on this thread.
+                editor!.RunLoop.RegisterFd(pipeFd, () => { try { Handle(reader.ReadByte()); } catch (EndOfStreamException) { disposeReq = true; } });
+            else { editor?.Close(); editor = null; }
+            writer.Write(RespAck);
+            writer.Write(ok);
+            writer.Flush();
+        }
+        else if (cmd == CmdCloseEditor) { closeEditor = true; writer.Write(RespAck); writer.Flush(); }
+        else if (cmd == CmdReset) { writer.Write(RespAck); writer.Flush(); }
+        else if (cmd == CmdDispose) disposeReq = true;
+    }
+
     try
     {
-        while (true)
+        while (!disposeReq)
         {
-            byte cmd;
-            try { cmd = reader.ReadByte(); }
-            catch (EndOfStreamException) { break; }   // host went away
-
-            if (cmd == CmdProcess)
+            if (editor is { IsOpen: true } && !editor.ShouldClose && !closeEditor)
             {
-                var frames = reader.ReadInt32();
-                var n = reader.ReadInt32();
-                if (n > events.Length) events = new HostEvent[n];
-                for (var i = 0; i < n; i++)
-                    events[i] = new HostEvent
-                    {
-                        SampleOffset = reader.ReadInt32(),
-                        Kind = (HostEventKind)reader.ReadByte(),
-                        Status = reader.ReadByte(),
-                        Data1 = reader.ReadByte(),
-                        Data2 = reader.ReadByte(),
-                        ParamIndex = reader.ReadInt32(),
-                        ParamValue = reader.ReadDouble(),
-                    };
-                var input = new PlanarBuffers(inPtrs, 2, frames);
-                var output = new PlanarBuffers(outPtrs, 2, frames);
-                plugin.Process(input, output, events.AsSpan(0, n));
-                writer.Write(RespProcessed);
-                writer.Flush();
+                editor.PumpOnce(20);   // commands arrive via the pipe-fd callback registered above
             }
-            else if (cmd == CmdSetParam)
+            else
             {
-                var idx = reader.ReadInt32();
-                var val = reader.ReadDouble();
-                plugin.SetParameter(idx, val);
-                writer.Write(RespAck);
-                writer.Flush();
+                if (editor != null) { editor.Close(); editor = null; closeEditor = false; }
+                if (disposeReq) break;
+                byte cmd;
+                try { cmd = reader.ReadByte(); }
+                catch (EndOfStreamException) { break; }   // host went away
+                Handle(cmd);
             }
-            else if (cmd == CmdGetParam)
-            {
-                var idx = reader.ReadInt32();
-                writer.Write(RespParamValue);
-                writer.Write(plugin.GetParameter(idx));
-                writer.Flush();
-            }
-            else if (cmd == CmdSaveState)
-            {
-                var blob = plugin.SaveState();
-                writer.Write(RespState);
-                writer.Write(blob.Length);
-                writer.Write(blob);
-                writer.Flush();
-            }
-            else if (cmd == CmdLoadState)
-            {
-                var len = reader.ReadInt32();
-                var blob = reader.ReadBytes(len);
-                plugin.LoadState(blob);
-                writer.Write(RespAck);
-                writer.Flush();
-            }
-            else if (cmd == CmdOpenEditor)
-            {
-                var title = reader.ReadString();
-                editor?.Close();
-                editor = EditorWindow.Open(plugin.Gui, title);
-                writer.Write(RespAck);
-                writer.Write(editor is { IsOpen: true });   // success bool
-                writer.Flush();
-            }
-            else if (cmd == CmdCloseEditor)
-            {
-                editor?.Close();
-                editor = null;
-                writer.Write(RespAck);
-                writer.Flush();
-            }
-            else if (cmd == CmdReset)
-            {
-                writer.Write(RespAck);
-                writer.Flush();
-            }
-            else if (cmd == CmdDispose) break;
         }
     }
     finally
