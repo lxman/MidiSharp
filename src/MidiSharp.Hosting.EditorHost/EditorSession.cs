@@ -70,8 +70,11 @@ public sealed class EditorSession : IDisposable
             var w = 400; var h = 300;
             if (_gui.TryGetSize(out var gw, out var gh) && gw > 0 && gh > 0) { w = gw; h = gh; }
 
+            // Background BLACK, not white: the embedded plugin owns the pixels, but during compositing/resize
+            // any seam or briefly-undamaged strip shows the host window's background — white glares behind a
+            // dark plugin editor (shows as bright lines), black is invisible.
             _window = X11.XCreateSimpleWindow(_display, root, 0, 0, (uint)w, (uint)h, 0,
-                X11.XBlackPixel(_display, screen), X11.XWhitePixel(_display, screen));
+                X11.XBlackPixel(_display, screen), X11.XBlackPixel(_display, screen));
             X11.XStoreName(_display, _window, _title);
             X11.XSelectInput(_display, _window, X11.StructureNotifyMask | X11.SubstructureNotifyMask);
             _wmDelete = X11.XInternAtom(_display, "WM_DELETE_WINDOW", false);
