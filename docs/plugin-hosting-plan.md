@@ -376,8 +376,15 @@ crash) + `ScanFile` (one file, may crash); `Scan` composes them. The scan worker
 which one and restarts the worker to **resume past it** — skipping only the one bad plugin instead of a
 format's whole tail. Verified: a crash-on-scan CLAP fixture (its `clap_entry.init` segfaults) placed
 before a good plugin is skipped, and the scan resumes to discover the good one; the live server still finds
-all 217 plugins. **Remaining:** proxy plugin state across the sandbox, and a worker watchdog/timeout for
-hangs (a wedged plugin currently blocks its process call rather than crashing).
+all 217 plugins.
+
+**Worker watchdog (2026-06-20):** each `SandboxedPlugin` runs a background watchdog thread; every request
+(load handshake, process, get/set parameter) arms a deadline, and if the worker blows it — a plugin hung
+rather than crashed — the watchdog kills the worker, which unblocks the request's pipe read so it recovers
+as a dead insert (silence). Timeouts: 10 s load, 500 ms process, 1 s parameter. Verified against a
+hang-on-`process` CLAP fixture (its `process()` loops forever): the call returns in ~526 ms latched dead
+and silent instead of wedging the host forever. **Remaining:** proxy plugin state across the sandbox (the
+last non-load-bearing gap).
 
 
 Run plugins in a child process; bridge audio over a shared-memory ring and control over RPC, behind the

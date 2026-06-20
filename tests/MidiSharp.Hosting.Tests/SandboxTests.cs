@@ -125,6 +125,31 @@ public sealed class SandboxTests
     }
 
     [Fact]
+    public void A_hung_plugin_is_killed_by_the_watchdog_and_recovers()
+    {
+        var worker = WorkerDll();
+        Assert.SkipWhen(worker == null, "sandbox worker not built.");
+        var f = new ClapFormat();
+        var hang = f.Scan(f.DefaultSearchPaths).FirstOrDefault(p => p.Id == "midisharp.test.hang");
+        Assert.SkipWhen(hang == null, "hang fixture not installed.");
+
+        using var plugin = new SandboxedPlugin(hang!, worker!, Config);
+        using var effect = new HostedEffect(plugin, Config);
+
+        var buf = new float[Block * 2];
+        Array.Fill(buf, 0.5f);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        effect.Process(buf);   // the worker hangs in process(); the watchdog must kill it
+        sw.Stop();
+        _out.WriteLine($"hung Process returned in {sw.ElapsedMilliseconds} ms; dead={plugin.IsDead}");
+
+        // Bounded (not forever), latched dead, and silent — the host is never wedged by a hung plugin.
+        Assert.True(sw.ElapsedMilliseconds < 5000, $"watchdog should bound a hung process call (took {sw.ElapsedMilliseconds} ms).");
+        Assert.True(plugin.IsDead, "the proxy should latch dead after the watchdog kills a hung worker.");
+        Assert.All(buf, v => Assert.Equal(0f, v));
+    }
+
+    [Fact]
     public void A_worker_crash_degrades_to_silence_and_the_host_survives()
     {
         var worker = WorkerDll();

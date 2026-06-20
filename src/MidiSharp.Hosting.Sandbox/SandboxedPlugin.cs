@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.IO.Pipes;
+using System.Threading;
 using SysProcess = System.Diagnostics.Process;
 using ProcessStartInfo = System.Diagnostics.ProcessStartInfo;
 using static MidiSharp.Hosting.Sandbox.SandboxProtocol;
@@ -29,9 +30,18 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
     private byte* _base;
 
     private readonly List<PluginParameter> _parameters = [];
-    private bool _dead;
-    private bool _disposed;
+    private volatile bool _dead;
+    private volatile bool _disposed;
     private readonly object _lock = new();
+
+    // Watchdog: each request arms a deadline; a background thread kills the worker if it blows it (a hung
+    // plugin), which unblocks the request's pipe read so it recovers as a dead insert.
+    private const int LoadTimeoutMs = 10_000;     // plugins can be slow to load/activate
+    private const int ProcessTimeoutMs = 500;     // one block is a few ms; >this means wedged
+    private const int ControlTimeoutMs = 1_000;   // get/set parameter
+    private readonly System.Threading.Thread _watchdog;
+    private volatile bool _watchdogStop;
+    private long _deadline;   // Environment.TickCount64 by which the in-flight request must answer; 0 = idle
 
     public PluginDescriptor Descriptor { get; }
     public bool IsInstrument { get; }
@@ -79,7 +89,11 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
         _writer = new BinaryWriter(_toWorker);
         _reader = new BinaryReader(_fromWorker);
 
-        // Read the worker's ready message (or an error).
+        _watchdog = new System.Threading.Thread(WatchdogLoop) { IsBackground = true, Name = "midisharp-sandbox-watchdog" };
+        _watchdog.Start();
+
+        // Read the worker's ready message (or an error), bounded by the load timeout (a hung load → throw).
+        Arm(LoadTimeoutMs);
         try
         {
             var tag = _reader.ReadByte();
@@ -99,8 +113,22 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
             }
             Descriptor = descriptor with { Name = name };
         }
-        catch (EndOfStreamException) { throw new InvalidOperationException("Sandbox worker exited during startup."); }
+        catch (EndOfStreamException) { throw new InvalidOperationException("Sandbox worker exited or hung during startup."); }
+        finally { Disarm(); }
     }
+
+    private void WatchdogLoop()
+    {
+        while (!_watchdogStop)
+        {
+            var d = Volatile.Read(ref _deadline);
+            if (d != 0 && Environment.TickCount64 > d) Die();   // request overran its deadline → kill the hung worker
+            System.Threading.Thread.Sleep(25);
+        }
+    }
+
+    private void Arm(int ms) => Volatile.Write(ref _deadline, Environment.TickCount64 + ms);
+    private void Disarm() => Volatile.Write(ref _deadline, 0);
 
     public void Activate(AudioConfig config) { }   // the worker activated the plugin at startup
     public void Deactivate() { }
@@ -127,7 +155,10 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
                     _writer.Write(e.ParamIndex); _writer.Write(e.ParamValue);
                 }
                 _writer.Flush();
-                if (_reader.ReadByte() != RespProcessed) { Die(); Silence(output, frames); return; }
+                Arm(ProcessTimeoutMs);
+                var ok = _reader.ReadByte() == RespProcessed;   // watchdog kills a hung worker → this throws
+                Disarm();
+                if (!ok) { Die(); Silence(output, frames); return; }
                 CopyOut(output, 0, frames);
                 CopyOut(output, 1, frames);
             }
@@ -147,7 +178,10 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
             try
             {
                 _writer.Write(CmdGetParam); _writer.Write(index); _writer.Flush();
-                return _reader.ReadByte() == RespParamValue ? _reader.ReadDouble() : 0;
+                Arm(ControlTimeoutMs);
+                var v = _reader.ReadByte() == RespParamValue ? _reader.ReadDouble() : 0;
+                Disarm();
+                return v;
             }
             catch (Exception ex) when (ex is IOException or EndOfStreamException) { Die(); return 0; }
         }
@@ -161,7 +195,10 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
             try
             {
                 _writer.Write(CmdSetParam); _writer.Write(index); _writer.Write(normalized); _writer.Flush();
-                if (_reader.ReadByte() != RespAck) Die();
+                Arm(ControlTimeoutMs);
+                var ack = _reader.ReadByte() == RespAck;
+                Disarm();
+                if (!ack) Die();
             }
             catch (Exception ex) when (ex is IOException or EndOfStreamException) { Die(); }
         }
@@ -172,13 +209,15 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
 
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
+        // Kill the worker BEFORE taking the lock: if a request is hung holding it, killing unblocks the
+        // pipe read so the lock can be acquired. Then stop the watchdog and release everything.
+        _watchdogStop = true;
+        Die();
+        try { _watchdog.Join(1000); } catch { }
         lock (_lock)
         {
-            if (_disposed) return;
-            _disposed = true;
-            if (!_dead)
-                try { _writer.Write(CmdDispose); _writer.Flush(); } catch { }
-            try { if (!_worker.WaitForExit(1000)) _worker.Kill(); } catch { }
             try { _writer.Dispose(); } catch { }
             try { _reader.Dispose(); } catch { }
             try { _toWorker.Dispose(); } catch { }
@@ -197,6 +236,7 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
     private void Die()
     {
         _dead = true;
+        Disarm();
         try { if (!_worker.HasExited) _worker.Kill(); } catch { }
     }
 
