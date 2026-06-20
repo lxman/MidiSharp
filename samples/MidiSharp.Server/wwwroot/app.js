@@ -960,5 +960,8 @@ loadDevices().catch(e => $('error').textContent = 'Failed to load devices: ' + e
 fetch('/api/plugins').then(r => r.json()).then(list => {
   availablePlugins = (list || []).filter(p => !p.isInstrument);
   availableInstruments = (list || []).filter(p => p.isInstrument);
+  // The master rack was built at page load, before this list arrived, so its add-bar had no "+ Add plugin"
+  // option yet — re-render now that plugins are known.
+  masterRack.render();
 }).catch(() => {});
 connectStatus();
