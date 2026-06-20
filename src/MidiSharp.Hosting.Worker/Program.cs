@@ -183,6 +183,22 @@ unsafe
                 writer.Write(plugin.GetParameter(idx));
                 writer.Flush();
             }
+            else if (cmd == CmdSaveState)
+            {
+                var blob = plugin.SaveState();
+                writer.Write(RespState);
+                writer.Write(blob.Length);
+                writer.Write(blob);
+                writer.Flush();
+            }
+            else if (cmd == CmdLoadState)
+            {
+                var len = reader.ReadInt32();
+                var blob = reader.ReadBytes(len);
+                plugin.LoadState(blob);
+                writer.Write(RespAck);
+                writer.Flush();
+            }
             else if (cmd == CmdReset)
             {
                 writer.Write(RespAck);

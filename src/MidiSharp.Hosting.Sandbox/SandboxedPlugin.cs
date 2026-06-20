@@ -204,8 +204,43 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
         }
     }
 
-    public byte[] SaveState() => [];                       // state proxying is a follow-up
-    public void LoadState(ReadOnlySpan<byte> state) { }
+    private const int StateTimeoutMs = 5_000;   // state blobs can be larger; allow more headroom
+
+    public byte[] SaveState()
+    {
+        lock (_lock)
+        {
+            if (_dead || _disposed) return [];
+            try
+            {
+                _writer.Write(CmdSaveState); _writer.Flush();
+                Arm(StateTimeoutMs);
+                if (_reader.ReadByte() != RespState) { Disarm(); return []; }
+                var len = _reader.ReadInt32();
+                var blob = len > 0 ? _reader.ReadBytes(len) : [];
+                Disarm();
+                return blob;
+            }
+            catch (Exception ex) when (ex is IOException or EndOfStreamException) { Die(); return []; }
+        }
+    }
+
+    public void LoadState(ReadOnlySpan<byte> state)
+    {
+        lock (_lock)
+        {
+            if (_dead || _disposed) return;
+            try
+            {
+                _writer.Write(CmdLoadState); _writer.Write(state.Length); _writer.Write(state); _writer.Flush();
+                Arm(StateTimeoutMs);
+                var ack = _reader.ReadByte() == RespAck;
+                Disarm();
+                if (!ack) Die();
+            }
+            catch (Exception ex) when (ex is IOException or EndOfStreamException) { Die(); }
+        }
+    }
 
     public void Dispose()
     {

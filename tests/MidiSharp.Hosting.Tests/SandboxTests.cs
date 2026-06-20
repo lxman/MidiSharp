@@ -125,6 +125,32 @@ public sealed class SandboxTests
     }
 
     [Fact]
+    public void Plugin_state_round_trips_through_the_worker()
+    {
+        var worker = WorkerDll();
+        var desc = GainDescriptor();
+        Assert.SkipWhen(worker == null, "sandbox worker not built.");
+        Assert.SkipWhen(desc == null, "CLAP gain fixture not installed.");
+
+        using var plugin = new SandboxedPlugin(desc!, worker!, Config);
+        using var effect = new HostedEffect(plugin, Config);
+        var buf = new float[Block * 2];
+        // SetParameter is delivered to the plugin on the next process block; render one to apply it.
+        void Apply(double v) { plugin.SetParameter(0, v); Array.Clear(buf); effect.Process(buf); }
+
+        Apply(0.25);
+        var blob = plugin.SaveState();           // captures the plugin's state (gain = 0.25) across the worker
+        _out.WriteLine($"saved {blob.Length} state bytes through the worker");
+        Assert.NotEmpty(blob);                   // the gain fixture implements clap.state
+
+        Apply(0.75);
+        Assert.True(Math.Abs(plugin.GetParameter(0) - 0.75) < 1e-6, "parameter should have changed");
+
+        plugin.LoadState(blob);                  // restore across the worker
+        Assert.True(Math.Abs(plugin.GetParameter(0) - 0.25) < 1e-6, "loaded state should restore the parameter");
+    }
+
+    [Fact]
     public void A_hung_plugin_is_killed_by_the_watchdog_and_recovers()
     {
         var worker = WorkerDll();

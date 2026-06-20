@@ -13,6 +13,8 @@ public static class SandboxProtocol
     public const byte CmdSetParam = 0x02;
     public const byte CmdGetParam = 0x03;
     public const byte CmdReset = 0x04;
+    public const byte CmdSaveState = 0x05;   // → RespState + length-prefixed blob
+    public const byte CmdLoadState = 0x06;   // followed by a length-prefixed blob → RespAck
     public const byte CmdDispose = 0xFF;
 
     // worker → host
@@ -21,6 +23,7 @@ public static class SandboxProtocol
     public const byte RespAck = 0x12;
     public const byte RespParamValue = 0x13;
     public const byte RespProcessed = 0x14;
+    public const byte RespState = 0x15;      // followed by a length-prefixed blob
 
     // scan mode (worker → host, streamed)
     public const byte ScanBegin = 0x1F;        // followed by the file path about to be scanned (for crash-resume)

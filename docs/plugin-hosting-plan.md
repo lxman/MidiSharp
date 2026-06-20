@@ -383,8 +383,16 @@ all 217 plugins.
 rather than crashed — the watchdog kills the worker, which unblocks the request's pipe read so it recovers
 as a dead insert (silence). Timeouts: 10 s load, 500 ms process, 1 s parameter. Verified against a
 hang-on-`process` CLAP fixture (its `process()` loops forever): the call returns in ~526 ms latched dead
-and silent instead of wedging the host forever. **Remaining:** proxy plugin state across the sandbox (the
-last non-load-bearing gap).
+and silent instead of wedging the host forever.
+
+**Plugin-state proxy (2026-06-20):** `SandboxedPlugin.SaveState`/`LoadState` now proxy the plugin's opaque
+state across the worker (length-prefixed over the control pipe, watchdog-bounded), so a sandboxed plugin's
+settings persist exactly like an in-process one. Verified with a stateful gain fixture (it now implements
+`clap.state`): saving across the worker yields the state blob, and loading it back restores the parameter.
+
+**Phase 8 is complete.** A plugin can crash on scan (per-file resume), crash on load/process (dead-insert
+silence), or hang (watchdog) — the host survives every case — and stateful plugins round-trip their state
+through the sandbox.
 
 
 Run plugins in a child process; bridge audio over a shared-memory ring and control over RPC, behind the
