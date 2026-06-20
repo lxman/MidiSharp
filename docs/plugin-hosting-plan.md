@@ -385,7 +385,7 @@ control. Audio via `IAudioProcessor::process` (`ProcessData` / `AudioBusBuffers`
 **Acceptance gate:** a known VST3 effect + instrument run through MidiSharp on Win/Mac/Linux; measured
 parity with a reference render.
 
-### Phase 7 — Native plugin GUIs  *(CLAP done, X11)*  — ✅ VERIFIED 2026-06-20
+### Phase 7 — Native plugin GUIs  *(CLAP + VST3 + VST2, X11)*  — ✅ VERIFIED 2026-06-20
 
 Plugin editor windows are native (X11/Win32/Cocoa) and cannot live in the browser UI, so the editor opens
 as a real OS window on the machine running the server — in the process that holds the live plugin instance
@@ -393,7 +393,11 @@ as a real OS window on the machine running the server — in the process that ho
 
 - **`IPluginGui`** (MidiSharp.Hosting): format-agnostic editor lifecycle (HasEditor / IsApiSupported /
   Create / SetScale / TryGetSize / SetParent / Show / Hide / Destroy), exposed via `IHostedPlugin.Gui`.
-  `ClapPlugin` implements it over the `clap.gui` extension (ABI: `clap_plugin_gui` vtable, `clap_window`).
+  Implemented by all three GUI-capable formats: **CLAP** over `clap.gui` (ABI: `clap_plugin_gui` vtable,
+  `clap_window`); **VST3** over `IEditController::createView("editor")` → `IPlugView`
+  (`isPlatformTypeSupported`/`getSize`/`attached("X11EmbedWindowID")`/`removed`; `Vst3Host` provides a
+  minimal `IPlugFrame` for `setFrame`); **VST2** over the editor dispatcher opcodes (`effFlagsHasEditor`,
+  `effEditGetRect`, `effEditOpen(parent)`, `effEditClose`). The window/worker/web layers are shared.
 - **`MidiSharp.Hosting.EditorHost`**: Xlib P/Invoke + `EditorWindow`, which opens a top-level X11 window
   sized to the editor, embeds the plugin (`create(x11)` → `set_parent` → `show`), maps it, and runs the
   window's event loop on a dedicated thread (editor calls are main-thread-only; audio runs independently).
@@ -405,10 +409,13 @@ Verified: headless query (the gui fixture reports an X11 editor at 320×240); li
 (`EditorWindow` opens a window and `XQueryTree` confirms the plugin's embedded child); cross-process (the
 worker opens the editor while audio keeps flowing); and end-to-end from the web API — after loading the gui
 fixture into the master rack, `/api/plugins/editor/open` returns ok and `xwininfo` shows a WM-managed window
-at the editor's 320×240, which close removes. Fixture: `~/.clap/midisharp_gui.clap` (clap.gui + an X11
-child window the server paints via `background_pixel`, so no fixture event loop). **Remaining:** VST3
-`IPlugView` / VST2 `effEditOpen` editors, Win32/Cocoa windowing, and host timer callbacks for plugins that
-redraw via a timer (next round).
+at the editor's 320×240, which close removes. VST3 (`IPlugView`) and VST2 (`effEditOpen`) editors landed
+2026-06-20 too — each verified by headless size query, live in-process embed (`XQueryTree` confirms the
+attached child), and (VST3) end-to-end from the web API: loading the VST3 gain into the master rack and
+`/api/plugins/editor/open` maps a WM-managed window at the view's 300×200. Fixtures:
+`~/.clap/midisharp_gui.clap`, the VST3/VST2 gain fixtures extended with X11 editor windows (all paint via
+`background_pixel`, so no fixture event loop). **Remaining:** Win32/Cocoa windowing, and host timer/run-loop
+callbacks for plugins that redraw via a timer (the fixtures need none).
 
 ### Phase 8 — Out-of-process sandboxing  *(stability hardening)*  — ✅ CORE VERIFIED 2026-06-20
 
@@ -521,5 +528,5 @@ component/controller, instrument event lists, and IBStream state, plus instrumen
 binary resolution. **The plugin-hosting arc is feature-complete:** four formats (CLAP/VST2/VST3/LADSPA),
 effects and instruments, the hosted instrument carries the full channel strip, discovery+load are
 crash-isolated out-of-process, and state persists into setups. Native plugin editors (Phase 7) open from
-the web player too — CLAP on X11, hosted in the sandbox worker. The remaining items are narrower: VST3/VST2
-editors and Win32/Cocoa windowing (next round), and AU (macOS-only) / AAX (parked).
+the web player too — CLAP, VST3, and VST2 on X11, hosted in the sandbox worker. The remaining items are
+narrower: Win32/Cocoa windowing and host timer/run-loop callbacks, and AU (macOS-only) / AAX (parked).
