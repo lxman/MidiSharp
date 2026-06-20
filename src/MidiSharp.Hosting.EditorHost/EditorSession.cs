@@ -87,6 +87,17 @@ public sealed class EditorSession : IDisposable
             if (child != 0) X11.SendXEmbedNotify(_display, _window, child);
 
             _gui.Show();
+            X11.XSync(_display, false);
+
+            // After show() the plugin has laid out its editor and may report a different (real) size than at
+            // create time — re-query and resize our window + the embedded child to fit it.
+            if (_gui.TryGetSize(out var rw, out var rh) && rw > 0 && rh > 0 && (rw != w || rh != h))
+            {
+                X11.XResizeWindow(_display, _window, (uint)rw, (uint)rh);
+                if (child != 0) X11.XResizeWindow(_display, child, (uint)rw, (uint)rh);
+                X11.XFlush(_display);
+            }
+
             _runLoop.RegisterTimer(30, IdleToken, () => { try { _gui.Idle(); } catch { } });
 
             _ev = Marshal.AllocHGlobal(256);   // an XEvent union is ~192 bytes

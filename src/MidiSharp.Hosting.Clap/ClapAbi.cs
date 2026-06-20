@@ -20,6 +20,7 @@ internal static class ClapAbi
     public const string ExtGui = "clap.gui";
     public const string ExtTimerSupport = "clap.timer-support";
     public const string ExtPosixFdSupport = "clap.posix-fd-support";
+    public const string ExtThreadCheck = "clap.thread-check";
 
     public const string WindowApiX11 = "x11";
     public const string WindowApiWin32 = "win32";
@@ -223,6 +224,24 @@ internal static class ClapAbi
     public unsafe struct ClapPluginTimerSupport
     {
         public delegate* unmanaged[Cdecl]<ClapPlugin*, uint, void> OnTimer;   // (plugin, timer_id)
+    }
+
+    // clap.thread-check — the plugin asks the host which thread it's on. Plugins gate main-thread-only work
+    // (incl. parts of gui setup) on is_main_thread(); without it a plugin may defer via request_callback and
+    // wait for on_main_thread(), which can deadlock a synchronous gui.show().
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct ClapHostThreadCheck
+    {
+        public delegate* unmanaged[Cdecl]<ClapHost*, byte> IsMainThread;
+        public delegate* unmanaged[Cdecl]<ClapHost*, byte> IsAudioThread;
+    }
+
+    // clap.gui (host side) — the plugin calls these; resize_hints_changed + request_resize.
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct ClapHostGui
+    {
+        public delegate* unmanaged[Cdecl]<ClapHost*, void> ResizeHintsChanged;
+        public delegate* unmanaged[Cdecl]<ClapHost*, uint, uint, byte> RequestResize;
     }
 
     // clap.posix-fd-support — host polls fds, plugin's on_fd runs on the main thread.

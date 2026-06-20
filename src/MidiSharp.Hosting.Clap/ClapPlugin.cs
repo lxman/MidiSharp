@@ -162,7 +162,9 @@ public sealed unsafe class ClapPlugin : IHostedPlugin, IPluginGui
                 WriteMidiSlot(n++, e.Status, e.Data1, e.Data2, (uint)e.SampleOffset);
         }
         _evState->Count = n;
+        _host.SetInProcess(true);          // so clap.thread-check answers is_audio_thread() correctly
         _plugin->Process(_plugin, _process);
+        _host.SetInProcess(false);
         _evState->Count = 0;
         _liveCount = 0;
 

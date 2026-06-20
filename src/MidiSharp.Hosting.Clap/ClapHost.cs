@@ -29,8 +29,15 @@ internal sealed unsafe class ClapHost : IDisposable
     private ClapPluginPosixFdSupport* _pluginFd;
     private uint _nextTimerId;
 
+    // The worker runs process and gui on one thread, so we distinguish by CONTEXT: is_audio_thread is true
+    // only while inside a Process() call; everything else (gui, params, state) reads as the main thread.
+    private volatile bool _inProcess;
+    public void SetInProcess(bool v) => _inProcess = v;
+
     private static readonly IntPtr TimerSupport = BuildTimerSupport();
     private static readonly IntPtr FdSupport = BuildFdSupport();
+    private static readonly IntPtr ThreadCheck = BuildThreadCheck();
+    private static readonly IntPtr GuiSupport = BuildGuiSupport();
 
     [StructLayout(LayoutKind.Sequential)]
     private struct ClapHost_Native
@@ -88,6 +95,8 @@ internal sealed unsafe class ClapHost : IDisposable
         var id = Marshal.PtrToStringUTF8((IntPtr)extensionId);
         if (id == ExtTimerSupport) return (void*)TimerSupport;
         if (id == ExtPosixFdSupport) return (void*)FdSupport;
+        if (id == ExtThreadCheck) return (void*)ThreadCheck;
+        if (id == ExtGui) return (void*)GuiSupport;
         return null;
     }
 
@@ -143,6 +152,36 @@ internal sealed unsafe class ClapHost : IDisposable
     {
         Self((ClapHost_Native*)host)._loop?.UnregisterFd(fd);
         return 1;
+    }
+
+    // ── clap.thread-check ──
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static byte HostIsMainThread(ClapAbi.ClapHost* host) => (byte)(Self((ClapHost_Native*)host)._inProcess ? 0 : 1);
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static byte HostIsAudioThread(ClapAbi.ClapHost* host) => (byte)(Self((ClapHost_Native*)host)._inProcess ? 1 : 0);
+
+    // ── clap.gui (host side) ──
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static void HostResizeHintsChanged(ClapAbi.ClapHost* host) { }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static byte HostRequestResize(ClapAbi.ClapHost* host, uint width, uint height) => 1;   // accept; our window follows
+
+    private static IntPtr BuildThreadCheck()
+    {
+        var p = (ClapHostThreadCheck*)NativeMemory.Alloc((nuint)sizeof(ClapHostThreadCheck));
+        p->IsMainThread = &HostIsMainThread;
+        p->IsAudioThread = &HostIsAudioThread;
+        return (IntPtr)p;
+    }
+
+    private static IntPtr BuildGuiSupport()
+    {
+        var p = (ClapHostGui*)NativeMemory.Alloc((nuint)sizeof(ClapHostGui));
+        p->ResizeHintsChanged = &HostResizeHintsChanged;
+        p->RequestResize = &HostRequestResize;
+        return (IntPtr)p;
     }
 
     private static IntPtr BuildTimerSupport()
