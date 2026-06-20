@@ -96,11 +96,16 @@ public sealed class PlayerService : IDisposable
     // A hosted instrument paired with the live mixer trim of the part it plays. The InstrumentMix is the
     // same mutable instance the synth holds for that part, so live fader moves (SetInstrumentMix) flow
     // through with no extra wiring. A part with no mixer strip gets a no-op identity mix → unity sum
-    // (bit-identical to the pre-trim path).
-    private sealed class HostedVoice(HostedInstrument inst, InstrumentMix mix)
+    // (bit-identical to the pre-trim path). Insert is the part's effect rack (null = no insert); it is the
+    // same instance the synth would carry, run here instead because the synth's copy of this channel is
+    // muted. Mutable+volatile so a live SetInstrumentInsert add/remove reaches the audio thread.
+    private sealed class HostedVoice(HostedInstrument inst, InstrumentMix mix, int part, EffectRack? insert)
     {
+        private volatile EffectRack? _insert = insert;
         public HostedInstrument Inst { get; } = inst;
         public InstrumentMix Mix { get; } = mix;
+        public int Part { get; } = part;
+        public EffectRack? Insert { get => _insert; set => _insert = value; }
     }
     private PlayerState _state = PlayerState.Idle;
     private string? _midiName;
@@ -245,7 +250,19 @@ public sealed class PlayerService : IDisposable
                             var mix = hv.Mix;
                             // mute/solo gate the whole part; gain/pan trim the summed stereo output.
                             if (mix.Mute || (anySolo && !mix.Solo)) continue;
-                            StereoTrim.Add(span, sc, mix.GainDb, mix.Pan);
+                            var insert = hv.Insert;
+                            if (insert == null)
+                            {
+                                StereoTrim.Add(span, sc, mix.GainDb, mix.Pan);   // no insert → trim straight into the mix
+                            }
+                            else
+                            {
+                                // Trim pre-insert (matching the synth's voice→bus→insert order), run the
+                                // part's insert chain on the trimmed signal, then sum the wet result in.
+                                StereoTrim.Apply(sc, mix.GainDb, mix.Pan);
+                                insert.Process(sc);
+                                for (var i = 0; i < nn; i++) span[i] += sc[i];
+                            }
                         }
                     }
                     _masterRack.Process(span);
@@ -363,9 +380,14 @@ public sealed class PlayerService : IDisposable
             // instance the synth holds, so a live fader move updates both. No strip → a no-op identity
             // mix, leaving the summed output at unity (bit-identical to before per-part trim existed).
             var strip = mix?.FirstOrDefault(m => m.Channel == channel);
+            var part = strip != null ? Synthesizer.TrackPart(strip.TrackIndex, channel) : -1;
             var partMix = strip != null
-                ? synth.GetInstrumentMix(Synthesizer.TrackMixBank, Synthesizer.TrackPart(strip.TrackIndex, channel))
+                ? synth.GetInstrumentMix(Synthesizer.TrackMixBank, part)
                 : new InstrumentMix();
+            // The part's insert rack (built by ApplyInstrumentInserts, which ran before this) is run on the
+            // plugin output in the callback — the synth's copy of this channel is muted, so its bus never
+            // would. An empty/absent rack means no insert.
+            var insert = strip != null && _instrumentRacks.TryGetValue(part, out var r) && !r.IsEmpty ? r : null;
             synth.MuteChannel(channel, true);
             player.EventDispatched += (se, offset) =>
             {
@@ -383,7 +405,7 @@ public sealed class PlayerService : IDisposable
                         break;
                 }
             };
-            _hostedInstruments.Add(new HostedVoice(inst, partMix));
+            _hostedInstruments.Add(new HostedVoice(inst, partMix, part, insert));
         }
     }
 
@@ -485,6 +507,10 @@ public sealed class PlayerService : IDisposable
             }
             rack.Configure(dto.Effects);
             _synth?.SetInstrumentInsert(Synthesizer.TrackMixBank, part, rack.IsEmpty ? null : rack);
+            // A hosted instrument on this part runs its insert in the audio callback (its synth channel is
+            // muted), so reach it here too — keeps live insert add/remove in parity with synth voices.
+            foreach (var hv in _hostedInstruments)
+                if (hv.Part == part) hv.Insert = rack.IsEmpty ? null : rack;
         }
     }
 

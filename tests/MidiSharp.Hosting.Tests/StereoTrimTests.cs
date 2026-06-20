@@ -73,4 +73,39 @@ public sealed class StereoTrimTests
         Assert.Equal(0.3, l, 6);
         Assert.Equal(0.0, r, 6);
     }
+
+    // Apply is the in-place pre-insert trim (used when a hosted instrument has an insert chain).
+    [Fact]
+    public void Apply_unity_leaves_the_buffer_untouched()
+    {
+        var buf = Stereo(0.3f, -0.4f, 256);
+        StereoTrim.Apply(buf, gainDb: 0.0, pan: 0.0);
+        for (var i = 0; i < 256; i++)
+        {
+            Assert.Equal(0.3f, buf[2 * i]);        // bit-identical — no multiply at unity
+            Assert.Equal(-0.4f, buf[2 * i + 1]);
+        }
+    }
+
+    [Theory]
+    [InlineData(-6.0206, 0.5)]
+    [InlineData(6.0206, 2.0)]
+    public void Apply_scales_in_place_by_gain(double gainDb, double factor)
+    {
+        var buf = Stereo(0.25f, 0.25f, 256);
+        StereoTrim.Apply(buf, gainDb, pan: 0.0);
+        var (l, r) = Rms(buf);
+        Assert.Equal(0.25 * factor, l, 3);
+        Assert.Equal(0.25 * factor, r, 3);
+    }
+
+    [Fact]
+    public void Apply_hard_pan_right_zeros_the_left_channel_in_place()
+    {
+        var buf = Stereo(0.3f, 0.3f, 256);
+        StereoTrim.Apply(buf, gainDb: 0.0, pan: 1.0);
+        var (l, r) = Rms(buf);
+        Assert.Equal(0.0, l, 6);
+        Assert.Equal(0.3, r, 6);
+    }
 }

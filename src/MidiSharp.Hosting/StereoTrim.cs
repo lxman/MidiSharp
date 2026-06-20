@@ -20,14 +20,37 @@ public static class StereoTrim
     /// </summary>
     public static void Add(Span<float> dst, ReadOnlySpan<float> src, double gainDb, double pan)
     {
-        var gain = gainDb == 0.0 ? 1f : (float)Math.Pow(10.0, gainDb / 20.0);
-        var gl = pan > 0 ? gain * (float)(1.0 - pan) : gain;   // pan right → trim left
-        var gr = pan < 0 ? gain * (float)(1.0 + pan) : gain;   // pan left  → trim right
+        var (gl, gr) = Factors(gainDb, pan);
         var n = Math.Min(dst.Length, src.Length);
         for (var i = 0; i + 1 < n; i += 2)
         {
             dst[i] += src[i] * gl;
             dst[i + 1] += src[i + 1] * gr;
         }
+    }
+
+    /// <summary>
+    /// Apply the same gain+pan trim to <paramref name="buf"/> <b>in place</b> (no accumulation). Used when
+    /// a hosted instrument has a per-part insert chain: the part's signal is trimmed pre-insert (matching
+    /// the synth, which applies the fader at the voice before the instrument's bus insert), the insert runs
+    /// on the trimmed signal, and the result is then summed into the mix.
+    /// </summary>
+    public static void Apply(Span<float> buf, double gainDb, double pan)
+    {
+        var (gl, gr) = Factors(gainDb, pan);
+        if (gl == 1f && gr == 1f) return;   // unity → leave untouched (bit-identical)
+        for (var i = 0; i + 1 < buf.Length; i += 2)
+        {
+            buf[i] *= gl;
+            buf[i + 1] *= gr;
+        }
+    }
+
+    private static (float left, float right) Factors(double gainDb, double pan)
+    {
+        var gain = gainDb == 0.0 ? 1f : (float)Math.Pow(10.0, gainDb / 20.0);
+        var gl = pan > 0 ? gain * (float)(1.0 - pan) : gain;   // pan right → trim left
+        var gr = pan < 0 ? gain * (float)(1.0 + pan) : gain;   // pan left  → trim right
+        return (gl, gr);
     }
 }
