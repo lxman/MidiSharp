@@ -38,6 +38,9 @@ internal static unsafe class Vst3Abi
     public static readonly byte[] IidConnectionPoint = Uid(0x70A4156F, 0x6E6E4026, 0x989148BF, 0xAA60D8D1);
     public static readonly byte[] IidPlugView = Uid(0x5BC32507, 0xD06049EA, 0xA6151B52, 0x2B755B29);
     public static readonly byte[] IidPlugFrame = Uid(0x367FAF01, 0xAFA94693, 0x8D4DA2A0, 0xED0882A3);
+    public static readonly byte[] IidRunLoop = Uid(0x18C35366, 0x97764F1A, 0x9C5B8385, 0x7A871389);
+    public static readonly byte[] IidEventHandler = Uid(0x561E65C9, 0x13A0496F, 0x813A2C35, 0x654D7983);
+    public static readonly byte[] IidTimerHandler = Uid(0x10BDD94F, 0x41424774, 0x821FAD8F, 0xECA72CA9);
 
     public static byte[] Uid(uint a, uint b, uint c, uint d) =>
     [

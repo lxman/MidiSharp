@@ -1,6 +1,23 @@
 namespace MidiSharp.Hosting;
 
 /// <summary>
+/// The host services a plugin editor needs to drive itself: register file descriptors (its windowing-system
+/// connection) and timers, and post work back. The editor host's UI thread owns one of these and pumps the
+/// registrations alongside its own window events — VST3 <c>Linux::IRunLoop</c>, CLAP <c>clap.timer-support</c>
+/// + <c>clap.posix-fd-support</c>, and VST2 <c>effEditIdle</c> all map onto it. All calls are on the UI thread.
+/// </summary>
+public interface IEditorRunLoop
+{
+    /// <summary>Poll <paramref name="fd"/> for readability; call <paramref name="onReady"/> on the UI thread when set.</summary>
+    void RegisterFd(int fd, System.Action onReady);
+    void UnregisterFd(int fd);
+
+    /// <summary>Call <paramref name="onTick"/> every <paramref name="periodMs"/> ms on the UI thread, keyed by <paramref name="token"/>.</summary>
+    void RegisterTimer(long periodMs, object token, System.Action onTick);
+    void UnregisterTimer(object token);
+}
+
+/// <summary>
 /// A plugin's native editor window, exposed format-agnostically. The methods mirror the embed sequence the
 /// windowing-system extensions define (CLAP <c>clap.gui</c>, VST3 <c>IPlugView</c>): query the preferred
 /// size and which windowing API works, then <see cref="Create"/> the editor, parent it into a host window
@@ -9,10 +26,19 @@ namespace MidiSharp.Hosting;
 /// holds the live plugin instance.
 /// </summary>
 /// <remarks>
-/// Editor calls are main-thread only (never the audio thread). Sizes are in physical pixels on X11/Win32.
+/// Editor calls are main-thread only (never the audio thread), and — except <see cref="HasEditor"/> — must all
+/// run on the <b>same</b> UI thread (the one that pumps the editor's run loop), since plugin GUI toolkits are
+/// thread-affine. Sizes are in physical pixels on X11/Win32.
 /// </remarks>
 public interface IPluginGui
 {
+    /// <summary>Give the editor a run loop to register its fds/timers with, before <see cref="Create"/>. No-op for
+    /// plugins that don't need one. Pass null on teardown.</summary>
+    void BindRunLoop(IEditorRunLoop? runLoop) { }
+
+    /// <summary>Per-tick idle for formats that repaint via a host idle call (VST2 <c>effEditIdle</c>); no-op otherwise.</summary>
+    void Idle() { }
+
     /// <summary>True when the plugin provides an editor at all (the gui extension/interface is present).</summary>
     bool HasEditor { get; }
 

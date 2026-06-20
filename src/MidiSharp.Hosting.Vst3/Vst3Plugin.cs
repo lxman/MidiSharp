@@ -21,7 +21,8 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
     private void* _component;
     private void* _processor;
     private void* _controller;
-    private void* _view;            // IPlugView, created lazily from the controller
+    private void* _view;            // IPlugView, created lazily from the controller (on the editor UI thread)
+    private Vst3PlugFrame? _frame;  // host frame + IRunLoop for the open editor
     private bool _controllerSeparate;
 
     private int _outputChannels = 2;
@@ -287,9 +288,12 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
     }
 
     // ── Editor (IPlugView) ──────────────────────────────────────────────────────────────────────────
+    // A controller (almost always) means an editor; the view is created lazily in Create(), on the editor
+    // thread — so HasEditor stays cheap and thread-safe (the worker queries it on the load thread).
     public IPluginGui? Gui => _controller != null ? this : null;
 
     // Create the editor view on first need (cached). The controller owns it; we release on destroy/dispose.
+    // Must be called on the editor UI thread (GUI toolkits are thread-affine).
     private void EnsureView()
     {
         if (_view != null || _controller == null) return;
@@ -298,7 +302,13 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
         fixed (byte* p = name) _view = Ctrl->CreateView(_controller, p);
     }
 
-    bool IPluginGui.HasEditor { get { EnsureView(); return _view != null; } }
+    bool IPluginGui.HasEditor => _controller != null;
+
+    void IPluginGui.BindRunLoop(IEditorRunLoop? runLoop)
+    {
+        _frame?.Dispose();
+        _frame = runLoop != null ? new Vst3PlugFrame(runLoop) : null;
+    }
 
     bool IPluginGui.IsApiSupported(string windowApi, bool floating)
     {
@@ -313,7 +323,8 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
     {
         EnsureView();
         if (_view == null) return false;
-        View->SetFrame(_view, Vst3Host.PlugFrame);   // so the plugin can request resizes
+        // The frame carries our Linux IRunLoop; the view queries it off the frame to register its fds/timers.
+        View->SetFrame(_view, _frame != null ? _frame.Frame : Vst3Host.PlugFrame);
         return true;
     }
 
@@ -343,6 +354,7 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
     void IPluginGui.Destroy()
     {
         if (_view != null) { View->Removed(_view); Release(_view); _view = null; }
+        _frame?.Dispose(); _frame = null;
     }
 
     private static void AsciiZ(string s, Span<byte> dst)
@@ -357,6 +369,7 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
         if (_disposed) return;
         _disposed = true;
         if (_view != null) { View->Removed(_view); Release(_view); _view = null; }
+        _frame?.Dispose(); _frame = null;
         Deactivate();
         if (_controllerSeparate && _controller != null) { Ctrl->Terminate(_controller); }
         if (_controller != null && _controller != _component) Release(_controller);

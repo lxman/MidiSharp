@@ -146,6 +146,33 @@ public sealed class Vst3Tests
     }
 
     [Fact]
+    public void Host_run_loop_drives_the_editors_timer()
+    {
+        Assert.SkipWhen(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")), "no X display.");
+        var plugin = LoadGain();
+        Assert.SkipWhen(plugin == null, "VST3 gain fixture not installed.");
+        using var _ = plugin;
+
+        // The fixture's editor registers a 20 ms timer with our Linux IRunLoop on attach, and bumps a tick
+        // counter on each onTimer — exposed as the 2nd 8 bytes of its IBStream state. If the host's run loop
+        // is pumping the plugin's timers, the count climbs while the window is open.
+        using var window = MidiSharp.Hosting.EditorHost.EditorWindow.Open(plugin!.Gui, "VST3 run-loop test");
+        Assert.NotNull(window);
+        Assert.True(window!.IsOpen, $"editor should open (error: {window.Error}).");
+
+        System.Threading.Thread.Sleep(400);   // ~20 ticks at 20 ms if the loop is firing
+        var state = plugin.SaveState();
+        window.Close();
+
+        // SaveState wraps the component state: [int32 compLen][gain double][ticks double][int32 ctrlLen].
+        Assert.True(state.Length >= 20, "fixture state should carry gain + tick count.");
+        var compLen = BitConverter.ToInt32(state, 0);
+        Assert.True(compLen >= 16, $"component state should be 16 bytes (got {compLen}).");
+        var ticks = BitConverter.ToDouble(state, 12);   // 4 (len) + 8 (gain)
+        Assert.True(ticks > 3, $"the host run loop should have fired the editor's timer several times (ticks={ticks}).");
+    }
+
+    [Fact]
     public void Discovers_the_instrument_and_its_separate_controller_parameter()
     {
         var d = FindSynth();

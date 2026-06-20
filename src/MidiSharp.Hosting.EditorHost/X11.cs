@@ -34,6 +34,7 @@ internal static class X11
     [DllImport(Lib)] public static extern int XSync(IntPtr display, bool discard);
     [DllImport(Lib)] public static extern int XPending(IntPtr display);
     [DllImport(Lib)] public static extern int XNextEvent(IntPtr display, IntPtr eventReturn);
+    [DllImport(Lib)] public static extern int XConnectionNumber(IntPtr display);   // the display's socket fd
 
     [DllImport(Lib)] public static extern IntPtr XInternAtom(IntPtr display, string name, bool onlyIfExists);
     [DllImport(Lib)] public static extern int XSetWMProtocols(IntPtr display, ulong w, ref IntPtr protocols, int count);
