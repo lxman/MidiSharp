@@ -312,7 +312,25 @@ distribution; the adapter ships as opt-in, no Steinberg headers vendored.
 **Acceptance gate:** a known VST2 effect and a VST2 instrument both run through the rack/mixer on Linux
 (`.so`) and Windows (`.dll`); measured parity with a reference host render.
 
-### Phase 6 — VST3 adapter  *(the heavy lift)*
+### Phase 6 — VST3 adapter  *(the heavy lift)*  — ✅ VERIFIED 2026-06-20
+
+`MidiSharp.Hosting.Vst3`: the VST3 COM-like ABI done in pure C# — no native shim, no SDK objects. The
+vtable layouts and IIDs are transcribed clean-room from the public `vst3_c_api.h` (the C API makes
+`this` an explicit first argument, so each method is a plain cdecl function pointer; interfaces are
+`{ lpVtbl }` structs). `Vst3Abi` (FUnknown/IPluginFactory/IComponent/IAudioProcessor/IEditController
+vtables in exact order, IIDs in non-Windows UID byte order, ProcessData/AudioBusBuffers/ParameterInfo/
+etc.); `Vst3Host` (minimal `IHostApplication` + `IComponentHandler` built as C# COM objects with
+hand-rolled vtables of `UnmanagedCallersOnly` methods); `Vst3Format` (resolve the `.vst3` bundle's
+per-arch binary, `GetPluginFactory` after `ModuleEntry`, enumerate audio-effect classes by category);
+`Vst3Plugin : IHostedPlugin` (initialize → query IAudioProcessor + IEditController (single-component) →
+setupProcessing → activateBus → setActive/setProcessing → planar `process` reusing `PlanarBridge`/
+`HostedEffect`; 0..1 params via the controller's get/setParamNormalized; mono→stereo). Verified against a
+clean-room single-component VST3 gain fixture built in C from `vst3_c_api.h` (factory + IComponent +
+IAudioProcessor + IEditController with `queryInterface`/ref-counting): metadata reads correctly; gain
+tracks the parameter exactly (input 0.28284 → ×1 0.28277, ×0.5 0.14139, ×2 0.56555). Registered in the
+server `PluginHost`. **Follow-ups:** separate component/controller plugins, VST3 event lists (instrument
+MIDI), and IBStream state.
+
 
 VST3 is a C++ COM-like ABI (`IPluginFactory`/`IComponent`/`IAudioProcessor`/`IEditController` vtables).
 Two routes, evaluated at the start of this phase: (a) the official **C-API bridge**, or (b) a small
@@ -377,9 +395,10 @@ through a `ProcessorChain`, with the loader, struct/function-pointer marshaling,
 kernel, no-GC hot path, and `IAudioProcessor` drop-in all validated by measurement. Every cross-cutting
 concern the rest of the plan rests on is proven.
 
-**Phases 0–5 done and verified** — LADSPA spike, CLAP effects + instruments + live player integration,
-discovery/rack/UI/persistence, sample-accurate events, and the VST2 adapter — all measured against real or
-clean-room native plugins, all reusing one `PlanarBridge`/`HostedEffect`/`HostedInstrument`/event stack.
-**Next: Phase 6 (VST3)** — the heavy lift (C++ COM-like ABI; route TBD: official C-API bridge vs a small
-per-OS C shim). Smaller follow-ups also open: the bind-a-plugin-as-instrument UI, per-part gain/pan on
-summed instruments, and Phase 8 out-of-process sandboxing (the lsp-plugins in-process crash).
+**Phases 0–6 done and verified** — LADSPA, CLAP (effects + instruments + live player integration), VST2,
+and VST3 all host through one `PlanarBridge`/`HostedEffect`/`HostedInstrument`/event stack, discovered in
+the web rack, measured against real or clean-room native plugins. The four major formats are covered (AU
+is macOS-only, deferred; AAX is parked). **Remaining work is depth, not new formats:** the
+bind-a-plugin-as-instrument UI, per-part gain/pan on summed instruments, VST3 separate-controller /
+event-list / state, and **Phase 8 out-of-process sandboxing** (an arbitrary in-process plugin can
+segfault — the lsp-plugins crash — which is the main robustness gap now that breadth is done).

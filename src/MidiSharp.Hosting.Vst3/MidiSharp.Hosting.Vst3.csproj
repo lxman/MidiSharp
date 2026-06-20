@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    VST3 host adapter (Phase 6). VST3 is a C++ COM-like ABI (FUnknown ref-counting + queryInterface;
+    interfaces are structs whose first field points to a vtable of function pointers, each taking the
+    interface pointer as an explicit first argument). The vtable layouts and IIDs are transcribed
+    clean-room from the public vst3_c_api.h (interface facts, not SDK objects). Reuses the
+    MidiSharp.Hosting core (PlanarBridge / HostedEffect / event stack). See docs/plugin-hosting-plan.md.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>MidiSharp.Hosting.Vst3</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MidiSharp.Hosting\MidiSharp.Hosting.csproj" />
+  </ItemGroup>
+
+</Project>

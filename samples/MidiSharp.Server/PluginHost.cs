@@ -2,6 +2,7 @@ using MidiSharp.Hosting;
 using MidiSharp.Hosting.Clap;
 using MidiSharp.Hosting.Ladspa;
 using MidiSharp.Hosting.Vst2;
+using MidiSharp.Hosting.Vst3;
 
 namespace MidiSharp.Server;
 
@@ -25,6 +26,7 @@ public sealed class PluginHost
 
     private readonly PluginRegistry _registry = new PluginRegistry()
         .Register(new ClapFormat())
+        .Register(new Vst3Format())
         .Register(new Vst2Format())
         .Register(new LadspaFormat());
 
