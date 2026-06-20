@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The sandbox worker (Phase 8): a console process that loads ONE plugin in-process via the format
+    adapters and serves a SandboxedPlugin host over pipes + shared memory. If the plugin crashes, only
+    this process dies; the host detects it and carries on. See docs/plugin-hosting-plan.md (Phase 8).
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>MidiSharp.Hosting.Worker</RootNamespace>
+    <AssemblyName>MidiSharp.Hosting.Worker</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MidiSharp.Hosting\MidiSharp.Hosting.csproj" />
+    <ProjectReference Include="..\MidiSharp.Hosting.Sandbox\MidiSharp.Hosting.Sandbox.csproj" />
+    <ProjectReference Include="..\MidiSharp.Hosting.Clap\MidiSharp.Hosting.Clap.csproj" />
+    <ProjectReference Include="..\MidiSharp.Hosting.Vst2\MidiSharp.Hosting.Vst2.csproj" />
+    <ProjectReference Include="..\MidiSharp.Hosting.Vst3\MidiSharp.Hosting.Vst3.csproj" />
+    <ProjectReference Include="..\MidiSharp.Hosting.Ladspa\MidiSharp.Hosting.Ladspa.csproj" />
+  </ItemGroup>
+</Project>

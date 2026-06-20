@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Out-of-process plugin sandboxing (Phase 8). SandboxedPlugin is an IHostedPlugin that proxies to a
+    worker process (MidiSharp.Hosting.Worker) which loads the real plugin in-process. Audio crosses on a
+    shared-memory block; control on a pair of anonymous pipes. A worker crash degrades to silence for that
+    one insert — the host process stays up. See docs/plugin-hosting-plan.md (Phase 8).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>MidiSharp.Hosting.Sandbox</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MidiSharp.Hosting\MidiSharp.Hosting.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="MidiSharp.Hosting.Tests" />
+  </ItemGroup>
+</Project>

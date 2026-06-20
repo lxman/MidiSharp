@@ -346,7 +346,19 @@ Plugin editor windows are native (X11/Win32/Cocoa) and cannot live in the browse
 native host window that embeds the plugin's editor (`clap_plugin_gui`, VST2 `effEditOpen`,
 VST3 `IPlugView`). Separate track; parameter-only hosting (Phases 1–6) is fully usable without it.
 
-### Phase 8 — Out-of-process sandboxing  *(stability hardening)*
+### Phase 8 — Out-of-process sandboxing  *(stability hardening)*  — ✅ CORE VERIFIED 2026-06-20
+
+`MidiSharp.Hosting.Sandbox` + `MidiSharp.Hosting.Worker`. `SandboxedPlugin : IHostedPlugin` runs the real
+plugin in a child worker process: audio crosses through a shared-memory block (four channel regions),
+control over two anonymous pipes (length-prefixed binary, every command acked so the processes stay in
+lock-step). The worker loads the plugin in-process via the format adapters and serves process/param
+requests. If the worker dies — a plugin segfault, a hang — the proxy latches **dead** and every subsequent
+`Process` emits silence, so the host process survives. Verified: the CLAP gain fixture sandboxed in another
+process matches the in-process result exactly (input 0.28284 → ×1 0.28277, ×0.5 0.14139, ×2 0.56555); and
+killing the worker mid-run makes the proxy go silent without throwing — the host lives. **Remaining:**
+wire the sandbox into the server's plugin-loading path (so the live rack runs untrusted plugins like
+lsp-plugins out-of-process), and proxy state/timeout-watchdog tuning.
+
 
 Run plugins in a child process; bridge audio over a shared-memory ring and control over RPC, behind the
 unchanged `IHostedPlugin` interface. A plugin crash then degrades to one dead insert, not a dead host.
@@ -395,10 +407,11 @@ through a `ProcessorChain`, with the loader, struct/function-pointer marshaling,
 kernel, no-GC hot path, and `IAudioProcessor` drop-in all validated by measurement. Every cross-cutting
 concern the rest of the plan rests on is proven.
 
-**Phases 0–6 done and verified** — LADSPA, CLAP (effects + instruments + live player integration), VST2,
-and VST3 all host through one `PlanarBridge`/`HostedEffect`/`HostedInstrument`/event stack, discovered in
-the web rack, measured against real or clean-room native plugins. The four major formats are covered (AU
-is macOS-only, deferred; AAX is parked). **Remaining work is depth, not new formats:** the
-bind-a-plugin-as-instrument UI, per-part gain/pan on summed instruments, VST3 separate-controller /
-event-list / state, and **Phase 8 out-of-process sandboxing** (an arbitrary in-process plugin can
-segfault — the lsp-plugins crash — which is the main robustness gap now that breadth is done).
+**Phases 0–6 and 8 done and verified** — LADSPA, CLAP (effects + instruments + live player integration),
+VST2, and VST3 all host through one `PlanarBridge`/`HostedEffect`/`HostedInstrument`/event stack,
+discovered in the web rack, measured against real or clean-room native plugins; and out-of-process
+sandboxing gives crash isolation. The four major formats are covered (AU is macOS-only, deferred; AAX is
+parked). **All remaining work is depth/productization, not new capability:** wire the sandbox into the
+server's plugin-loading path (so the live rack runs untrusted plugins out-of-process); the
+bind-a-plugin-as-instrument UI; per-part gain/pan on summed instruments; VST3 separate-controller /
+event-list / IBStream state; and proxy state/watchdog polish.
