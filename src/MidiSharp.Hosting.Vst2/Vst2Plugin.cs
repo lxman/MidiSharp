@@ -184,6 +184,12 @@ public sealed unsafe class Vst2Plugin : IHostedPlugin, IPluginGui
     bool IPluginGui.Show() => true;    // VST2 has no separate show; the editor draws once opened + mapped
     bool IPluginGui.Hide() => true;
 
+    // VST2 editors repaint via periodic effEditIdle on the UI thread (the editor host ticks this ~30 ms).
+    void IPluginGui.Idle()
+    {
+        if (_editorOpen && _eff != null) _eff->Dispatcher(_eff, EffEditIdle, 0, IntPtr.Zero, null, 0);
+    }
+
     void IPluginGui.Destroy()
     {
         if (_editorOpen) { _eff->Dispatcher(_eff, EffEditClose, 0, IntPtr.Zero, null, 0); _editorOpen = false; }

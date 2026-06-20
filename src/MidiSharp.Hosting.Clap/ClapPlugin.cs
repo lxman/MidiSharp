@@ -281,6 +281,12 @@ public sealed unsafe class ClapPlugin : IHostedPlugin, IPluginGui
 
     bool IPluginGui.HasEditor => _gui != null;
 
+    void IPluginGui.BindRunLoop(IEditorRunLoop? runLoop)
+    {
+        if (runLoop != null) _host.SetEditorContext(_plugin, runLoop);
+        else _host.ClearEditorContext();
+    }
+
     bool IPluginGui.IsApiSupported(string windowApi, bool floating)
         => _gui != null && _gui->IsApiSupported(_plugin, FixedConst(windowApi), (byte)(floating ? 1 : 0)) != 0;
 

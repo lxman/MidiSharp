@@ -18,6 +18,8 @@ internal static class ClapAbi
     public const string ExtParams = "clap.params";
     public const string ExtState = "clap.state";
     public const string ExtGui = "clap.gui";
+    public const string ExtTimerSupport = "clap.timer-support";
+    public const string ExtPosixFdSupport = "clap.posix-fd-support";
 
     public const string WindowApiX11 = "x11";
     public const string WindowApiWin32 = "win32";
@@ -207,6 +209,35 @@ internal static class ClapAbi
     {
         public byte* Api;
         public nuint Handle;   // x11 XID, or a void* for win32/cocoa
+    }
+
+    // clap.timer-support — host side registers timers, plugin side is called back on the main thread.
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct ClapHostTimerSupport
+    {
+        public delegate* unmanaged[Cdecl]<ClapHost*, uint, uint*, byte> RegisterTimer;   // (host, period_ms, *timer_id)
+        public delegate* unmanaged[Cdecl]<ClapHost*, uint, byte> UnregisterTimer;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct ClapPluginTimerSupport
+    {
+        public delegate* unmanaged[Cdecl]<ClapPlugin*, uint, void> OnTimer;   // (plugin, timer_id)
+    }
+
+    // clap.posix-fd-support — host polls fds, plugin's on_fd runs on the main thread.
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct ClapHostPosixFdSupport
+    {
+        public delegate* unmanaged[Cdecl]<ClapHost*, int, uint, byte> RegisterFd;   // (host, fd, flags)
+        public delegate* unmanaged[Cdecl]<ClapHost*, int, uint, byte> ModifyFd;
+        public delegate* unmanaged[Cdecl]<ClapHost*, int, byte> UnregisterFd;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct ClapPluginPosixFdSupport
+    {
+        public delegate* unmanaged[Cdecl]<ClapPlugin*, int, uint, void> OnFd;   // (plugin, fd, flags)
     }
 
     // clap_plugin_gui, in vtable order. Methods are [main-thread].

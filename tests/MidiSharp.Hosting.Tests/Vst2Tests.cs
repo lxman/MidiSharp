@@ -13,6 +13,7 @@ namespace MidiSharp.Hosting.Tests;
 /// audioMaster handshake, setSampleRate/blockSize/resume, planar processReplacing, 0..1 parameters, and
 /// sample-accurate MIDI via effProcessEvents/deltaFrames. Self-skips when the fixture isn't installed.
 /// </summary>
+[Collection("EditorWindows")]
 public sealed class Vst2Tests
 {
     private const int Rate = 48000;

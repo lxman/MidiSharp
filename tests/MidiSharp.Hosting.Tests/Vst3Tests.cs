@@ -13,6 +13,7 @@ namespace MidiSharp.Hosting.Tests;
 /// createInstance, IComponent/IAudioProcessor/IEditController, setupProcessing/activateBus/setActive, the
 /// planar process call, and 0..1 parameters via the controller. Self-skips without the fixture.
 /// </summary>
+[Collection("EditorWindows")]
 public sealed class Vst3Tests
 {
     private const int Rate = 48000;

@@ -14,6 +14,7 @@ namespace MidiSharp.Hosting.Tests;
 /// isolation (killing the worker makes the proxy emit silence without throwing — the host survives).
 /// Self-skips when the worker exe or the CLAP gain fixture isn't available.
 /// </summary>
+[Collection("EditorWindows")]
 public sealed class SandboxTests
 {
     private const int Rate = 48000;
