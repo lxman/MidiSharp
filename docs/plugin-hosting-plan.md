@@ -355,9 +355,15 @@ lock-step). The worker loads the plugin in-process via the format adapters and s
 requests. If the worker dies — a plugin segfault, a hang — the proxy latches **dead** and every subsequent
 `Process` emits silence, so the host process survives. Verified: the CLAP gain fixture sandboxed in another
 process matches the in-process result exactly (input 0.28284 → ×1 0.28277, ×0.5 0.14139, ×2 0.56555); and
-killing the worker mid-run makes the proxy go silent without throwing — the host lives. **Remaining:**
-wire the sandbox into the server's plugin-loading path (so the live rack runs untrusted plugins like
-lsp-plugins out-of-process), and proxy state/timeout-watchdog tuning.
+killing the worker mid-run makes the proxy go silent without throwing — the host lives.
+
+**Wired into the server (2026-06-20):** `PluginHost.Load`/`GetInfo` now instantiate through
+`SandboxedPlugin` out-of-process by default (worker resolved next to the server or from its dev build;
+`MIDISHARP_SANDBOX=0` opts out). Verified live: the server starts with "Plugin sandbox: ON", and fetching
+param info for an **lsp-plugins** plugin — the suite that crashed the server in-process in Phase 2 — now
+loads it in the worker and returns its parameters, with the server staying up (HTTP 200). **Remaining:**
+sandbox the discovery *scan* too (VST2/VST3 scan still instantiates in-process), proxy plugin state, and a
+process-watchdog/timeout for hung workers.
 
 
 Run plugins in a child process; bridge audio over a shared-memory ring and control over RPC, behind the

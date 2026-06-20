@@ -1,6 +1,8 @@
+using System.IO;
 using MidiSharp.Hosting;
 using MidiSharp.Hosting.Clap;
 using MidiSharp.Hosting.Ladspa;
+using MidiSharp.Hosting.Sandbox;
 using MidiSharp.Hosting.Vst2;
 using MidiSharp.Hosting.Vst3;
 
@@ -31,14 +33,26 @@ public sealed class PluginHost
         .Register(new LadspaFormat());
 
     private readonly int _sampleRate;
+    private readonly string? _workerDll;
+    private readonly bool _sandbox;
 
     public PluginHost(int sampleRate)
     {
         _sampleRate = sampleRate;
+        // Sandbox plugins out-of-process by default (a crashing plugin then can't take down the server),
+        // when the worker is locatable and not explicitly disabled. Falls back to in-process otherwise.
+        _workerDll = ResolveWorker();
+        _sandbox = _workerDll != null && Environment.GetEnvironmentVariable("MIDISHARP_SANDBOX") != "0";
+        Console.WriteLine(_sandbox
+            ? $"  Plugin sandbox:  ON  (worker: {_workerDll})"
+            : "  Plugin sandbox:  OFF (in-process; set the worker or unset MIDISHARP_SANDBOX=0)");
         try { _registry.Rescan(); } catch { /* a broken format dir shouldn't sink startup */ }
     }
 
     public AudioConfig Config => new(_sampleRate, MaxBlockFrames, ChannelCount: 2);
+
+    /// <summary>True when plugins are hosted out-of-process.</summary>
+    public bool Sandboxed => _sandbox;
 
     public void Rescan() => _registry.Rescan();
 
@@ -46,26 +60,49 @@ public sealed class PluginHost
         .Select(p => new PluginDescriptorDto(p.Format, p.Id, p.Name, p.Vendor, p.IsInstrument))
         .ToList();
 
-    /// <summary>Load a plugin transiently to read its parameters, then dispose it.</summary>
+    /// <summary>Load a plugin transiently to read its parameters, then dispose it. Sandboxed when on, so a
+    /// plugin that crashes on load can't take the server down — it surfaces as a failed info fetch.</summary>
     public PluginInfoDto? GetInfo(string format, string id)
     {
         var desc = Find(format, id);
         if (desc == null) return null;
-        using var plugin = _registry.Load(desc, Config);
+        using var plugin = Instantiate(desc);
         var pars = plugin.Parameters
             .Select(p => new PluginParamDto(p.Index, p.Name, p.Label, p.MinValue, p.MaxValue,
                 p.DefaultValue, p.Normalize(p.DefaultValue), p.IsStepped))
             .ToArray();
-        return new PluginInfoDto(desc.Format, desc.Id, desc.Name, desc.IsInstrument, pars);
+        return new PluginInfoDto(desc.Format, desc.Id, plugin.Descriptor.Name, plugin.IsInstrument, pars);
     }
 
     /// <summary>Instantiate a plugin for live use; the caller owns and disposes it.</summary>
     public IHostedPlugin Load(string format, string id)
     {
         var desc = Find(format, id) ?? throw new KeyNotFoundException($"Plugin {format}:{id} not found.");
-        return _registry.Load(desc, Config);
+        return Instantiate(desc);
     }
+
+    // Out-of-process (a worker per plugin) when the sandbox is on; in-process otherwise.
+    private IHostedPlugin Instantiate(PluginDescriptor desc) =>
+        _sandbox ? new SandboxedPlugin(desc, _workerDll!, Config) : _registry.Load(desc, Config);
 
     private PluginDescriptor? Find(string format, string id) =>
         _registry.Plugins.FirstOrDefault(p => p.Format == format && p.Id == id);
+
+    // Locate MidiSharp.Hosting.Worker.dll: an explicit override, then alongside the server (published
+    // layout), then the worker's own build output (dev layout: samples/MidiSharp.Server → src/…Worker).
+    private static string? ResolveWorker()
+    {
+        var env = Environment.GetEnvironmentVariable("MIDISHARP_WORKER");
+        if (!string.IsNullOrEmpty(env) && File.Exists(env)) return env;
+
+        var baseDir = AppContext.BaseDirectory;
+        var alongside = Path.Combine(baseDir, "MidiSharp.Hosting.Worker.dll");
+        if (File.Exists(alongside)) return alongside;
+
+        var dev = baseDir.Replace(
+            Path.Combine("samples", "MidiSharp.Server"),
+            Path.Combine("src", "MidiSharp.Hosting.Worker"));
+        var devDll = Path.Combine(dev, "MidiSharp.Hosting.Worker.dll");
+        return File.Exists(devDll) ? devDll : null;
+    }
 }
