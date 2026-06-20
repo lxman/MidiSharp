@@ -12,11 +12,11 @@ public enum PlayerState { Idle, Playing, Completed }
 public sealed record DeviceDto(string Id, string Name, string Engine, bool IsDefault);
 public sealed record PatchOverrideDto(int LogicalBank, int LogicalProgram, string SourcePath, int SourceBank, int SourceProgram, double GainDb = 0);
 public sealed record TrackOverrideDto(int TrackIndex, string? TrackName, string SourcePath, int SourceBank, int SourceProgram, double GainDb = 0);
-// Per-track mixer strip, keyed by source MIDI track (the engine mixes by track → (TrackMixBank,
-// trackIndex)). All fields default to no-ops. `inserts` is the track's Tier-2 insert rack.
-public sealed record InstrumentMixDto(int TrackIndex, double GainDb = 0, double Pan = 0, bool Mute = false, bool Solo = false, double ReverbSend = 0, double ChorusSend = 0, EffectDto[]? Inserts = null);
-// A live per-track insert-rack update.
-public sealed record InstrumentInsertDto(int TrackIndex, EffectDto[]? Effects = null);
+// Per-part mixer strip, keyed by (track, channel) — the engine mixes by Synthesizer.TrackPart(track,
+// channel). All fields default to no-ops. `inserts` is the part's Tier-2 insert rack.
+public sealed record InstrumentMixDto(int TrackIndex, int Channel, double GainDb = 0, double Pan = 0, bool Mute = false, bool Solo = false, double ReverbSend = 0, double ChorusSend = 0, EffectDto[]? Inserts = null);
+// A live per-part insert-rack update.
+public sealed record InstrumentInsertDto(int TrackIndex, int Channel, EffectDto[]? Effects = null);
 // One master-EQ band. type is "lowshelf" | "highshelf" | "peaking" (others map to peaking).
 public sealed record EqBandDto(string Type, double FreqHz, double Q, double GainDb);
 // One effect in a rack (ordered insert chain). type = "eq" | "limiter"; only the fields its type uses
@@ -33,6 +33,10 @@ public sealed record PlayResponse(bool Ok, double DurationSeconds, string[] Defe
 public sealed record StatusDto(string State, double PositionSeconds, double DurationSeconds, string? Midi, string? Soundfont);
 public sealed record UsedPatchDto(int Bank, int Program, string? Name, bool IsDrum, int[] Channels);
 public sealed record TrackInfoDto(int TrackIndex, string? Name, int[] Channels, int[] Programs, string? BaseName);
+// One mixer strip = one song "part" = a (track, channel). Name/Sound are resolved server-side from the
+// best info the file gives (track name when it uniquely identifies the part, else GM program name).
+// CanSubstitute is true only when the track sounds on one channel (so a per-track override == this part).
+public sealed record PartDto(int TrackIndex, int Channel, string Name, string? Sound, bool IsDrum, bool CanSubstitute);
 public sealed record SoundfontPatchDto(int Bank, int Program, string Name);
 public sealed record SoundfontCatalogDto(string Name, SoundfontPatchDto[] Patches);
 
@@ -98,6 +102,31 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
         return TrackUsageAnalyzer.Analyze(midi, bank)
             .Select(t => new TrackInfoDto(t.TrackIndex, t.Name, t.Channels.ToArray(), t.Programs.ToArray(), t.BaseName))
             .ToList();
+    }
+
+    /// <summary>
+    /// The song's mixer "parts" — one per (track, channel), the finest grouping the file separates the
+    /// music into. Each is labeled from the best info available: the track name when it uniquely
+    /// identifies the part (the track sounds on a single channel), otherwise the GM program name, else
+    /// the channel number. So a normal multi-track file yields one part per track and a single-track
+    /// (format 0) file yields one part per channel — every instrument surfaces either way.
+    /// </summary>
+    public IReadOnlyList<PartDto> GetSongParts(string midiPath, string soundfontPath)
+    {
+        var repair = SmfRepairFilter.Scan(File.ReadAllBytes(midiPath));
+        var midi = MidiFileReader.Read(repair.Data);
+        using var bank = SoundBankLoader.Load(soundfontPath);
+        return PartUsageAnalyzer.Analyze(midi, bank).Select(p =>
+        {
+            var nameFromTrack = p.TrackChannelCount == 1 && !string.IsNullOrWhiteSpace(p.TrackName);
+            var name = nameFromTrack ? p.TrackName! : (p.BaseName ?? $"Ch {p.Channel + 1}");
+            var progStr = p.IsDrum ? "kit" : "prog " + string.Join(",", p.Programs);
+            // Sub-line: the program info, plus the GM name only when it isn't already the headline.
+            var sound = p.BaseName != null && !string.Equals(p.BaseName, name, StringComparison.Ordinal)
+                ? $"{progStr} · {p.BaseName}" : progStr;
+            // A per-track source override only equals this single part when the track has one channel.
+            return new PartDto(p.TrackIndex, p.Channel, name, sound, p.IsDrum, p.TrackChannelCount == 1);
+        }).ToList();
     }
 
     /// <summary>
@@ -243,7 +272,7 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
 
     private static void ApplyOneMix(Synthesizer synth, InstrumentMixDto m)
     {
-        var im = synth.GetInstrumentMix(Synthesizer.TrackMixBank, m.TrackIndex);
+        var im = synth.GetInstrumentMix(Synthesizer.TrackMixBank, Synthesizer.TrackPart(m.TrackIndex, m.Channel));
         im.GainDb = m.GainDb;
         im.Pan = m.Pan;
         im.Mute = m.Mute;
@@ -278,8 +307,9 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
             if (m.Inserts == null || m.Inserts.Length == 0) continue;
             var rack = new EffectRack(SampleRate);
             rack.Configure(m.Inserts);
-            _instrumentRacks[m.TrackIndex] = rack;
-            if (!rack.IsEmpty) synth.SetInstrumentInsert(Synthesizer.TrackMixBank, m.TrackIndex, rack);
+            var part = Synthesizer.TrackPart(m.TrackIndex, m.Channel);
+            _instrumentRacks[part] = rack;
+            if (!rack.IsEmpty) synth.SetInstrumentInsert(Synthesizer.TrackMixBank, part, rack);
         }
     }
 
@@ -292,13 +322,14 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
     {
         lock (_lock)
         {
-            if (!_instrumentRacks.TryGetValue(dto.TrackIndex, out var rack))
+            var part = Synthesizer.TrackPart(dto.TrackIndex, dto.Channel);
+            if (!_instrumentRacks.TryGetValue(part, out var rack))
             {
                 rack = new EffectRack(SampleRate);
-                _instrumentRacks[dto.TrackIndex] = rack;
+                _instrumentRacks[part] = rack;
             }
             rack.Configure(dto.Effects);
-            _synth?.SetInstrumentInsert(Synthesizer.TrackMixBank, dto.TrackIndex, rack.IsEmpty ? null : rack);
+            _synth?.SetInstrumentInsert(Synthesizer.TrackMixBank, part, rack.IsEmpty ? null : rack);
         }
     }
 

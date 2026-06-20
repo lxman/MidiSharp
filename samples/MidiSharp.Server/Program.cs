@@ -49,6 +49,12 @@ app.MapGet("/api/tracks", (string midiPath, string soundfontPath) =>
     try { return Results.Json(player.GetSongTracks(midiPath, soundfontPath)); }
     catch (Exception ex) { return Results.Json(new { error = ex.Message }); }
 });
+// The song's mixer parts — one per (track, channel), labeled intelligently. The mixer's data source.
+app.MapGet("/api/parts", (string midiPath, string soundfontPath) =>
+{
+    try { return Results.Json(player.GetSongParts(midiPath, soundfontPath)); }
+    catch (Exception ex) { return Results.Json(new { error = ex.Message }); }
+});
 // A source font's instrument catalog, for the per-patch override picker.
 app.MapGet("/api/soundfont-patches", (string path) =>
 {

@@ -26,23 +26,25 @@ public sealed class InstrumentMixRenderTests
     }
 
     [Fact]
-    public void Track_keyed_mix_trims_by_track_for_the_same_program()
+    public void Track_keyed_mix_trims_by_part_for_the_same_program()
     {
-        // A note carrying a track index mixes by (TrackMixBank, track), not by its program — so the
-        // mixer groups by part. Trimming track 5's mix halves its level even though it plays program 0.
+        // A note carrying a track index mixes by (TrackMixBank, TrackPart(track, channel)), not by its
+        // program — so the mixer groups by part. Trimming track 5's part (channel 0) halves its level
+        // even though it plays program 0.
         var flat = Rms(RenderTrackNote(5, null).left);
-        var cut = Rms(RenderTrackNote(5, s => s.GetInstrumentMix(Synthesizer.TrackMixBank, 5).GainDb = -6.0206).left);
+        var cut = Rms(RenderTrackNote(5, s => s.GetInstrumentMix(Synthesizer.TrackMixBank, Synthesizer.TrackPart(5, 0)).GainDb = -6.0206).left);
         Assert.True(Math.Abs(cut / flat - 0.5) < 0.02, $"track-5 -6 dB trim should halve RMS (ratio {cut / flat:F4})");
     }
 
     [Fact]
-    public void Two_tracks_on_the_same_program_mix_independently()
+    public void Two_parts_on_the_same_program_mix_independently()
     {
-        // Program 0 played by track 3 and track 7. Soloing track 3 silences track 7 even though they
-        // share the program — proof the mix identity is the track, not the sound.
+        // Program 0 played by two different parts (track 3 / channel 0, and track 7 / channel 1).
+        // Soloing the first silences the second even though they share the program — proof the mix
+        // identity is the part, not the sound.
         var only3 = RenderTwoTrackNotes(soloTrack: 3, includeTrack7: false);
         var soloed = RenderTwoTrackNotes(soloTrack: 3, includeTrack7: true);
-        Assert.Equal(only3.left, soloed.left);    // track 7 contributes nothing when track 3 is soloed
+        Assert.Equal(only3.left, soloed.left);    // the other part contributes nothing when track 3 is soloed
         Assert.Equal(only3.right, soloed.right);
     }
 
@@ -59,7 +61,7 @@ public sealed class InstrumentMixRenderTests
     {
         var synth = new Synthesizer();
         synth.LoadSoundFont(MakeBank(1));
-        synth.GetInstrumentMix(Synthesizer.TrackMixBank, soloTrack).Solo = true;
+        synth.GetInstrumentMix(Synthesizer.TrackMixBank, Synthesizer.TrackPart(soloTrack, 0)).Solo = true;
         synth.NoteOn(0, 60, 120, soloTrack);
         if (includeTrack7) synth.NoteOn(1, 64, 120, 7);
         return Render(synth, 40);

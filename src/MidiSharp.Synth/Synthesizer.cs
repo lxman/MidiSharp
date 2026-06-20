@@ -24,6 +24,16 @@ public sealed class Synthesizer
     /// </summary>
     public const int TrackMixBank = 2_000_000;
 
+    /// <summary>
+    /// Encodes a (track, channel) pair into the single int a voice's mixer identity uses under
+    /// <see cref="TrackMixBank"/>: <c>(trackIndex &lt;&lt; 4) | channel</c> (channel is 4-bit). This is the
+    /// "part" granularity the mixer groups by — one fader per <c>(track, channel)</c>, which yields one
+    /// strip per track in a normal file and one strip per channel in a single-track (format 0) file.
+    /// The host computes the same key to address a part's mix/insert via <see cref="GetInstrumentMix"/>
+    /// and <see cref="SetInstrumentInsert"/>.
+    /// </summary>
+    public static int TrackPart(int trackIndex, int channel) => (trackIndex << 4) | (channel & 0xF);
+
     private readonly Voice[] _voices;
     private readonly ChannelState[] _channels;
     private readonly int _sampleRate;
@@ -411,7 +421,7 @@ public sealed class Synthesizer
             // the resolved (bank, program). The source patch — native or a per-track/patch override — is
             // independent of this mix id.
             voice.Instrument = trackIndex >= 0
-                ? new InstrumentId(TrackMixBank, trackIndex)
+                ? new InstrumentId(TrackMixBank, TrackPart(trackIndex, channel))
                 : new InstrumentId(patch.Bank, patch.Program);
 
             // SFZ polyphony: cap simultaneous voices from this region, stealing the oldest past the limit

@@ -181,32 +181,27 @@ async function analyze() {
   $('trackHint').textContent = 'Analyzing…';
   const qs = `midiPath=${encodeURIComponent(selectedMidi.path)}`
     + `&soundfontPath=${encodeURIComponent(selectedSoundfont.path)}`;
-  let tracks, used;
+  let parts;
   try {
-    [tracks, used] = await Promise.all([
-      fetch(`/api/tracks?${qs}`).then(r => r.json()),
-      fetch(`/api/patches?${qs}`).then(r => r.json()),
-    ]);
+    parts = await fetch(`/api/parts?${qs}`).then(r => r.json());
   } catch (e) {
     $('trackHint').textContent = '';
     $('error').textContent = 'Analyze failed: ' + e;
     return;
   }
-  const err = tracks.error || used.error;
-  if (err) {
+  if (parts.error) {
     $('trackHint').textContent = '';
-    $('error').textContent = 'Analyze failed: ' + err;
+    $('error').textContent = 'Analyze failed: ' + parts.error;
     return;
   }
 
-  const sounding = tracks.filter(t => t.channels.length > 0).length;
-  $('trackHint').textContent = `${sounding} part${sounding === 1 ? '' : 's'}`;
+  $('trackHint').textContent = `${parts.length} part${parts.length === 1 ? '' : 's'}`;
 
-  // Seed the mixer from a loading setup, then render one strip per sounding track — the mixer's unit is
-  // the part (track), keyed by trackIndex (the engine mixes by track). `used` (patch list) is unused now.
+  // Seed the mixer from a loading setup, then render one strip per part — a (track, channel), which the
+  // engine mixes by Synthesizer.TrackPart(track, channel).
   if (loadedMix) for (const [k, m] of loadedMix) mixMap.set(k, m);
-  renderMixer(tracks);
-  $('mixerCount').textContent = `${sounding} part${sounding === 1 ? '' : 's'}`;
+  renderMixer(parts);
+  $('mixerCount').textContent = `${parts.length} part${parts.length === 1 ? '' : 's'}`;
 }
 
 // Build the shared "Choose source font… → pick instrument" override control. onPick(srcPath, sb, sp)
@@ -296,8 +291,9 @@ function buildPicker(onPick, onClear, resetTitle, initial) {
 // ---------------- mixer + master ----------------
 // One persistent entry per used instrument (created on render, never pruned) so the strip controls and
 // its insert rack bind to stable objects. Only non-default entries are sent on Play / saved into setups.
-const newMixEntry = t => ({
-  trackIndex: t.trackIndex,
+const partKey = p => `${p.trackIndex}:${p.channel}`;   // the (track, channel) mixMap key
+const newMixEntry = p => ({
+  trackIndex: p.trackIndex, channel: p.channel,
   gainDb: 0, pan: 0, mute: false, solo: false, reverbSend: 0, chorusSend: 0, inserts: [],
 });
 const isNonDefaultMix = m =>
@@ -317,28 +313,33 @@ function postLive(url, key, body) {
   else rec.t = setTimeout(send, 50 - (now - rec.last));
   liveTimers.set(key, rec);
 }
-const postMixLive = e => postLive('/api/mix', 'mix:' + e.trackIndex, e);
-const postInsertLive = e => postLive('/api/insert', 'ins:' + e.trackIndex,
-  { trackIndex: e.trackIndex, effects: e.inserts });
+const postMixLive = e => postLive('/api/mix', 'mix:' + partKey(e), e);
+const postInsertLive = e => postLive('/api/insert', 'ins:' + partKey(e),
+  { trackIndex: e.trackIndex, channel: e.channel, effects: e.inserts });
 function postMaster() {
   fetch('/api/master', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(master) }).catch(() => {});
 }
 
-function renderMixer(tracks) {
+function renderMixer(parts) {
   const box = $('mixer');
   box.innerHTML = '';
   $('masterStrip').innerHTML = '';
   closePopover();
   document.querySelectorAll('body > .pop:not(.master-pop)').forEach(p => p.remove());   // drop per-strip popovers from a prior render (keep the master rack)
-  const sounding = (tracks || []).filter(t => t.channels.length > 0);   // one strip per sounding track
-  if (!sounding.length) { $('mixerHint').style.display = ''; return; }
+  if (!parts || !parts.length) { $('mixerHint').style.display = ''; return; }
   $('mixerHint').style.display = 'none';
-  for (const t of sounding) {
-    const key = t.trackIndex;
-    if (!mixMap.has(key)) mixMap.set(key, newMixEntry(t));
-    const e = mixMap.get(key);
-    if (!Array.isArray(e.inserts)) e.inserts = [];      // normalize entries loaded from a setup
-    box.appendChild(buildStrip(t, e));
+  for (const p of parts) {
+    const key = partKey(p);
+    let e = mixMap.get(key);
+    if (!e) {
+      // Migrate a legacy per-track mix entry (older setups keyed mix by trackIndex only) onto this part.
+      const legacy = mixMap.get(String(p.trackIndex));
+      if (legacy) { mixMap.delete(String(p.trackIndex)); e = legacy; } else e = newMixEntry(p);
+      mixMap.set(key, e);
+    }
+    e.trackIndex = p.trackIndex; e.channel = p.channel;   // pin the part identity
+    if (!Array.isArray(e.inserts)) e.inserts = [];        // normalize entries loaded from a setup
+    box.appendChild(buildStrip(p, e));
   }
   $('masterStrip').appendChild(buildMasterStrip());     // master pinned on the right
 }
@@ -403,35 +404,40 @@ window.addEventListener('resize', closePopover);
 
 // A vertical channel strip: name, source/FX header buttons (open popovers), pan + sends, mute/solo,
 // and a vertical gain fader. Same persistent entry + live posting as before.
-function buildStrip(t, e) {
+function buildStrip(p, e) {
   const strip = document.createElement('div');
-  strip.className = 'vstrip' + (t.channels.includes(9) ? ' drum' : '');   // ch 10 (index 9) = drums
+  strip.className = 'vstrip' + (p.isDrum ? ' drum' : '');
 
-  // A strip IS a track (part). Name = track name; underneath, the sound it natively plays (program +
-  // GM name) so you can see when two parts share a program. No channel — it's plumbing.
-  const tname = t.name && t.name.trim() ? t.name : `Track ${t.trackIndex}`;
-  const progPart = t.programs && t.programs.length ? `prog ${t.programs.join(',')}` : '';
-  const sub = [progPart, t.baseName].filter(Boolean).join(' · ');
+  // A strip IS a part = a (track, channel). Name is resolved server-side (track name when it uniquely
+  // names the part, else the GM program name); `sound` is the program info underneath.
   const name = document.createElement('div');
   name.className = 'vname';
-  name.title = `${tname}${t.baseName ? ' — ' + t.baseName : ''}`;
-  name.innerHTML = `${escapeHtml(tname)}<span class="vaddr">${escapeHtml(sub)}</span>`;
+  name.title = `${p.name}${p.sound ? ' — ' + p.sound : ''}`;
+  name.innerHTML = `${escapeHtml(p.name)}<span class="vaddr">${escapeHtml(p.sound || '')}</span>`;
 
   // header: src + FX buttons, each opening a floating popover
   const head = document.createElement('div'); head.className = 'vhead';
-  const srcBtn = document.createElement('button'); srcBtn.textContent = 'src'; srcBtn.title = 'assign a font to this part';
+  const srcBtn = document.createElement('button'); srcBtn.textContent = 'src';
   const fxBtn = document.createElement('button'); fxBtn.textContent = 'FX'; fxBtn.title = 'insert effects';
   head.append(srcBtn, fxBtn);
 
-  // src popover → per-track override: force every note of this part to a chosen font's instrument.
-  const srcPop = document.createElement('div'); srcPop.className = 'pop src';
-  srcPop.appendChild(buildPicker(
-    (srcPath, sb, sp) => { trackOverrides.set(t.trackIndex, { trackIndex: t.trackIndex, trackName: t.name, sourcePath: srcPath, sourceBank: sb, sourceProgram: sp }); srcBtn.classList.add('on'); },
-    () => { trackOverrides.delete(t.trackIndex); srcBtn.classList.remove('on'); },
-    'revert this part to its original sound',
-    loadedTrackOverrides && loadedTrackOverrides.get(t.trackIndex)));
-  if (loadedTrackOverrides && loadedTrackOverrides.get(t.trackIndex)) srcBtn.classList.add('on');
-  srcBtn.onclick = () => togglePopover(srcBtn, srcPop);
+  // src popover → per-track override. Only meaningful when this part's track has one channel (so the
+  // override hits just this part); on a multi-channel/format-0 track it's disabled until per-part
+  // substitution lands.
+  if (p.canSubstitute) {
+    srcBtn.title = 'assign a font to this part';
+    const srcPop = document.createElement('div'); srcPop.className = 'pop src';
+    srcPop.appendChild(buildPicker(
+      (srcPath, sb, sp) => { trackOverrides.set(p.trackIndex, { trackIndex: p.trackIndex, trackName: p.name, sourcePath: srcPath, sourceBank: sb, sourceProgram: sp }); srcBtn.classList.add('on'); },
+      () => { trackOverrides.delete(p.trackIndex); srcBtn.classList.remove('on'); },
+      'revert this part to its original sound',
+      loadedTrackOverrides && loadedTrackOverrides.get(p.trackIndex)));
+    if (loadedTrackOverrides && loadedTrackOverrides.get(p.trackIndex)) srcBtn.classList.add('on');
+    srcBtn.onclick = () => togglePopover(srcBtn, srcPop);
+  } else {
+    srcBtn.disabled = true;
+    srcBtn.title = 'this part shares a track with others (e.g. format 0) — per-part substitution coming soon';
+  }
 
   // insert-rack popover (the SAME buildRack/widgets as the master bus)
   const fxPop = document.createElement('div'); fxPop.className = 'pop fxpop rack';
@@ -741,7 +747,10 @@ async function loadSetup(id) {
   overrides.clear();
   for (const o of setup.overrides || []) overrides.set(`${o.logicalBank}:${o.logicalProgram}`, o);
   loadedTrackOverrides = new Map((setup.trackOverrides || []).map(o => [o.trackIndex, o]));
-  loadedMix = new Map((setup.mix || []).map(m => [m.trackIndex, m]));   // per-track mix, keyed by trackIndex
+  // Per-part mix, keyed (track:channel). Older setups stored mix by trackIndex only (no channel) — key
+  // those by the bare trackIndex so renderMixer can migrate them onto the matching part.
+  loadedMix = new Map((setup.mix || []).map(m =>
+    [m.channel !== undefined && m.channel !== null ? `${m.trackIndex}:${m.channel}` : `${m.trackIndex}`, m]));
 
   master.masterGainDb = (setup.master && typeof setup.master.masterGainDb === 'number') ? setup.master.masterGainDb : 0;
   setMasterEffects(effectsFromSetupMaster(setup.master));
