@@ -385,11 +385,30 @@ control. Audio via `IAudioProcessor::process` (`ProcessData` / `AudioBusBuffers`
 **Acceptance gate:** a known VST3 effect + instrument run through MidiSharp on Win/Mac/Linux; measured
 parity with a reference render.
 
-### Phase 7 — Native plugin GUIs  *(deferred, non-web track)*
+### Phase 7 — Native plugin GUIs  *(CLAP done, X11)*  — ✅ VERIFIED 2026-06-20
 
-Plugin editor windows are native (X11/Win32/Cocoa) and cannot live in the browser UI. This needs a
-native host window that embeds the plugin's editor (`clap_plugin_gui`, VST2 `effEditOpen`,
-VST3 `IPlugView`). Separate track; parameter-only hosting (Phases 1–6) is fully usable without it.
+Plugin editor windows are native (X11/Win32/Cocoa) and cannot live in the browser UI, so the editor opens
+as a real OS window on the machine running the server — in the process that holds the live plugin instance
+(the sandbox worker), driven from the web UI.
+
+- **`IPluginGui`** (MidiSharp.Hosting): format-agnostic editor lifecycle (HasEditor / IsApiSupported /
+  Create / SetScale / TryGetSize / SetParent / Show / Hide / Destroy), exposed via `IHostedPlugin.Gui`.
+  `ClapPlugin` implements it over the `clap.gui` extension (ABI: `clap_plugin_gui` vtable, `clap_window`).
+- **`MidiSharp.Hosting.EditorHost`**: Xlib P/Invoke + `EditorWindow`, which opens a top-level X11 window
+  sized to the editor, embeds the plugin (`create(x11)` → `set_parent` → `show`), maps it, and runs the
+  window's event loop on a dedicated thread (editor calls are main-thread-only; audio runs independently).
+- **Out-of-process**: the worker opens the editor for its live instance (`CmdOpenEditor`/`CmdCloseEditor`;
+  the ready handshake reports HasEditor); `SandboxedPlugin` proxies `OpenEditor`/`CloseEditor`. The server
+  exposes `/api/plugins/editor/open|close`, `PluginInfoDto.HasEditor`, and an "Open editor" button.
+
+Verified: headless query (the gui fixture reports an X11 editor at 320×240); live in-process embed
+(`EditorWindow` opens a window and `XQueryTree` confirms the plugin's embedded child); cross-process (the
+worker opens the editor while audio keeps flowing); and end-to-end from the web API — after loading the gui
+fixture into the master rack, `/api/plugins/editor/open` returns ok and `xwininfo` shows a WM-managed window
+at the editor's 320×240, which close removes. Fixture: `~/.clap/midisharp_gui.clap` (clap.gui + an X11
+child window the server paints via `background_pixel`, so no fixture event loop). **Remaining:** VST3
+`IPlugView` / VST2 `effEditOpen` editors, Win32/Cocoa windowing, and host timer callbacks for plugins that
+redraw via a timer (next round).
 
 ### Phase 8 — Out-of-process sandboxing  *(stability hardening)*  — ✅ CORE VERIFIED 2026-06-20
 
@@ -501,5 +520,6 @@ in the callback, with live `/api/insert` parity). VST3's full model landed 2026-
 component/controller, instrument event lists, and IBStream state, plus instrument detection and real-bundle
 binary resolution. **The plugin-hosting arc is feature-complete:** four formats (CLAP/VST2/VST3/LADSPA),
 effects and instruments, the hosted instrument carries the full channel strip, discovery+load are
-crash-isolated out-of-process, and state persists into setups. The only deferred items are explicitly
-out-of-scope tracks: native plugin GUIs (Phase 7, non-web) and AU (macOS-only) / AAX (parked).
+crash-isolated out-of-process, and state persists into setups. Native plugin editors (Phase 7) open from
+the web player too — CLAP on X11, hosted in the sandbox worker. The remaining items are narrower: VST3/VST2
+editors and Win32/Cocoa windowing (next round), and AU (macOS-only) / AAX (parked).
