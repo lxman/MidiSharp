@@ -174,6 +174,27 @@ internal static class ClapAbi
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct ClapOStream
+    {
+        public void* Ctx;
+        public delegate* unmanaged[Cdecl]<ClapOStream*, void*, ulong, long> Write;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct ClapIStream
+    {
+        public void* Ctx;
+        public delegate* unmanaged[Cdecl]<ClapIStream*, void*, ulong, long> Read;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct ClapPluginState
+    {
+        public delegate* unmanaged[Cdecl]<ClapPlugin*, ClapOStream*, byte> Save;
+        public delegate* unmanaged[Cdecl]<ClapPlugin*, ClapIStream*, byte> Load;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     public unsafe struct ClapEventParamValue
     {
         public ClapEventHeader Header;

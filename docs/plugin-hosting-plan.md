@@ -204,7 +204,24 @@ cross-platform adapter. CLAP effects use `clap_plugin_factory` → `clap_plugin`
 insert in the rack on Linux **and** the abstraction compiles/loads on Windows (CLAP is cross-platform);
 measured effect on a test signal matches a reference render; invariants 1–3 hold.
 
-### Phase 2 — Plugin discovery, registry & web UI
+### Phase 2 — Plugin discovery, registry & web UI  — ✅ VERIFIED 2026-06-19
+
+Server-side `PluginHost` (registry of CLAP + LADSPA, scanned at startup) + endpoints `GET /api/plugins`,
+`GET /api/plugin-info`, `POST /api/plugins/rescan`. `EffectRack` gained a `"plugin"` `EffectDto` variant:
+it loads a `HostedEffect` via the registry, keyed by `InstanceId` so a parameter tweak reuses the loaded
+native instance (no reload), with disposal deferred one Configure cycle to avoid an audio-thread
+use-after-free. The web rack's add-bar lists discovered effects; selecting one renders a normalized 0..1
+knob per `PluginParameter` (fetched lazily from `/api/plugin-info`). Plugin inserts persist into the
+Setup JSON (format, id, instanceId, param values; + optional `clap.state` base64). CLAP state save/load
+(the Phase-1 deferral) is implemented via the `clap.state` extension over GCHandle-backed streams.
+
+Verified end-to-end against real plugins: discovery surfaced **214 effects** (195 CLAP incl. lsp-plugins/
+Dragonfly/DISTRHO + 19 LADSPA); the UI rendered the gain fixture's knob from server info; the server
+loaded the plugin into the master rack and reused the instance on a param change; the insert round-tripped
+through save/load; and a real third-party effect (DISTRHO MaBitcrush) processes through the host
+(`ClapLiveTests`). Note: loading an arbitrary untrusted plugin in-process can segfault (lsp-plugins did) —
+that robustness is Phase 8 (out-of-process sandboxing).
+
 
 - `PluginRegistry.Scan` over the standard per-OS search paths (`CLAP_PATH`, `~/.clap`,
   `/usr/lib/clap`, `%COMMONPROGRAMFILES%\CLAP`, `~/Library/Audio/Plug-Ins/CLAP`, …); cache results.
@@ -311,8 +328,8 @@ through a `ProcessorChain`, with the loader, struct/function-pointer marshaling,
 kernel, no-GC hot path, and `IAudioProcessor` drop-in all validated by measurement. Every cross-cutting
 concern the rest of the plan rests on is proven.
 
-**Phases 0 and 1 are done and verified** (LADSPA spike + CLAP effects, both measured against real native
-plugins). **Next: Phase 2 — discovery, registry & web UI**: a `/api/plugins` endpoint over
-`PluginRegistry.Scan`, a `"plugin"` `EffectDto` variant rendered as generic knobs from each
-`PluginParameter`, and plugin-insert persistence (descriptor id + `clap.state` blob + param values) into
-the Setup JSON — which also lands CLAP/VST state save/restore (the one piece Phase 1 deferred).
+**Phases 0, 1 and 2 are done and verified** — LADSPA spike, CLAP effects, and full discovery/rack/UI/
+persistence, all measured against real native plugins. **Next: Phase 3 — sample-accurate events
+plumbing**: generalize `HostEvent` delivery so timestamped MIDI / param-automation can be split at event
+offsets within a block (CLAP/VST3 take an event list; VST2 takes `processEvents`). This is the
+prerequisite for Phase 4 (CLAP instruments) and for parameter automation lanes.

@@ -17,6 +17,7 @@ let loadedOverrides = null;       // "bank:program" -> override DTO  (null when 
 let loadedPartOverrides = null;   // "track:channel" -> override DTO  (the per-part substitutions)
 let loadedTrackOverrides = null;  // trackIndex -> legacy whole-track override (migrated onto its part)
 let lastSetupName = '';
+let availablePlugins = [];        // discovered hosted effect plugins (CLAP/LADSPA), for the rack picker
 
 // Mixer (per-instrument, keyed "bank:program") + master limiter. Only non-default strips are kept in
 // mixMap so an untouched mixer stays empty; the browser is the source of truth and re-sends on Play.
@@ -538,6 +539,13 @@ const EFFECTS = {
     create: () => ({ type: 'limiter', enabled: true, ceilingDb: -1.0, releaseMs: 100 }),
     body: buildLimiterBody,
   },
+  // Hosted plugin (CLAP/LADSPA). Not added from the static palette — picked from the discovered list in
+  // the rack's add-bar, which fills in pluginFormat/pluginId/name. create() is just a safe skeleton.
+  plugin: {
+    title: 'Plugin',
+    create: () => ({ type: 'plugin', enabled: true, pluginFormat: '', pluginId: '', instanceId: '', name: 'Plugin', pluginParams: [], params: null }),
+    body: buildPluginBody,
+  },
 };
 const EFFECT_PALETTE = ['eq', 'limiter'];   // offer-to-add order
 // The master rack starts with EQ + limiter present but bypassed (discoverable, off until you enable).
@@ -576,6 +584,48 @@ function buildLimiterBody(fx, onChange) {
   return wrap;
 }
 
+// A hosted plugin's editor: one normalized 0..1 knob per parameter. The param list is fetched lazily
+// (it needs the plugin loaded server-side) and the body re-renders once it arrives — so this works both
+// for a freshly-added plugin and one restored from a saved setup.
+function buildPluginBody(fx, onChange) {
+  const wrap = document.createElement('div'); wrap.className = 'fxrow plugin';
+
+  function renderParams() {
+    wrap.innerHTML = '';
+    if (!fx.params) { wrap.innerHTML = '<span class="hint">loading…</span>'; return; }
+    if (!fx.params.length) { wrap.innerHTML = '<span class="hint">no parameters</span>'; return; }
+    fx.params.forEach(p => {
+      const k = document.createElement('span'); k.className = 'knob';
+      const inp = document.createElement('input'); inp.type = 'range'; inp.min = 0; inp.max = 1; inp.step = 0.001;
+      const cur = (fx.pluginParams && fx.pluginParams[p.index] != null) ? fx.pluginParams[p.index] : p.defaultNormalized;
+      inp.value = cur;
+      const val = document.createElement('span'); val.className = 'val'; val.textContent = (+cur).toFixed(2);
+      inp.addEventListener('input', () => {
+        fx.pluginParams[p.index] = parseFloat(inp.value);
+        val.textContent = parseFloat(inp.value).toFixed(2);
+        onChange();
+      });
+      k.append(document.createTextNode(p.name + ' '), inp, val);
+      wrap.appendChild(k);
+    });
+  }
+
+  renderParams();
+  if (!fx.params) {
+    fetch(`/api/plugin-info?format=${encodeURIComponent(fx.pluginFormat)}&id=${encodeURIComponent(fx.pluginId)}`)
+      .then(r => r.json())
+      .then(info => {
+        if (info && Array.isArray(info.params)) {
+          fx.params = info.params;
+          if (!fx.pluginParams || !fx.pluginParams.length) fx.pluginParams = info.params.map(p => p.defaultNormalized);
+          renderParams();
+        } else { wrap.innerHTML = '<span class="hint">unavailable</span>'; }
+      })
+      .catch(() => { wrap.innerHTML = '<span class="hint">load failed</span>'; });
+  }
+  return wrap;
+}
+
 // ---- drag-reorderable effect rack ----
 // Binds to `model` (an array of effect objects) and calls onChange() on any edit — param tweak, add,
 // remove, enable/bypass, or reorder. Generic: the master bus uses it now, per-instrument inserts later.
@@ -600,7 +650,8 @@ function buildRack(container, model, onChange) {
     grip.addEventListener('dragstart', e => { dragFrom = i; el.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setDragImage(el, 12, 12); });
     grip.addEventListener('dragend', () => { dragFrom = -1; el.classList.remove('dragging'); });
 
-    const title = document.createElement('span'); title.className = 'fxtitle'; title.textContent = def ? def.title : fx.type;
+    const title = document.createElement('span'); title.className = 'fxtitle';
+    title.textContent = fx.type === 'plugin' ? (fx.name || 'Plugin') : (def ? def.title : fx.type);
 
     const en = document.createElement('button'); en.className = 'fxbtn en'; en.textContent = fx.enabled ? 'on' : 'off'; en.title = 'enable / bypass';
     en.addEventListener('click', () => { fx.enabled = !fx.enabled; render(); onChange(); });
@@ -631,12 +682,31 @@ function buildRack(container, model, onChange) {
   function addBar() {
     const bar = document.createElement('div'); bar.className = 'fxadd';
     const avail = EFFECT_PALETTE.filter(t => !present(t));
-    if (!avail.length) { bar.innerHTML = '<span class="hint">all effects added</span>'; return bar; }
-    const sel = document.createElement('select');
-    sel.innerHTML = '<option value="">+ Add effect…</option>'
-      + avail.map(t => `<option value="${t}">${EFFECTS[t].title}</option>`).join('');
-    sel.addEventListener('change', () => { if (!sel.value) return; model.push(EFFECTS[sel.value].create()); render(); onChange(); });
-    bar.appendChild(sel);
+    if (avail.length) {
+      const sel = document.createElement('select');
+      sel.innerHTML = '<option value="">+ Add effect…</option>'
+        + avail.map(t => `<option value="${t}">${EFFECTS[t].title}</option>`).join('');
+      sel.addEventListener('change', () => { if (!sel.value) return; model.push(EFFECTS[sel.value].create()); render(); onChange(); });
+      bar.appendChild(sel);
+    }
+    // Discovered hosted plugins (indexed so duplicate plugin ids — common in DISTRHO bundles — stay distinct).
+    if (availablePlugins.length) {
+      const psel = document.createElement('select');
+      psel.innerHTML = '<option value="">+ Add plugin…</option>'
+        + availablePlugins.map((p, i) => `<option value="${i}">${escapeHtml(p.name)} · ${p.format}</option>`).join('');
+      psel.addEventListener('change', () => {
+        if (psel.value === '') return;
+        const p = availablePlugins[+psel.value];
+        model.push({
+          type: 'plugin', enabled: true, pluginFormat: p.format, pluginId: p.id,
+          instanceId: (crypto.randomUUID ? crypto.randomUUID() : 'p' + Math.random().toString(36).slice(2)),
+          name: p.name, pluginParams: [], params: null,
+        });
+        render(); onChange();
+      });
+      bar.appendChild(psel);
+    }
+    if (!avail.length && !availablePlugins.length) bar.innerHTML = '<span class="hint">all effects added</span>';
     return bar;
   }
 
@@ -818,4 +888,8 @@ function connectStatus() {
 }
 
 loadDevices().catch(e => $('error').textContent = 'Failed to load devices: ' + e);
+// Discover hosted effect plugins (instruments can't be inserts) for the rack picker.
+fetch('/api/plugins').then(r => r.json()).then(list => {
+  availablePlugins = (list || []).filter(p => !p.isInstrument);
+}).catch(() => {});
 connectStatus();

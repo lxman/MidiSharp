@@ -22,10 +22,15 @@ public sealed record InstrumentMixDto(int TrackIndex, int Channel, double GainDb
 public sealed record InstrumentInsertDto(int TrackIndex, int Channel, EffectDto[]? Effects = null);
 // One master-EQ band. type is "lowshelf" | "highshelf" | "peaking" (others map to peaking).
 public sealed record EqBandDto(string Type, double FreqHz, double Q, double GainDb);
-// One effect in a rack (ordered insert chain). type = "eq" | "limiter"; only the fields its type uses
-// are read. enabled=false leaves it in the rack's order but out of the signal path.
+// One effect in a rack (ordered insert chain). type = "eq" | "limiter" | "plugin"; only the fields its
+// type uses are read. enabled=false leaves it in the rack's order but out of the signal path. For
+// "plugin": PluginFormat/PluginId pick the hosted plugin, InstanceId keys its live instance across
+// reconfigures (so a param tweak reuses it instead of reloading), PluginParams are normalized 0..1
+// values per parameter index, and PluginState is an optional base64 opaque-state blob.
 public sealed record EffectDto(string Type, bool Enabled = true, EqBandDto[]? EqBands = null,
-    double CeilingDb = -1.0, double ReleaseMs = 100.0);
+    double CeilingDb = -1.0, double ReleaseMs = 100.0,
+    string? PluginFormat = null, string? PluginId = null, string? InstanceId = null,
+    double[]? PluginParams = null, string? PluginState = null);
 // Master-bus DSP: an ordered effect rack. The legacy scalar fields are still accepted (older clients /
 // saved setups) and synthesized into an [eq, limiter] rack when `effects` is absent.
 public sealed record MasterDto(EffectDto[]? Effects = null, double MasterGainDb = 0,
@@ -50,12 +55,21 @@ public sealed record SoundfontCatalogDto(string Name, SoundfontPatchDto[] Patche
 /// When a piece completes the server stays up and returns to "completed" (ready for the
 /// next song); the process only exits on an explicit <see cref="RequestExit"/>.
 /// </summary>
-public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposable
+public sealed class PlayerService : IDisposable
 {
     private const int SampleRate = 48000;   // match PipeWire/JACK graph rate → no resampling
     private const double TailSeconds = 2.0;   // render this long past the last event before "done"
 
+    private readonly IHostApplicationLifetime _lifetime;
+    private readonly PluginHost _pluginHost;
     private readonly object _lock = new();
+
+    public PlayerService(IHostApplicationLifetime lifetime)
+    {
+        _lifetime = lifetime;
+        _pluginHost = new PluginHost(SampleRate);
+        _masterRack = new EffectRack(SampleRate, _pluginHost);
+    }
 
     private OwnAudioOutput? _output;
     private RealtimePlayer? _player;
@@ -64,7 +78,7 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
 
     // Master-bus DSP rack, caller-side (the synth has no reference to MidiSharp.Dsp). Persists across
     // plays (it's a setting); applied in the audio callback after the synth fills the block.
-    private readonly EffectRack _masterRack = new(SampleRate);
+    private readonly EffectRack _masterRack;
     // Per-track insert racks, keyed by trackIndex. Rebuilt from the play request and updated live;
     // a non-empty rack is registered with the synth as that track's IInstrumentInsert.
     private readonly Dictionary<int, EffectRack> _instrumentRacks = new();
@@ -329,12 +343,13 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
     // with the synth (an instrument with no inserts pays nothing — the synth stays on its bypass path).
     private void ApplyInstrumentInserts(Synthesizer synth, InstrumentMixDto[]? mix)
     {
+        foreach (var r in _instrumentRacks.Values) r.Dispose();   // free any previous play's plugin instances
         _instrumentRacks.Clear();
         if (mix == null) return;
         foreach (var m in mix)
         {
             if (m.Inserts == null || m.Inserts.Length == 0) continue;
-            var rack = new EffectRack(SampleRate);
+            var rack = new EffectRack(SampleRate, _pluginHost);
             rack.Configure(m.Inserts);
             var part = Synthesizer.TrackPart(m.TrackIndex, m.Channel);
             _instrumentRacks[part] = rack;
@@ -354,7 +369,7 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
             var part = Synthesizer.TrackPart(dto.TrackIndex, dto.Channel);
             if (!_instrumentRacks.TryGetValue(part, out var rack))
             {
-                rack = new EffectRack(SampleRate);
+                rack = new EffectRack(SampleRate, _pluginHost);
                 _instrumentRacks[part] = rack;
             }
             rack.Configure(dto.Effects);
@@ -447,7 +462,21 @@ public sealed class PlayerService(IHostApplicationLifetime lifetime) : IDisposab
         }
     }
 
-    public void RequestExit() => lifetime.StopApplication();
+    public void RequestExit() => _lifetime.StopApplication();
 
-    public void Dispose() => Stop();
+    // ── Plugin discovery (delegates to the host's cross-format registry) ──
+    public IReadOnlyList<PluginDescriptorDto> GetPlugins() => _pluginHost.List();
+    public PluginInfoDto? GetPluginInfo(string format, string id) => _pluginHost.GetInfo(format, id);
+    public void RescanPlugins() => _pluginHost.Rescan();
+
+    public void Dispose()
+    {
+        Stop();
+        lock (_lock)
+        {
+            _masterRack.Dispose();
+            foreach (var r in _instrumentRacks.Values) r.Dispose();
+            _instrumentRacks.Clear();
+        }
+    }
 }

@@ -171,8 +171,59 @@ public sealed unsafe class ClapPlugin : IHostedPlugin
         e.Value = value;
     }
 
-    public byte[] SaveState() => [];                       // Phase 2 (clap.state + persistence)
-    public void LoadState(ReadOnlySpan<byte> state) { }
+    public byte[] SaveState()
+    {
+        var ext = (ClapPluginState*)_plugin->GetExtension(_plugin, FixedConst(ExtState));
+        if (ext == null) return [];
+        using var ms = new System.IO.MemoryStream();
+        var handle = GCHandle.Alloc(ms);
+        try
+        {
+            var os = new ClapOStream { Ctx = (void*)GCHandle.ToIntPtr(handle), Write = &OStreamWrite };
+            return ext->Save(_plugin, &os) != 0 ? ms.ToArray() : [];
+        }
+        finally { handle.Free(); }
+    }
+
+    public void LoadState(ReadOnlySpan<byte> state)
+    {
+        if (!_active || state.IsEmpty) return;
+        var ext = (ClapPluginState*)_plugin->GetExtension(_plugin, FixedConst(ExtState));
+        if (ext == null) return;
+        var reader = new StateReader(state.ToArray());
+        var handle = GCHandle.Alloc(reader);
+        try
+        {
+            var ins = new ClapIStream { Ctx = (void*)GCHandle.ToIntPtr(handle), Read = &IStreamRead };
+            ext->Load(_plugin, &ins);
+        }
+        finally { handle.Free(); }
+    }
+
+    private sealed class StateReader(byte[] data)
+    {
+        public readonly byte[] Data = data;
+        public int Pos;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static long OStreamWrite(ClapOStream* stream, void* buffer, ulong size)
+    {
+        var ms = (System.IO.MemoryStream)GCHandle.FromIntPtr((IntPtr)stream->Ctx).Target!;
+        ms.Write(new ReadOnlySpan<byte>(buffer, (int)size));
+        return (long)size;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static long IStreamRead(ClapIStream* stream, void* buffer, ulong size)
+    {
+        var r = (StateReader)GCHandle.FromIntPtr((IntPtr)stream->Ctx).Target!;
+        var n = Math.Min((int)size, r.Data.Length - r.Pos);
+        if (n <= 0) return 0;
+        r.Data.AsSpan(r.Pos, n).CopyTo(new Span<byte>(buffer, n));
+        r.Pos += n;
+        return n;
+    }
 
     public void Dispose()
     {

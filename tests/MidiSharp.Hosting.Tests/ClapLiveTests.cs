@@ -36,6 +36,39 @@ public sealed class ClapLiveTests
         Assert.All(found, p => Assert.False(string.IsNullOrWhiteSpace(p.Id)));
     }
 
+    // A single, specific, simple third-party effect (DISTRHO MaBitcrush) — proof the host ABI works with
+    // real-world plugins, not just our fixture. Targeted by id (not "load any plugin"): loading arbitrary
+    // untrusted plugins in-process can segfault, which no managed try/catch can contain — that robustness
+    // is Phase 8 (out-of-process sandboxing), not this gate.
+    [Fact]
+    public void Loads_a_specific_real_clap_effect_and_processes_audio()
+    {
+        const string targetId = "studio.kx.distrho.MaBitcrush";
+        var desc = ScanAll().FirstOrDefault(p => p.Id == targetId);
+        Assert.SkipWhen(desc == null, $"{targetId} not installed.");
+
+        IHostedPlugin plugin;
+        try { plugin = _format.Load(desc!, Config); }
+        catch (NotSupportedException) { Assert.Skip($"{targetId} is not a stereo effect."); return; }
+
+        using var effect = new HostedEffect(plugin, Config);
+        _out.WriteLine($"Loaded real plugin: {plugin.Descriptor.Name} ({plugin.Descriptor.Vendor}), {plugin.Parameters.Count} params");
+
+        var buf = new float[Block * 2];
+        var phase = 0.0;
+        for (var b = 0; b < 8; b++)
+        {
+            for (var i = 0; i < Block; i++)
+            {
+                var s = (float)(0.3 * Math.Sin(phase));
+                phase += 2 * Math.PI * 440.0 / Rate;
+                buf[2 * i] = s; buf[2 * i + 1] = s;
+            }
+            effect.Process(buf);
+            foreach (var v in buf) Assert.True(float.IsFinite(v), $"{plugin.Descriptor.Name} produced a non-finite sample.");
+        }
+    }
+
     [Fact]
     public void Loads_a_clap_effect_and_applies_its_parameter()
     {

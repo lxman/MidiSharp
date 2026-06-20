@@ -67,6 +67,15 @@ app.MapPost("/api/stop", () => { player.Stop(); return Results.Ok(); });
 app.MapPost("/api/mix", (InstrumentMixDto m) => { player.SetInstrumentMix(m); return Results.Ok(); });
 app.MapPost("/api/master", (MasterDto m) => { player.SetMaster(m); return Results.Ok(); });
 app.MapPost("/api/insert", (InstrumentInsertDto m) => { player.SetInstrumentInsert(m); return Results.Ok(); });
+// Hosted plugins (CLAP / LADSPA) discovered on the system, for the effect-rack picker. /params loads
+// the chosen plugin transiently to read its parameter list so the UI can render generic knobs.
+app.MapGet("/api/plugins", () => Results.Json(player.GetPlugins()));
+app.MapGet("/api/plugin-info", (string format, string id) =>
+{
+    try { var info = player.GetPluginInfo(format, id); return info is null ? Results.NotFound() : Results.Json(info); }
+    catch (Exception ex) { return Results.Json(new { error = ex.Message }); }
+});
+app.MapPost("/api/plugins/rescan", () => { player.RescanPlugins(); return Results.Json(player.GetPlugins()); });
 app.MapGet("/api/status", () => Results.Json(player.Status()));
 app.MapPost("/api/exit", () => { player.RequestExit(); return Results.Ok(); });
 
