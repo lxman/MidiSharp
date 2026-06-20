@@ -1,5 +1,7 @@
+using MidiSharp.Hosting;
 using MidiSharp.IO;
 using MidiSharp.Loader;
+using MidiSharp.Model.Events;
 using MidiSharp.PatchMap;
 using MidiSharp.Synth;
 using MidiSharp.Synth.OwnAudio;
@@ -36,7 +38,10 @@ public sealed record EffectDto(string Type, bool Enabled = true, EqBandDto[]? Eq
 public sealed record MasterDto(EffectDto[]? Effects = null, double MasterGainDb = 0,
     bool LimiterEnabled = false, double CeilingDb = -1.0, double ReleaseMs = 100.0,
     bool EqEnabled = false, EqBandDto[]? EqBands = null);
-public sealed record PlayRequest(string? DeviceId, string MidiPath, string SoundfontPath, PatchOverrideDto[]? Overrides = null, TrackOverrideDto[]? TrackOverrides = null, PartOverrideDto[]? PartOverrides = null, InstrumentMixDto[]? Mix = null, MasterDto? Master = null);
+// Binds a MIDI channel to a hosted plugin instrument: the channel's notes play through the plugin
+// (summed into the mix) instead of the SoundFont synth, which is muted on that channel.
+public sealed record InstrumentBindingDto(int Channel, string Format, string Id);
+public sealed record PlayRequest(string? DeviceId, string MidiPath, string SoundfontPath, PatchOverrideDto[]? Overrides = null, TrackOverrideDto[]? TrackOverrides = null, PartOverrideDto[]? PartOverrides = null, InstrumentMixDto[]? Mix = null, MasterDto? Master = null, InstrumentBindingDto[]? Instruments = null);
 public sealed record PlayResponse(bool Ok, double DurationSeconds, string[] Defects, string? Error);
 public sealed record StatusDto(string State, double PositionSeconds, double DurationSeconds, string? Midi, string? Soundfont);
 public sealed record UsedPatchDto(int Bank, int Program, string? Name, bool IsDrum, int[] Channels);
@@ -82,6 +87,10 @@ public sealed class PlayerService : IDisposable
     // Per-track insert racks, keyed by trackIndex. Rebuilt from the play request and updated live;
     // a non-empty rack is registered with the synth as that track's IInstrumentInsert.
     private readonly Dictionary<int, EffectRack> _instrumentRacks = new();
+    // Hosted plugin instruments bound to channels for the current play; rendered and summed in the
+    // audio callback. Torn down on stop.
+    private readonly List<HostedInstrument> _hostedInstruments = [];
+    private float[] _instScratch = [];
     private PlayerState _state = PlayerState.Idle;
     private string? _midiName;
     private string? _soundfontName;
@@ -201,14 +210,27 @@ public sealed class PlayerService : IDisposable
                 ConfigureMaster(req.Master);
                 _masterRack.Reset();
                 var player = new RealtimePlayer(midi, synth);
+                ApplyInstrumentBindings(req.Instruments, synth, player);
                 var output = new OwnAudioOutput(SampleRate, channels: 2,
                     outputDeviceId: string.IsNullOrEmpty(req.DeviceId) ? null : req.DeviceId);
-                // Synth fills the block (per-instrument inserts already applied inside it); the master
-                // rack processes the summed mix caller-side before output.
+                // Synth fills the block (per-instrument inserts already applied inside it); any hosted
+                // plugin instruments render their bound channels and sum in; the master rack processes the
+                // summed mix caller-side before output.
                 output.SetCallback((buffer, frames) =>
                 {
                     var span = buffer.AsSpan(0, frames * 2);
                     player.ProcessBlockInterleaved(span);
+                    if (_hostedInstruments.Count > 0)
+                    {
+                        var nn = frames * 2;
+                        if (_instScratch.Length < nn) _instScratch = new float[nn];
+                        var sc = _instScratch.AsSpan(0, nn);
+                        foreach (var hi in _hostedInstruments)
+                        {
+                            hi.Render(sc);
+                            for (var i = 0; i < nn; i++) span[i] += sc[i];
+                        }
+                    }
                     _masterRack.Process(span);
                 });
                 output.Start();
@@ -303,6 +325,40 @@ public sealed class PlayerService : IDisposable
             foreach (var o in partOverrides)
                 if (o.GainDb != 0)
                     synth.GetInstrumentMix(Synthesizer.TrackMixBank, Synthesizer.TrackPart(o.TrackIndex, o.Channel)).GainDb = o.GainDb;
+    }
+
+    // Bind hosted plugin instruments to channels: load each, mute its channel on the synth, and route
+    // that channel's note/CC events (sample-accurately, via the player's EventDispatched hook) to the
+    // plugin. The plugins are rendered and summed in the audio callback.
+    private void ApplyInstrumentBindings(InstrumentBindingDto[]? bindings, Synthesizer synth, RealtimePlayer player)
+    {
+        if (bindings == null) return;
+        foreach (var b in bindings)
+        {
+            HostedInstrument inst;
+            try { inst = new HostedInstrument(_pluginHost.Load(b.Format, b.Id), _pluginHost.Config); }
+            catch { continue; }   // missing/incompatible plugin → leave the channel on the synth
+
+            var channel = b.Channel;
+            synth.MuteChannel(channel, true);
+            player.EventDispatched += (se, offset) =>
+            {
+                switch (se.Event)
+                {
+                    case NoteOnEvent e when e.Channel == channel:
+                        if (e.Velocity == 0) inst.NoteOff(offset, channel, e.Note);
+                        else inst.NoteOn(offset, channel, e.Note, e.Velocity);
+                        break;
+                    case NoteOffEvent e when e.Channel == channel:
+                        inst.NoteOff(offset, channel, e.Note);
+                        break;
+                    case ControlChangeEvent e when e.Channel == channel:
+                        inst.QueueEvent(HostEvent.Midi(offset, (byte)(0xB0 | channel), (byte)e.Controller, (byte)e.Value));
+                        break;
+                }
+            };
+            _hostedInstruments.Add(inst);
+        }
     }
 
     // Apply the per-instrument mixer strips to the loaded synth. gainDb here is absolute and supersedes
@@ -443,6 +499,9 @@ public sealed class PlayerService : IDisposable
         _output = null;
         _player = null;
         _synth = null;
+        // Hosted instruments outlived the audio callback (now stopped); dispose their native plugins.
+        foreach (var hi in _hostedInstruments) { try { hi.Dispose(); } catch { } }
+        _hostedInstruments.Clear();
         // Dispose after the audio output is stopped: the composite the synth held borrowed
         // these fonts' samples, so they must outlive the audio callback.
         try { _session?.Dispose(); } catch { }

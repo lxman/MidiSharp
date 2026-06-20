@@ -268,10 +268,17 @@ silences; and the instrument's output run through a hosted **gain insert** is ha
 "inserts on top" half of the gate). Real-world: DISTRHO **Nekobi** (a mono TB-303-style synth, 8 params)
 loads and sounds through the host.
 
-**Remaining (Phase 4b):** wire `HostedInstrument` into the server/`RealtimePlayer` as a mixer source so a
-MIDI file plays through a hosted synth with per-part gain/pan from the existing mixer — the live-playback
-integration. The hosting capability it needs is done and measured; this is engine plumbing (route the
-file's events to the instrument with sample offsets, sum its block into the mix).
+**Phase 4b — live player integration — ✅ VERIFIED 2026-06-20.** Engine hooks:
+`RealtimePlayer.EventDispatched` (fires each dispatched event with its block sample offset) and
+`Synthesizer.MuteChannel` (a channel handed to an external source ignores NoteOn). Server: a play request
+can bind a channel to a hosted plugin (`InstrumentBindingDto`); `PlayerService` loads the
+`HostedInstrument`, mutes that channel on the synth, routes the channel's note/CC events to the plugin via
+the dispatch hook, and renders+sums the plugin in the audio callback before the master rack. Measured
+offline (`ClapPlayerIntegrationTests`): a programmatic MIDI (A4 held on channel 0) plays through the
+hosted sine synth — the summed render carries 440 Hz with the synth's channel muted. Live smoke: a play
+request binding channel 0 of a real MIDI to the synth fixture plays without error. **Remaining for full
+productization:** a UI affordance to bind a plugin as a part's instrument (the part strip's `src` →
+hosted instrument), and applying per-part gain/pan to the summed instrument (currently unity).
 
 
 `HostedInstrument` feeds a mixer part/bus as an alternative to `Synthesizer`. `isInstrument` plugins get
@@ -355,9 +362,9 @@ through a `ProcessorChain`, with the loader, struct/function-pointer marshaling,
 kernel, no-GC hot path, and `IAudioProcessor` drop-in all validated by measurement. Every cross-cutting
 concern the rest of the plan rests on is proven.
 
-**Phases 0–3 done and verified; Phase 4 core done and verified** — LADSPA spike, CLAP effects,
-discovery/rack/UI/persistence, sample-accurate events, and CLAP instrument hosting (`HostedInstrument`,
-0-input + mono support), all measured against real native plugins. **Next: Phase 4b** — wire
-`HostedInstrument` into the live player/mixer (a MIDI file through a hosted synth with per-part
-gain/pan) — then **Phase 5 (VST2)** and **Phase 6 (VST3)**, which reuse the whole
-`PlanarBridge`/`HostedEffect`/`HostedInstrument`/event stack as adapters.
+**Phases 0–4 (incl. 4b) done and verified** — LADSPA spike, CLAP effects, discovery/rack/UI/persistence,
+sample-accurate events, CLAP instrument hosting, and live player integration (a MIDI file through a hosted
+synth), all measured against real native plugins. **Next: Phase 5 (VST2)** then **Phase 6 (VST3)**, which
+reuse the whole `PlanarBridge`/`HostedEffect`/`HostedInstrument`/event stack as ABI adapters. Smaller
+follow-ups also open: the bind-a-plugin-as-instrument UI, per-part gain/pan on summed instruments, and
+Phase 8 out-of-process sandboxing (the lsp-plugins in-process crash).

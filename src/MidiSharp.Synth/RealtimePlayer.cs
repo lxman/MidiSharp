@@ -85,6 +85,14 @@ public sealed class RealtimePlayer
     public event Action<MetaEvent>? MetaEventDispatched;
 
     /// <summary>
+    /// Fires for each dispatched event with its sample offset within the current block, just before the
+    /// synth handles it — so a host can route a channel's notes to an alternative sound source (e.g. a
+    /// hosted plugin instrument) sample-accurately. Invoked on the audio thread: handlers must be cheap,
+    /// non-blocking, and tolerate exceptions being swallowed.
+    /// </summary>
+    public event Action<ScheduledEvent, int>? EventDispatched;
+
+    /// <summary>
     /// Creates a player. The player does not own the synth — the caller is responsible
     /// for the synth's lifetime, loaded SoundFont, etc.
     /// </summary>
@@ -159,6 +167,10 @@ public sealed class RealtimePlayer
                 var eventFrame = (long)(events[_eventIndex].AbsoluteTime.TotalSeconds * _sampleRate);
                 if (eventFrame <= absFrame)
                 {
+                    // produced is the event's exact offset within this block (the sub-block split above
+                    // advanced the cursor to the event frame before this fires).
+                    if (EventDispatched != null)
+                        try { EventDispatched(events[_eventIndex], produced); } catch { }
                     DispatchEvent(events[_eventIndex]);
                     _eventIndex++;
                     continue;

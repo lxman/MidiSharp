@@ -23,6 +23,9 @@
     <ProjectReference Include="..\..\src\MidiSharp.Hosting\MidiSharp.Hosting.csproj" />
     <ProjectReference Include="..\..\src\MidiSharp.Hosting.Ladspa\MidiSharp.Hosting.Ladspa.csproj" />
     <ProjectReference Include="..\..\src\MidiSharp.Hosting.Clap\MidiSharp.Hosting.Clap.csproj" />
+    <!-- For the Phase-4b offline integration test: drive a programmatic MIDI through RealtimePlayer and a hosted instrument. -->
+    <ProjectReference Include="..\..\src\MidiSharp.Synth\MidiSharp.Synth.csproj" />
+    <ProjectReference Include="..\..\src\MidiSharp.Core\MidiSharp.Core.csproj" />
   </ItemGroup>
 
 </Project>

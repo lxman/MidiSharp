@@ -36,6 +36,7 @@ public sealed class Synthesizer
 
     private readonly Voice[] _voices;
     private readonly ChannelState[] _channels;
+    private readonly bool[] _channelMuted = new bool[ChannelCount];
     private readonly int _sampleRate;
     private int _generationCounter;
 
@@ -234,6 +235,16 @@ public sealed class Synthesizer
         => _partPatchMap = map ?? EmptyTrackPatchMap;
 
     /// <summary>
+    /// Mute (or un-mute) a MIDI channel at the synth: while muted, the channel's NoteOns are ignored, so
+    /// it produces no synth voices. Used when an external sound source — a hosted plugin instrument —
+    /// takes over that channel, so the file's notes don't sound twice.
+    /// </summary>
+    public void MuteChannel(int channel, bool muted)
+    {
+        if ((uint)channel < ChannelCount) _channelMuted[channel] = muted;
+    }
+
+    /// <summary>
     /// The live per-instrument mixer trims, keyed by the (bank, program) a note's patch resolves to.
     /// Read-only view; obtain a mutable entry with <see cref="GetInstrumentMix"/>. Empty until a mix
     /// is first requested — while empty, playback is bit-identical to the pre-mixer engine.
@@ -300,6 +311,7 @@ public sealed class Synthesizer
     public void NoteOn(int channel, int key, int velocity, int trackIndex)
     {
         if ((uint)channel >= ChannelCount) return;     // MIDI is 4-bit channel; silently drop bad input
+        if (_channelMuted[channel]) return;            // channel handed to an external source (hosted instrument)
         if ((uint)key >= 128) return;                  // 7-bit key
         velocity = Math.Clamp(velocity, 0, 127);
 
