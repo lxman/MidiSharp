@@ -76,6 +76,11 @@ app.MapGet("/api/plugin-info", (string format, string id) =>
     catch (Exception ex) { return Results.Json(new { error = ex.Message }); }
 });
 app.MapPost("/api/plugins/rescan", () => { player.RescanPlugins(); return Results.Json(player.GetPlugins()); });
+// Open / close a loaded plugin's native editor window (by the insert's InstanceId). The window opens on
+// the machine running the server (in the sandbox worker that holds the plugin) — for local use.
+app.MapPost("/api/plugins/editor/open", (EditorRequest r) =>
+    Results.Json(new { ok = player.OpenPluginEditor(r.InstanceId, r.Title ?? "Plugin editor") }));
+app.MapPost("/api/plugins/editor/close", (EditorRequest r) => { player.ClosePluginEditor(r.InstanceId); return Results.Ok(); });
 app.MapGet("/api/status", () => Results.Json(player.Status()));
 app.MapPost("/api/exit", () => { player.RequestExit(); return Results.Ok(); });
 

@@ -13,7 +13,7 @@ public sealed record PluginDescriptorDto(string Format, string Id, string Name, 
 // One automatable parameter, ranges in the plugin's real units plus the host-normalized default.
 public sealed record PluginParamDto(int Index, string Name, string Label, double Min, double Max, double Default, double DefaultNormalized, bool IsStepped);
 // A plugin's full param list, fetched when it's added to a rack so the UI can render its knobs.
-public sealed record PluginInfoDto(string Format, string Id, string Name, bool IsInstrument, PluginParamDto[] Params);
+public sealed record PluginInfoDto(string Format, string Id, string Name, bool IsInstrument, PluginParamDto[] Params, bool HasEditor = false);
 
 /// <summary>
 /// The server's plugin host: owns the cross-format <see cref="PluginRegistry"/> (CLAP + LADSPA), scans
@@ -87,7 +87,8 @@ public sealed class PluginHost
             .Select(p => new PluginParamDto(p.Index, p.Name, p.Label, p.MinValue, p.MaxValue,
                 p.DefaultValue, p.Normalize(p.DefaultValue), p.IsStepped))
             .ToArray();
-        return new PluginInfoDto(desc.Format, desc.Id, plugin.Descriptor.Name, plugin.IsInstrument, pars);
+        var hasEditor = plugin is SandboxedPlugin sp ? sp.HasEditor : plugin.Gui is { HasEditor: true };
+        return new PluginInfoDto(desc.Format, desc.Id, plugin.Descriptor.Name, plugin.IsInstrument, pars, hasEditor);
     }
 
     /// <summary>Instantiate a plugin for live use; the caller owns and disposes it.</summary>

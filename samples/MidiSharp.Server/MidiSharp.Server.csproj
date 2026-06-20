@@ -21,6 +21,7 @@
     <ProjectReference Include="..\..\src\MidiSharp.Hosting.Vst2\MidiSharp.Hosting.Vst2.csproj" />
     <ProjectReference Include="..\..\src\MidiSharp.Hosting.Vst3\MidiSharp.Hosting.Vst3.csproj" />
     <ProjectReference Include="..\..\src\MidiSharp.Hosting.Sandbox\MidiSharp.Hosting.Sandbox.csproj" />
+    <ProjectReference Include="..\..\src\MidiSharp.Hosting.EditorHost\MidiSharp.Hosting.EditorHost.csproj" />
     <!-- Build-only: the worker is spawned as a separate process (resolved at runtime), not linked. -->
     <ProjectReference Include="..\..\src\MidiSharp.Hosting.Worker\MidiSharp.Hosting.Worker.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>

@@ -20,5 +20,6 @@
     <ProjectReference Include="..\MidiSharp.Hosting.Vst2\MidiSharp.Hosting.Vst2.csproj" />
     <ProjectReference Include="..\MidiSharp.Hosting.Vst3\MidiSharp.Hosting.Vst3.csproj" />
     <ProjectReference Include="..\MidiSharp.Hosting.Ladspa\MidiSharp.Hosting.Ladspa.csproj" />
+    <ProjectReference Include="..\MidiSharp.Hosting.EditorHost\MidiSharp.Hosting.EditorHost.csproj" />
   </ItemGroup>
 </Project>

@@ -5,6 +5,7 @@ using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using MidiSharp.Hosting;
 using MidiSharp.Hosting.Clap;
+using MidiSharp.Hosting.EditorHost;
 using MidiSharp.Hosting.Ladspa;
 using MidiSharp.Hosting.Sandbox;
 using MidiSharp.Hosting.Vst2;
@@ -113,7 +114,7 @@ unsafe
         return 1;
     }
 
-    // Ready: hand the host the plugin's metadata and parameters.
+    // Ready: hand the host the plugin's metadata, parameters, and whether it has an editor.
     writer.Write(RespReady);
     writer.Write(plugin.Descriptor.Name);
     writer.Write(plugin.IsInstrument);
@@ -126,7 +127,12 @@ unsafe
         writer.Write(p.MaxValue);
         writer.Write(p.DefaultValue);
     }
+    writer.Write(plugin.Gui is { HasEditor: true });
     writer.Flush();
+
+    // The plugin's editor window lives here, in the process that holds the live instance. Opened on
+    // command and torn down on close / worker exit.
+    EditorWindow? editor = null;
 
     // Channel pointers into the shared block (fixed for the session; only the frame count varies).
     var inPtrs = (float**)NativeMemory.Alloc(2, (nuint)IntPtr.Size);
@@ -199,6 +205,22 @@ unsafe
                 writer.Write(RespAck);
                 writer.Flush();
             }
+            else if (cmd == CmdOpenEditor)
+            {
+                var title = reader.ReadString();
+                editor?.Close();
+                editor = EditorWindow.Open(plugin.Gui, title);
+                writer.Write(RespAck);
+                writer.Write(editor is { IsOpen: true });   // success bool
+                writer.Flush();
+            }
+            else if (cmd == CmdCloseEditor)
+            {
+                editor?.Close();
+                editor = null;
+                writer.Write(RespAck);
+                writer.Flush();
+            }
             else if (cmd == CmdReset)
             {
                 writer.Write(RespAck);
@@ -209,6 +231,7 @@ unsafe
     }
     finally
     {
+        editor?.Close();
         NativeMemory.Free(inPtrs);
         NativeMemory.Free(outPtrs);
         view.SafeMemoryMappedViewHandle.ReleasePointer();

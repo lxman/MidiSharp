@@ -1,4 +1,6 @@
 using MidiSharp.Hosting;
+using MidiSharp.Hosting.EditorHost;
+using MidiSharp.Hosting.Sandbox;
 using MidiSharp.IO;
 using MidiSharp.Loader;
 using MidiSharp.Model.Events;
@@ -41,6 +43,8 @@ public sealed record MasterDto(EffectDto[]? Effects = null, double MasterGainDb 
 // Binds a MIDI channel to a hosted plugin instrument: the channel's notes play through the plugin
 // (summed into the mix) instead of the SoundFont synth, which is muted on that channel.
 public sealed record InstrumentBindingDto(int Channel, string Format, string Id);
+// Open/close a loaded plugin's editor by its insert InstanceId.
+public sealed record EditorRequest(string InstanceId, string? Title = null);
 public sealed record PlayRequest(string? DeviceId, string MidiPath, string SoundfontPath, PatchOverrideDto[]? Overrides = null, TrackOverrideDto[]? TrackOverrides = null, PartOverrideDto[]? PartOverrides = null, InstrumentMixDto[]? Mix = null, MasterDto? Master = null, InstrumentBindingDto[]? Instruments = null);
 public sealed record PlayResponse(bool Ok, double DurationSeconds, string[] Defects, string? Error);
 public sealed record StatusDto(string State, double PositionSeconds, double DurationSeconds, string? Midi, string? Soundfont);
@@ -87,6 +91,9 @@ public sealed class PlayerService : IDisposable
     // Per-track insert racks, keyed by trackIndex. Rebuilt from the play request and updated live;
     // a non-empty rack is registered with the synth as that track's IInstrumentInsert.
     private readonly Dictionary<int, EffectRack> _instrumentRacks = new();
+    // Editor windows we host in-process (only when the sandbox is off; sandboxed plugins open their own in
+    // the worker). Keyed by plugin InstanceId so a second open / a close can reach the same window.
+    private readonly Dictionary<string, EditorWindow> _inProcEditors = new();
     // Hosted plugin instruments bound to channels for the current play; rendered and summed in the
     // audio callback. Torn down on stop. Each carries the part's mixer trim so gain/pan/mute/solo apply
     // to the summed plugin output the same way they do to synth voices.
@@ -515,6 +522,49 @@ public sealed class PlayerService : IDisposable
     }
 
     /// <summary>
+    /// Open the native editor window for a loaded plugin insert (by InstanceId). A sandboxed plugin opens
+    /// its editor in the worker process that holds it; an in-process plugin opens a window we own and track.
+    /// Returns false when the plugin isn't loaded or has no editor.
+    /// </summary>
+    public bool OpenPluginEditor(string instanceId, string title)
+    {
+        lock (_lock)
+        {
+            var plugin = FindLoadedPlugin(instanceId);
+            if (plugin is SandboxedPlugin sp) return sp.OpenEditor(title);
+            if (plugin?.Gui is { HasEditor: true } gui)
+            {
+                if (_inProcEditors.TryGetValue(instanceId, out var existing)) { existing.Close(); _inProcEditors.Remove(instanceId); }
+                var win = EditorWindow.Open(gui, title);
+                if (win == null) return false;
+                _inProcEditors[instanceId] = win;
+                return true;
+            }
+            return false;
+        }
+    }
+
+    /// <summary>Close a plugin's editor window if open (sandboxed → in the worker; in-process → ours).</summary>
+    public void ClosePluginEditor(string instanceId)
+    {
+        lock (_lock)
+        {
+            if (FindLoadedPlugin(instanceId) is SandboxedPlugin sp) sp.CloseEditor();
+            if (_inProcEditors.Remove(instanceId, out var win)) win.Close();
+        }
+    }
+
+    // Search the master rack and every per-instrument rack for a loaded plugin by InstanceId.
+    private IHostedPlugin? FindLoadedPlugin(string instanceId)
+    {
+        var p = _masterRack.FindPlugin(instanceId);
+        if (p != null) return p;
+        foreach (var rack in _instrumentRacks.Values)
+            if (rack.FindPlugin(instanceId) is { } hit) return hit;
+        return null;
+    }
+
+    /// <summary>
     /// Live per-instrument mixer update — applied to the currently-playing synth without a restart.
     /// No-op (but harmless) when nothing is playing; the browser re-sends the full mixer state on Play.
     /// </summary>
@@ -583,6 +633,9 @@ public sealed class PlayerService : IDisposable
         // Hosted instruments outlived the audio callback (now stopped); dispose their native plugins.
         foreach (var hv in _hostedInstruments) { try { hv.Inst.Dispose(); } catch { } }
         _hostedInstruments.Clear();
+        // Close any in-process editor windows before their plugins go away with the racks.
+        foreach (var w in _inProcEditors.Values) { try { w.Close(); } catch { } }
+        _inProcEditors.Clear();
         // Dispose after the audio output is stopped: the composite the synth held borrowed
         // these fonts' samples, so they must outlive the audio callback.
         try { _session?.Dispose(); } catch { }

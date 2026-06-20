@@ -638,6 +638,9 @@ function buildPluginBody(fx, onChange) {
       k.append(document.createTextNode(p.name + ' '), inp, val);
       wrap.appendChild(k);
     });
+    // Plugins with a native editor get an open/close button; the window opens on the server host (in the
+    // sandbox worker that holds the live instance), so it's for local use.
+    if (fx.hasEditor) wrap.appendChild(editorButton(fx));
   }
 
   renderParams();
@@ -647,6 +650,7 @@ function buildPluginBody(fx, onChange) {
       .then(info => {
         if (info && Array.isArray(info.params)) {
           fx.params = info.params;
+          fx.hasEditor = !!info.hasEditor;
           if (!fx.pluginParams || !fx.pluginParams.length) fx.pluginParams = info.params.map(p => p.defaultNormalized);
           renderParams();
         } else { wrap.innerHTML = '<span class="hint">unavailable</span>'; }
@@ -654,6 +658,35 @@ function buildPluginBody(fx, onChange) {
       .catch(() => { wrap.innerHTML = '<span class="hint">load failed</span>'; });
   }
   return wrap;
+}
+
+// Open/close the plugin's native editor window on the server host. Tracks state on the button so a second
+// click closes it. The instanceId ties to the live loaded insert.
+function editorButton(fx) {
+  const btn = document.createElement('button');
+  btn.className = 'btn editor'; btn.type = 'button'; btn.textContent = 'Open editor';
+  let open = false;
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      if (!open) {
+        const r = await fetch('/api/plugins/editor/open', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ instanceId: fx.instanceId, title: (fx.name || 'Plugin') + ' — ' + fx.pluginId }),
+        }).then(r => r.json()).catch(() => ({ ok: false }));
+        open = !!(r && r.ok);
+        btn.textContent = open ? 'Close editor' : 'Open editor';
+        if (!open) { btn.textContent = 'No editor / not loaded'; setTimeout(() => { btn.textContent = 'Open editor'; }, 1500); }
+      } else {
+        await fetch('/api/plugins/editor/close', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ instanceId: fx.instanceId }),
+        }).catch(() => {});
+        open = false; btn.textContent = 'Open editor';
+      }
+    } finally { btn.disabled = false; }
+  });
+  return btn;
 }
 
 // ---- drag-reorderable effect rack ----

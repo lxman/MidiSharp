@@ -151,6 +151,34 @@ public sealed class SandboxTests
     }
 
     [Fact]
+    public void Opens_a_plugin_editor_in_the_worker_process()
+    {
+        var worker = WorkerDll();
+        Assert.SkipWhen(worker == null, "sandbox worker not built.");
+        Assert.SkipWhen(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")), "no X display.");
+        var f = new ClapFormat();
+        var gui = f.Scan(f.DefaultSearchPaths).FirstOrDefault(p => p.Id == "midisharp.test.gui");
+        Assert.SkipWhen(gui == null, "CLAP gui fixture not installed.");
+
+        using var plugin = new SandboxedPlugin(gui!, worker!, Config);
+        Assert.True(plugin.HasEditor, "the worker should report the plugin has an editor.");
+
+        Assert.True(plugin.OpenEditor("MidiSharp sandbox editor test"), "the worker should open the editor.");
+        _out.WriteLine("editor opened in the worker process");
+
+        // The worker is still alive and serving: audio keeps flowing while the editor is up.
+        using var effect = new HostedEffect(plugin, Config);
+        var buf = new float[Block * 2];
+        Array.Fill(buf, 0.3f);
+        effect.Process(buf);
+        Assert.False(plugin.IsDead, "the worker should still be alive with the editor open.");
+        Assert.True(Math.Abs(buf[0] - 0.3f) < 1e-6, "the passthrough plugin should still process audio.");
+
+        plugin.CloseEditor();
+        Assert.False(plugin.IsDead);
+    }
+
+    [Fact]
     public void A_hung_plugin_is_killed_by_the_watchdog_and_recovers()
     {
         var worker = WorkerDll();

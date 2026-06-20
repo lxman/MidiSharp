@@ -15,6 +15,8 @@ public static class SandboxProtocol
     public const byte CmdReset = 0x04;
     public const byte CmdSaveState = 0x05;   // → RespState + length-prefixed blob
     public const byte CmdLoadState = 0x06;   // followed by a length-prefixed blob → RespAck
+    public const byte CmdOpenEditor = 0x07;  // followed by a title string → RespAck + a success bool
+    public const byte CmdCloseEditor = 0x08; // → RespAck
     public const byte CmdDispose = 0xFF;
 
     // worker → host

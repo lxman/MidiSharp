@@ -119,6 +119,11 @@ internal sealed class EffectRack : IInstrumentInsert, IDisposable
         return blob.Length > 0 ? Convert.ToBase64String(blob) : null;
     }
 
+    /// <summary>The live hosted plugin for an InstanceId, or null if this rack doesn't hold it. Lets the
+    /// server reach a loaded plugin (e.g. to open its editor) without exposing the rack's internals.</summary>
+    public IHostedPlugin? FindPlugin(string instanceId)
+        => _plugins.TryGetValue(instanceId, out var he) ? he.Plugin : null;
+
     public void Process(Span<float> interleavedStereo) => _chain.Process(interleavedStereo);
 
     public void Reset() => _chain.Reset();

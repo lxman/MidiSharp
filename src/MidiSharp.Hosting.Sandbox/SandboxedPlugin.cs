@@ -47,6 +47,9 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
     public bool IsInstrument { get; }
     public IReadOnlyList<PluginParameter> Parameters => _parameters;
 
+    /// <summary>True when the plugin provides an editor (its window opens in the worker process).</summary>
+    public bool HasEditor { get; }
+
     /// <summary>True once the worker has died; the insert is producing silence.</summary>
     public bool IsDead => _dead;
 
@@ -111,6 +114,7 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
                 var def = _reader.ReadDouble();
                 _parameters.Add(new PluginParameter(idx, pname, "", min, max, def));
             }
+            HasEditor = _reader.ReadBoolean();
             Descriptor = descriptor with { Name = name };
         }
         catch (EndOfStreamException) { throw new InvalidOperationException("Sandbox worker exited or hung during startup."); }
@@ -234,6 +238,47 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
             {
                 _writer.Write(CmdLoadState); _writer.Write(state.Length); _writer.Write(state); _writer.Flush();
                 Arm(StateTimeoutMs);
+                var ack = _reader.ReadByte() == RespAck;
+                Disarm();
+                if (!ack) Die();
+            }
+            catch (Exception ex) when (ex is IOException or EndOfStreamException) { Die(); }
+        }
+    }
+
+    private const int EditorTimeoutMs = 10_000;   // creating an editor + window can be slow (X round-trips)
+
+    /// <summary>Open the plugin's editor in a native window owned by the worker process. Returns false if
+    /// the plugin has no editor, the open failed, or the worker is gone. Off the audio thread.</summary>
+    public bool OpenEditor(string title)
+    {
+        if (!HasEditor) return false;
+        lock (_lock)
+        {
+            if (_dead || _disposed) return false;
+            try
+            {
+                _writer.Write(CmdOpenEditor); _writer.Write(title ?? ""); _writer.Flush();
+                Arm(EditorTimeoutMs);
+                if (_reader.ReadByte() != RespAck) { Disarm(); Die(); return false; }
+                var ok = _reader.ReadBoolean();
+                Disarm();
+                return ok;
+            }
+            catch (Exception ex) when (ex is IOException or EndOfStreamException) { Die(); return false; }
+        }
+    }
+
+    /// <summary>Close the plugin's editor window if open. Off the audio thread.</summary>
+    public void CloseEditor()
+    {
+        lock (_lock)
+        {
+            if (_dead || _disposed) return;
+            try
+            {
+                _writer.Write(CmdCloseEditor); _writer.Flush();
+                Arm(EditorTimeoutMs);
                 var ack = _reader.ReadByte() == RespAck;
                 Disarm();
                 if (!ack) Die();
