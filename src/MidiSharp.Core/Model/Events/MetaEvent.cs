@@ -27,7 +27,7 @@ public sealed class MetaEvent : MidiEvent
         {
             if (Type is >= MetaEventType.Text and <= MetaEventType.CuePoint)
                 return Encoding.ASCII.GetString(Data.Span);
-            if (Type == MetaEventType.TrackName || Type == MetaEventType.InstrumentName)
+            if (Type is MetaEventType.TrackName or MetaEventType.InstrumentName)
                 return Encoding.ASCII.GetString(Data.Span);
             return null;
         }

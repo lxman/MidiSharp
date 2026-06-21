@@ -140,7 +140,7 @@ public static class MidiFileReader
                 return ReadMetaEvent(ref reader, deltaTicks);
 
             // SysEx
-            if (status == 0xF0 || status == 0xF7)
+            if (status is 0xF0 or 0xF7)
                 return ReadSysExEvent(ref reader, status, deltaTicks);
 
             // System common messages don't use running status

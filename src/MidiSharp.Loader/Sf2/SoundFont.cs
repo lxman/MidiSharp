@@ -456,7 +456,7 @@ public sealed class SoundFont
                     $"End-EndLoop={s.End - s.EndLoop} (spec minimum is 8)");
 
             // --- Sample rate / pitch ---
-            if (s.SampleRate < 400 || s.SampleRate > 50000)
+            if (s.SampleRate is < 400 or > 50000)
                 Add(SampleValidationCode.SampleRateOutOfRange,
                     $"SampleRate={s.SampleRate} (spec range is 400..50000)");
             if (s.OriginalPitch > 127 && s.OriginalPitch != 255)

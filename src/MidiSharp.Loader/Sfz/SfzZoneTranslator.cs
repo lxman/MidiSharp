@@ -385,7 +385,7 @@ internal static class SfzZoneTranslator
         var points = new SortedDictionary<int, double>();
         foreach (var (vel, value) in r.EnumerateCc("amp_velcurve_"))
         {
-            if (vel < 0 || vel > 127) continue;
+            if (vel is < 0 or > 127) continue;
             if (double.TryParse(value.Trim(), NumberStyles.Float,
                     CultureInfo.InvariantCulture, out var g))
                 points[vel] = Math.Max(0.0, g);

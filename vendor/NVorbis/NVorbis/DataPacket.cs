@@ -167,7 +167,7 @@ namespace MidiSharp.Audio.Vorbis
         /// <returns>The value of the bits read.</returns>
         public ulong TryPeekBits(int count, out int bitsRead)
         {
-            if (count < 0 || count > 64) throw new ArgumentOutOfRangeException(nameof(count));
+            if (count is < 0 or > 64) throw new ArgumentOutOfRangeException(nameof(count));
             if (count == 0)
             {
                 bitsRead = 0;

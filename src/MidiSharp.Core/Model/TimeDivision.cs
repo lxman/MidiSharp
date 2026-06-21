@@ -20,7 +20,7 @@ public readonly struct TimeDivision
     /// </summary>
     public static TimeDivision FromTicksPerQuarterNote(int ticks)
     {
-        if (ticks < 1 || ticks > 0x7FFF)
+        if (ticks is < 1 or > 0x7FFF)
             throw new ArgumentOutOfRangeException(nameof(ticks));
         return new TimeDivision((short)ticks);
     }

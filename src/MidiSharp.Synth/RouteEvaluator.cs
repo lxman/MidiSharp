@@ -142,7 +142,7 @@ internal static class RouteEvaluator
             //              = bend × bendRange × 100 cents
             // i.e., bendRange semitones of pitch swing at full bend. Includes the
             // RPN 0,0 fractional cents component when present.
-            case ModSource.RpnValue rpn when rpn is { Msb: 0, Lsb: 0 }:
+            case ModSource.RpnValue { Msb: 0, Lsb: 0 }:
                 return (channelState.PitchBendRange * 100 + channelState.PitchBendRangeCents) / 12700.0;
 
             case ModSource.NoConnection: return 0.0;

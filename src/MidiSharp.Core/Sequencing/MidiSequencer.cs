@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using MidiSharp.Model;
 using MidiSharp.Model.Events;
 
@@ -121,7 +122,7 @@ public sealed class MidiSequencer
         foreach (var evt in _events)
         {
             // Include channel events and sysex
-            if (evt.Event is ChannelEvent || evt.Event is SysExEvent)
+            if (evt.Event is ChannelEvent or SysExEvent)
             {
                 yield return evt;
             }
@@ -133,13 +134,7 @@ public sealed class MidiSequencer
     /// </summary>
     public IEnumerable<ScheduledEvent> GetPlayableEventsFrom(TimeSpan start)
     {
-        foreach (var evt in GetEventsFrom(start))
-        {
-            if (evt.Event is ChannelEvent || evt.Event is SysExEvent)
-            {
-                yield return evt;
-            }
-        }
+        return GetEventsFrom(start).Where(evt => evt.Event is ChannelEvent or SysExEvent);
     }
 
     private List<ScheduledEvent> BuildTimeline()
@@ -151,11 +146,8 @@ public sealed class MidiSequencer
         {
             var track = _file.Tracks[trackIndex];
 
-            foreach (var evt in track.Events)
-            {
-                var time = _tempoMap.TickToTime(evt.AbsoluteTicks);
-                allEvents.Add(new ScheduledEvent(evt.AbsoluteTicks, time, evt, trackIndex, sequenceIndex++));
-            }
+            allEvents.AddRange(from evt in track.Events let time =
+                _tempoMap.TickToTime(evt.AbsoluteTicks) select new ScheduledEvent(evt.AbsoluteTicks, time, evt, trackIndex, sequenceIndex++));
         }
 
         // Sort by time (ScheduledEvent implements IComparable)
