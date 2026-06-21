@@ -483,17 +483,28 @@ public sealed class PlayerService : IDisposable
     // with the synth (an instrument with no inserts pays nothing — the synth stays on its bypass path).
     private void ApplyInstrumentInserts(Synthesizer synth, InstrumentMixDto[]? mix)
     {
-        foreach (var r in _instrumentRacks.Values) r.Dispose();   // free any previous play's plugin instances
-        _instrumentRacks.Clear();
-        if (mix == null) return;
-        foreach (var m in mix)
+        // Reconcile rather than dispose-and-rebuild: a part's rack persists across plays (and across stop),
+        // so a plugin loaded while stopped — with its editor open — keeps its live instance instead of being
+        // torn down on Play. EffectRack.Configure already reuses plugin instances by InstanceId. Only racks
+        // for parts no longer present are disposed.
+        var keep = new HashSet<int>();
+        foreach (var m in mix ?? [])
         {
             if (m.Inserts == null || m.Inserts.Length == 0) continue;
-            var rack = new EffectRack(SampleRate, _pluginHost);
-            rack.Configure(m.Inserts);
             var part = Synthesizer.TrackPart(m.TrackIndex, m.Channel);
-            _instrumentRacks[part] = rack;
-            if (!rack.IsEmpty) synth.SetInstrumentInsert(Synthesizer.TrackMixBank, part, rack);
+            keep.Add(part);
+            if (!_instrumentRacks.TryGetValue(part, out var rack))
+            {
+                rack = new EffectRack(SampleRate, _pluginHost);
+                _instrumentRacks[part] = rack;
+            }
+            rack.Configure(m.Inserts);
+            synth.SetInstrumentInsert(Synthesizer.TrackMixBank, part, rack.IsEmpty ? null : rack);
+        }
+        foreach (var part in _instrumentRacks.Keys.Where(p => !keep.Contains(p)).ToList())
+        {
+            _instrumentRacks[part].Dispose();
+            _instrumentRacks.Remove(part);
         }
     }
 

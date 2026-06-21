@@ -309,8 +309,10 @@ const isNonDefaultMix = m =>
 // Throttled live POSTs (one timer per key) so dragging a slider doesn't flood the server: fire at once
 // if it's been a while, else schedule a trailing send so the final value always lands.
 const liveTimers = new Map();
-function postLive(url, key, body) {
-  if (!isPlaying) return;
+// `always` sends even when stopped — used for inserts, which load their plugin server-side (so its editor
+// can be opened without a song playing); mix gain/pan changes have no engine to apply to when stopped.
+function postLive(url, key, body, always) {
+  if (!isPlaying && !always) return;
   const rec = liveTimers.get(key) || { t: 0, last: 0 };
   const now = performance.now();
   clearTimeout(rec.t);
@@ -321,7 +323,7 @@ function postLive(url, key, body) {
 }
 const postMixLive = e => postLive('/api/mix', 'mix:' + partKey(e), e);
 const postInsertLive = e => postLive('/api/insert', 'ins:' + partKey(e),
-  { trackIndex: e.trackIndex, channel: e.channel, effects: e.inserts });
+  { trackIndex: e.trackIndex, channel: e.channel, effects: e.inserts }, true);
 function postMaster() {
   fetch('/api/master', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(master) }).catch(() => {});
 }
