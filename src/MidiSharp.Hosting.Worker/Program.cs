@@ -214,7 +214,7 @@ unsafe
             var ok = editor is { IsOpen: true };
             if (ok)
                 // Wake the editor's poll when a command arrives, and service it on this thread.
-                editor!.RunLoop.RegisterFd(pipeFd, () => { try { Handle(reader.ReadByte()); } catch (EndOfStreamException) { disposeReq = true; } });
+                editor!.RunLoop!.RegisterFd(pipeFd, () => { try { Handle(reader.ReadByte()); } catch (EndOfStreamException) { disposeReq = true; } });
             else { editor?.Close(); editor = null; }
             writer.Write(RespAck);
             writer.Write(ok);

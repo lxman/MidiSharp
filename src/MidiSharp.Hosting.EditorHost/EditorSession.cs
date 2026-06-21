@@ -1,138 +1,94 @@
 using System;
-using System.Runtime.InteropServices;
 using MidiSharp.Hosting;
 
 namespace MidiSharp.Hosting.EditorHost;
 
 /// <summary>
-/// A plugin editor embedded in a native X11 window, driven entirely on the <b>caller's</b> thread — it
-/// spawns no thread of its own. <see cref="Open"/> creates the window and embeds the editor synchronously;
-/// the caller then drives <see cref="PumpOnce"/> in a loop and calls <see cref="Close"/> to tear down.
-/// This lets the host run the editor on the <i>same</i> thread that created the plugin, which CLAP requires
-/// (its GUI calls deadlock or fail off the creation thread); the audio worker drives it from its command
-/// loop, and <see cref="EditorWindow"/> drives it from a dedicated thread for in-process use.
+/// A plugin editor embedded in a native host window, driven entirely on the <b>caller's</b> thread (it spawns
+/// no thread of its own). <see cref="Open"/> creates the window and embeds the editor synchronously; the
+/// caller then drives <see cref="PumpOnce"/> in a loop and calls <see cref="Close"/> to tear down. Running it
+/// on the same thread that created the plugin is what CLAP requires (its GUI calls deadlock off the creation
+/// thread); the audio worker drives it from its command loop, and <see cref="EditorWindow"/> drives it from a
+/// dedicated thread for in-process use.
 /// </summary>
+/// <remarks>
+/// This class is windowing-system-agnostic: it sequences the format-agnostic embed steps
+/// (<see cref="IPluginGui"/>) against an <see cref="INativeEditorWindow"/> from <see cref="EditorPlatform"/>.
+/// All X11/Win32/Cocoa detail lives in the platform backend.
+/// </remarks>
 public sealed class EditorSession : IDisposable
 {
-    [DllImport("libX11.so.6")] private static extern int XInitThreads();
-    static EditorSession() => XInitThreads();
-
     private readonly IPluginGui _gui;
-    private readonly string _title;
-    private readonly EditorRunLoop _runLoop = new();
     private static readonly object IdleToken = new();
 
-    private IntPtr _display;
-    private ulong _window;
-    private IntPtr _wmDelete;
-    private IntPtr _ev;
-    private int _hostFd;
+    private INativeEditorWindow? _window;
     private bool _opened;
-    private bool _shouldClose;
     private string? _error;
 
-    private EditorSession(IPluginGui gui, string title) { _gui = gui; _title = title; }
+    private EditorSession(IPluginGui gui) => _gui = gui;
 
     /// <summary>Open the editor on the current thread. Always returns a session; check <see cref="IsOpen"/>
     /// (and <see cref="Error"/>) for success. Returns null only when the plugin has no editor.</summary>
     public static EditorSession? Open(IPluginGui? gui, string title)
     {
         if (gui is not { HasEditor: true }) return null;
-        var s = new EditorSession(gui, title);
-        s.OpenInternal();
+        var s = new EditorSession(gui);
+        s.OpenInternal(title);
         return s;
     }
 
-    public IEditorRunLoop RunLoop => _runLoop;
-    public ulong WindowHandle => _window;
-    public IntPtr Display => _display;
+    public IEditorRunLoop? RunLoop => _window?.RunLoop;
+    public ulong WindowHandle => _window?.Handle ?? 0;
     public bool IsOpen => _opened;
-    public bool ShouldClose => _shouldClose;
+    public bool ShouldClose => _window?.ShouldClose ?? true;
     public string? Error => _error;
-    public uint EmbeddedChildCount => _display == IntPtr.Zero ? 0 : X11.ChildCount(_display, _window);
+    public uint EmbeddedChildCount => _window?.EmbeddedChildCount ?? 0;
 
-    private void OpenInternal()
+    private void OpenInternal(string title)
     {
         try
         {
-            _display = X11.XOpenDisplay(IntPtr.Zero);
-            if (_display == IntPtr.Zero) { _error = "XOpenDisplay failed (no display)."; return; }
+            var platform = EditorPlatform.Current;
+            if (!platform.IsAvailable) { _error = "no windowing backend available (no display?)."; return; }
 
-            var screen = X11.XDefaultScreen(_display);
-            var root = X11.XDefaultRootWindow(_display);
-
-            // Bind the run loop, then create the editor — on THIS thread (the plugin's creation thread when
-            // the host drives us correctly), so VST3 createView / CLAP gui.create are thread-correct.
-            _gui.BindRunLoop(_runLoop);
-            if (!_gui.Create("x11", floating: false)) { _error = "plugin gui create(x11) failed."; _gui.BindRunLoop(null); Teardown(); return; }
-            _gui.SetScale(1.0);
-
+            // A default starting size; the real size comes from the plugin once it has laid out (after show).
             var w = 400; var h = 300;
-            if (_gui.TryGetSize(out var gw, out var gh) && gw > 0 && gh > 0) { w = gw; h = gh; }
+            if (_gui.TryGetSize(out var gw0, out var gh0) && gw0 > 0 && gh0 > 0) { w = gw0; h = gh0; }
 
-            // Background BLACK, not white: the embedded plugin owns the pixels, but during compositing/resize
-            // any seam or briefly-undamaged strip shows the host window's background — white glares behind a
-            // dark plugin editor (shows as bright lines), black is invisible.
-            _window = X11.XCreateSimpleWindow(_display, root, 0, 0, (uint)w, (uint)h, 0,
-                X11.XBlackPixel(_display, screen), X11.XBlackPixel(_display, screen));
-            X11.XStoreName(_display, _window, _title);
-            X11.XSelectInput(_display, _window, X11.StructureNotifyMask | X11.SubstructureNotifyMask);
-            _wmDelete = X11.XInternAtom(_display, "WM_DELETE_WINDOW", false);
-            X11.XSetWMProtocols(_display, _window, ref _wmDelete, 1);
+            _window = platform.CreateWindow(title, w, h);
+            if (_window == null) { _error = "could not create a host window."; return; }
 
-            if (!_gui.SetParent("x11", _window)) { _error = "plugin gui set_parent failed."; _gui.Destroy(); _gui.BindRunLoop(null); Teardown(); return; }
+            // Bind the run loop, then create the editor — on THIS thread, so VST3 createView / CLAP gui.create
+            // are thread-correct. The plugin registers its fds/timers with the window's run loop here.
+            _gui.BindRunLoop(_window.RunLoop);
+            if (!_gui.Create(_window.WindowApi, floating: false)) { _error = $"plugin gui create({_window.WindowApi}) failed."; _gui.BindRunLoop(null); Teardown(); return; }
+            _gui.SetScale(1.0);
+            if (_gui.TryGetSize(out var gw, out var gh) && gw > 0 && gh > 0) _window.Resize(gw, gh);
 
-            // Map our window, then complete the XEMBED handshake: send XEMBED_EMBEDDED_NOTIFY to the plugin's
-            // embedded child window — the host's job per the XEMBED spec that CLAP/VST3 X11 embedding follows.
-            X11.XMapWindow(_display, _window);
-            X11.XSync(_display, false);
-            var child = X11.FirstChild(_display, _window);
-            if (child != 0) X11.SendXEmbedNotify(_display, _window, child);
-
+            if (!_gui.SetParent(_window.WindowApi, _window.Handle)) { _error = "plugin gui set_parent failed."; _gui.Destroy(); _gui.BindRunLoop(null); Teardown(); return; }
+            _window.Map();
+            _window.CompleteEmbed();
             _gui.Show();
-            X11.XSync(_display, false);
 
-            // After show() the plugin has laid out its editor and may report a different (real) size than at
-            // create time — re-query and resize our window + the embedded child to fit it.
-            if (_gui.TryGetSize(out var rw, out var rh) && rw > 0 && rh > 0 && (rw != w || rh != h))
-            {
-                X11.XResizeWindow(_display, _window, (uint)rw, (uint)rh);
-                if (child != 0) X11.XResizeWindow(_display, child, (uint)rw, (uint)rh);
-                X11.XFlush(_display);
-            }
+            // After show() the plugin has laid out and may report its real size — apply it.
+            if (_gui.TryGetSize(out var rw, out var rh) && rw > 0 && rh > 0) _window.Resize(rw, rh);
 
-            _runLoop.RegisterTimer(30, IdleToken, () => { try { _gui.Idle(); } catch { } });
-
-            _ev = Marshal.AllocHGlobal(256);   // an XEvent union is ~192 bytes
-            _hostFd = X11.XConnectionNumber(_display);
+            _window.RunLoop.RegisterTimer(30, IdleToken, () => { try { _gui.Idle(); } catch { } });
             _opened = true;
         }
         catch (Exception ex) { _error = ex.Message; }
     }
 
-    /// <summary>One run-loop iteration: poll the editor's fds (and any the caller registered, e.g. a command
-    /// pipe), service window events, plugin fds/timers, and posted work. No-op once closed.</summary>
+    /// <summary>One event-loop iteration on the window's run loop (and any fds the caller registered on it).</summary>
     public void PumpOnce(int maxWaitMs)
     {
-        if (!_opened) return;
-        _runLoop.Pump(_hostFd, DrainHostEvents, maxWaitMs);
-    }
-
-    private void DrainHostEvents()
-    {
-        var pending = X11.XPending(_display);
-        while (pending-- > 0)
-        {
-            X11.XNextEvent(_display, _ev);
-            if (Marshal.ReadInt32(_ev) == X11.ClientMessage && Marshal.ReadInt64(_ev, 56) == _wmDelete.ToInt64())
-                _shouldClose = true;   // window-manager close button
-        }
+        if (_opened) _window!.PumpOnce(maxWaitMs);
     }
 
     public void Close()
     {
-        if (_display == IntPtr.Zero) return;
-        _runLoop.UnregisterTimer(IdleToken);
+        if (_window == null) return;
+        _window.RunLoop.UnregisterTimer(IdleToken);
         try { _gui.Hide(); } catch { }
         try { _gui.Destroy(); } catch { }
         try { _gui.BindRunLoop(null); } catch { }
@@ -141,13 +97,8 @@ public sealed class EditorSession : IDisposable
 
     private void Teardown()
     {
-        if (_ev != IntPtr.Zero) { Marshal.FreeHGlobal(_ev); _ev = IntPtr.Zero; }
-        if (_display != IntPtr.Zero)
-        {
-            if (_window != 0) { X11.XDestroyWindow(_display, _window); _window = 0; }
-            X11.XCloseDisplay(_display);
-            _display = IntPtr.Zero;
-        }
+        _window?.Dispose();
+        _window = null;
         _opened = false;
     }
 
