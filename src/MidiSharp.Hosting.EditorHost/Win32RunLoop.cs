@@ -62,7 +62,7 @@ internal sealed class Win32RunLoop : IEditorRunLoop
         lock (_lock)
         {
             timeout = maxWaitMs;
-            foreach (var t in _timers) { var d = (int)Math.Max(0, t.NextDue - now); if (d < timeout) timeout = d; }
+            foreach (var t in _timers) { var d = (int)Math.Min(int.MaxValue, Math.Max(0, t.NextDue - now)); if (d < timeout) timeout = d; }
         }
 
         MsgWaitForMultipleObjectsEx(0, IntPtr.Zero, (uint)timeout, QS_ALLINPUT, MWMO_INPUTAVAILABLE);

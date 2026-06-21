@@ -43,6 +43,7 @@ public sealed class Win32RunLoopTests
         var ticks = 0;
         loop.RegisterTimer(5, token, () => ticks++);
         for (var i = 0; i < 10; i++) loop.Pump(10);
+        Assert.True(ticks > 0, "timer should have fired before unregister.");
         loop.UnregisterTimer(token);
         var after = ticks;
         for (var i = 0; i < 10; i++) loop.Pump(10);
