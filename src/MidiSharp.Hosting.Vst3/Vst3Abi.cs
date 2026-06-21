@@ -27,6 +27,7 @@ internal static unsafe class Vst3Abi
     public const int kNoteOffEvent = 1;
     public const int kIBSeekSet = 0;   // IBStream seek modes
     public const string PlatformTypeX11 = "X11EmbedWindowID";
+    public const string PlatformTypeHwnd = "HWND";
 
     // ── IIDs (non-Windows UID layout: each of the four uint32 stored big-endian) ──
     public static readonly byte[] IidFUnknown = Uid(0x00000000, 0x00000000, 0xC0000000, 0x00000046);

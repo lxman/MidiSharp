@@ -64,7 +64,9 @@ internal sealed unsafe class Vst3PlugFrame : IDisposable
     {
         var f = Self(self);
         if (IidEq(iid, IidPlugFrame) || IidEq(iid, IidFUnknown)) { *obj = self; return ResultOk; }
-        if (IidEq(iid, IidRunLoop)) { *obj = f._runLoop; return ResultOk; }
+        // Steinberg::Linux::IRunLoop is X11-only; on Windows the editor drives itself via the Win32 message
+        // pump, so we must not advertise a run loop there.
+        if ((OperatingSystem.IsLinux() || OperatingSystem.IsFreeBSD()) && IidEq(iid, IidRunLoop)) { *obj = f._runLoop; return ResultOk; }
         *obj = null; return NoInterface;
     }
 

@@ -332,12 +332,22 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
         _editorLoop = runLoop;
     }
 
+    // Map our window-API name to the VST3 platform-type string the view expects: X11 on Linux, HWND on
+    // Windows. Cocoa ("NSView") slots in when a macOS backend lands. Null => unsupported here.
+    private static string? PlatformTypeFor(string windowApi) => windowApi switch
+    {
+        "x11" => PlatformTypeX11,
+        "win32" => PlatformTypeHwnd,
+        _ => null,
+    };
+
     bool IPluginGui.IsApiSupported(string windowApi, bool floating)
     {
         EnsureView();
-        if (_view == null || windowApi != "x11") return false;
+        var platformType = PlatformTypeFor(windowApi);
+        if (_view == null || platformType == null) return false;
         Span<byte> t = stackalloc byte[20];
-        AsciiZ(PlatformTypeX11, t);
+        AsciiZ(platformType, t);
         fixed (byte* p = t) return Ok(View->IsPlatformTypeSupported(_view, p));
     }
 
@@ -364,9 +374,10 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
 
     bool IPluginGui.SetParent(string windowApi, ulong windowHandle)
     {
-        if (_view == null || windowApi != "x11") return false;
+        var platformType = PlatformTypeFor(windowApi);
+        if (_view == null || platformType == null) return false;
         Span<byte> t = stackalloc byte[20];
-        AsciiZ(PlatformTypeX11, t);
+        AsciiZ(platformType, t);
         fixed (byte* p = t) return Ok(View->Attached(_view, (void*)(nuint)windowHandle, p));
     }
 
