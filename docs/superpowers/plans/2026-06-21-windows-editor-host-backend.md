@@ -15,7 +15,7 @@
 - **Target framework:** `net10.0` (the `EditorHost` and test projects already target this).
 - **Dependency-free:** only `user32.dll` / `gdi32.dll` P/Invoke — **no new package references**, no WinForms/WPF/WinUI.
 - **Unicode APIs:** use the `...W` entry points (`CreateWindowExW`, `RegisterClassExW`, `PeekMessageW`, `DefWindowProcW`, `DispatchMessageW`).
-- **Build clean:** 0 warnings, 0 errors (`Directory.Build.props` treats the repo as warning-free).
+- **Build clean:** 0 warnings, 0 errors. (The repo builds warning-free today; this is a discipline target — it is *not* enforced via `TreatWarningsAsErrors` in `Directory.Build.props`, so keep new code clean.)
 - **One UI thread:** every window/run-loop call happens on the thread that created the window (already enforced by `EditorSession`/`EditorWindow`).
 - **Do not modify** `EditorSession.cs`, `EditorWindow.cs`, `IPluginGui.cs`, `IEditorRunLoop` (in `MidiSharp.Hosting`), or the X11 files. The only edit to existing code is one line in `EditorPlatform.Select()`.
 - **`nullable` is enabled** in both projects; new files use nullable annotations.
