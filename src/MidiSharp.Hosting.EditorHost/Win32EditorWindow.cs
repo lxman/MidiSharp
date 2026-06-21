@@ -31,6 +31,7 @@ internal sealed class Win32Platform : IEditorPlatform
     // "STATIC" window needs no class registration and fails on a non-interactive station (a service).
     private static bool Detect()
     {
+        EnsureDpiAware();
         try
         {
             var hwnd = CreateWindowExW(0, "STATIC", null, 0, IntPtr.Zero, IntPtr.Zero, 0, 0,
