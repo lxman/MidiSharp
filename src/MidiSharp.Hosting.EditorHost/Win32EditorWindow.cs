@@ -11,8 +11,6 @@ internal sealed class Win32Platform : IEditorPlatform
     private static int _dpiTried;
     private static bool? _available;
 
-    static Win32Platform() { }
-
     public bool IsAvailable => _available ??= Detect();
 
     public INativeEditorWindow? CreateWindow(string title, int width, int height)
@@ -100,12 +98,12 @@ internal sealed class Win32EditorWindow : INativeEditorWindow
             hbrBackground = GetStockObject(BLACK_BRUSH),
             lpszClassName = _className,
         };
-        if (RegisterClassExW(ref wc) == 0) return false;
+        if (RegisterClassExW(ref wc) == 0) { _hInstance = IntPtr.Zero; return false; }
 
         var (winW, winH) = WindowSizeForClient(width, height);
         _hwnd = CreateWindowExW(0, _className, title, WS_OVERLAPPEDWINDOW,
             CW_USEDEFAULT, CW_USEDEFAULT, winW, winH, IntPtr.Zero, IntPtr.Zero, _hInstance, IntPtr.Zero);
-        if (_hwnd == IntPtr.Zero) { UnregisterClassW(_className, _hInstance); return false; }
+        if (_hwnd == IntPtr.Zero) { UnregisterClassW(_className, _hInstance); _hInstance = IntPtr.Zero; return false; }
         return true;
     }
 

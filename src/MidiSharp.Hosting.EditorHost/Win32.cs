@@ -48,10 +48,7 @@ internal static partial class Win32
 
     // ── Window class + creation ──
     public const uint WS_OVERLAPPEDWINDOW = 0x00CF0000;
-    public const uint WS_CHILD = 0x40000000;
-    public const uint WS_VISIBLE = 0x10000000;
     public const int SW_SHOW = 5;
-    public const int SW_HIDE = 0;
     public const uint WM_CLOSE = 0x0010;
     public const int GW_CHILD = 5;
     public const int GW_HWNDNEXT = 2;
