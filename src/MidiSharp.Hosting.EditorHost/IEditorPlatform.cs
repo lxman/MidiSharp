@@ -63,7 +63,8 @@ public static class EditorPlatform
     private static IEditorPlatform Select()
     {
         if (OperatingSystem.IsLinux() || OperatingSystem.IsFreeBSD()) return new X11Platform();
-        // Windows (Win32) and macOS (Cocoa) backends slot in here.
+        if (OperatingSystem.IsWindows()) return new Win32Platform();
+        // macOS (Cocoa) backend slots in here.
         return new UnsupportedPlatform();
     }
 
