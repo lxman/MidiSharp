@@ -52,7 +52,7 @@ internal sealed unsafe class Vst3BStream : IDisposable
     private static int QueryInterface(void* self, byte* iid, void** obj)
     {
         if (IidEq(iid, IidBStream) || IidEq(iid, IidFUnknown)) { *obj = self; return ResultOk; }
-        *obj = null; return -1;   // kNoInterface
+        *obj = null; return NoInterface;   // kNoInterface
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]

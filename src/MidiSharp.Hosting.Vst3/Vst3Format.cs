@@ -29,12 +29,14 @@ public sealed unsafe class Vst3Format : IPluginFormat
                 yield break;
             }
             var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            yield return Path.Combine(home, ".vst3");
+            yield return Path.Combine(home, ".vst3");                                   // Linux user
             yield return "/usr/lib/vst3";
             yield return "/usr/local/lib/vst3";
             var common = Environment.GetEnvironmentVariable("CommonProgramFiles");
-            if (!string.IsNullOrEmpty(common)) yield return Path.Combine(common, "VST3");
-            yield return Path.Combine(home, "Library", "Audio", "Plug-Ins", "VST3");
+            if (!string.IsNullOrEmpty(common)) yield return Path.Combine(common, "VST3");   // Windows system
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (!string.IsNullOrEmpty(localAppData)) yield return Path.Combine(localAppData, "Programs", "Common", "VST3");   // Windows user
+            yield return Path.Combine(home, "Library", "Audio", "Plug-Ins", "VST3");    // macOS user
         }
     }
 
@@ -58,20 +60,51 @@ public sealed unsafe class Vst3Format : IPluginFormat
         return binary == null ? [] : ScanBinary(binary);
     }
 
-    // A .vst3 is either a single shared library or a bundle directory with the binary under
-    // Contents/<arch>-linux/. Pick the platform binary: by VST3 convention the plugin .so is named after
-    // the bundle (e.g. lsp-plugins.vst3 → lsp-plugins.so) — prefer that, since a bundle may also ship
+    // A .vst3 is either a single shared library (a bare file — common on Windows) or a bundle directory with
+    // the binary under Contents/<platform>/. The platform subfolder and binary extension differ by OS:
+    //   Linux   → Contents/{x86_64,aarch64}-linux/<name>.so
+    //   Windows → Contents/{x86_64,arm64}-win/<name>.vst3   (a DLL named .vst3)
+    //   macOS   → Contents/MacOS/<name>            (no extension)
+    // By VST3 convention the binary is named after the bundle, so prefer that — a bundle may also ship
     // helper libraries (GL renderers, shared deps) that have no plugin factory.
     internal static string? ResolveBinary(string vst3)
     {
         if (File.Exists(vst3)) return vst3;
         if (!Directory.Exists(vst3)) return null;
-        var arch = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "aarch64-linux" : "x86_64-linux";
-        var contents = Path.Combine(vst3, "Contents", arch);
+        var name = Path.GetFileNameWithoutExtension(vst3);
+
+        string subdir, named;
+        string[] patterns;
+        var arm = RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
+        if (OperatingSystem.IsWindows())
+        {
+            subdir = arm ? "arm64-win" : "x86_64-win";
+            named = name + ".vst3";
+            patterns = ["*.vst3", "*.dll"];
+        }
+        else if (OperatingSystem.IsMacOS())
+        {
+            subdir = "MacOS";
+            named = name;            // macOS bundle binaries have no extension
+            patterns = ["*"];
+        }
+        else
+        {
+            subdir = arm ? "aarch64-linux" : "x86_64-linux";
+            named = name + ".so";
+            patterns = ["*.so"];
+        }
+
+        var contents = Path.Combine(vst3, "Contents", subdir);
         if (!Directory.Exists(contents)) return null;
-        var named = Path.Combine(contents, Path.GetFileNameWithoutExtension(vst3) + ".so");
-        if (File.Exists(named)) return named;
-        return Directory.EnumerateFiles(contents, "*.so").OrderBy(f => f, StringComparer.Ordinal).FirstOrDefault();
+        var namedPath = Path.Combine(contents, named);
+        if (File.Exists(namedPath)) return namedPath;
+        foreach (var p in patterns)
+        {
+            var f = Directory.EnumerateFiles(contents, p).OrderBy(x => x, StringComparer.Ordinal).FirstOrDefault();
+            if (f != null) return f;
+        }
+        return null;
     }
 
     private static IEnumerable<PluginDescriptor> ScanBinary(string binary)

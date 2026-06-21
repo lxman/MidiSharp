@@ -65,7 +65,7 @@ internal sealed unsafe class Vst3PlugFrame : IDisposable
         var f = Self(self);
         if (IidEq(iid, IidPlugFrame) || IidEq(iid, IidFUnknown)) { *obj = self; return ResultOk; }
         if (IidEq(iid, IidRunLoop)) { *obj = f._runLoop; return ResultOk; }
-        *obj = null; return -1;
+        *obj = null; return NoInterface;
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
@@ -79,7 +79,7 @@ internal sealed unsafe class Vst3PlugFrame : IDisposable
     private static int RunLoopQueryInterface(void* self, byte* iid, void** obj)
     {
         if (IidEq(iid, IidRunLoop) || IidEq(iid, IidFUnknown)) { *obj = self; return ResultOk; }
-        *obj = null; return -1;
+        *obj = null; return NoInterface;
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]

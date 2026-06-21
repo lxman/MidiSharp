@@ -30,13 +30,16 @@ public sealed unsafe class ClapFormat : IPluginFormat
                 yield break;
             }
             var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            // Linux/user; the Windows/macOS standard dirs slot in here as cross-platform support grows.
-            yield return Path.Combine(home, ".clap");
+            // The CLAP standard dirs for each OS. Paths that don't exist on the current OS are skipped
+            // harmlessly during enumeration, so listing all three is safe.
+            yield return Path.Combine(home, ".clap");                                   // Linux user
             yield return "/usr/lib/clap";
             yield return "/usr/local/lib/clap";
             var common = Environment.GetEnvironmentVariable("CommonProgramFiles");
-            if (!string.IsNullOrEmpty(common)) yield return Path.Combine(common, "CLAP");
-            yield return Path.Combine(home, "Library", "Audio", "Plug-Ins", "CLAP");   // macOS user
+            if (!string.IsNullOrEmpty(common)) yield return Path.Combine(common, "CLAP");   // Windows system
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (!string.IsNullOrEmpty(localAppData)) yield return Path.Combine(localAppData, "Programs", "Common", "CLAP");   // Windows user
+            yield return Path.Combine(home, "Library", "Audio", "Plug-Ins", "CLAP");    // macOS user
         }
     }
 

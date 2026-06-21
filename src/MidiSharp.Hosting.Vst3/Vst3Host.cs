@@ -47,7 +47,7 @@ internal static unsafe class Vst3Host
     private static int HostQueryInterface(void* self, byte* iid, void** obj)
     {
         if (IidEq(iid, IidHostApplication) || IidEq(iid, IidFUnknown)) { *obj = self; return ResultOk; }
-        *obj = null; return -1;   // kNoInterface
+        *obj = null; return NoInterface;   // kNoInterface
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
@@ -63,7 +63,7 @@ internal static unsafe class Vst3Host
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    private static int HostCreateInstance(void* self, byte* cid, byte* iid, void** obj) { *obj = null; return -1; }
+    private static int HostCreateInstance(void* self, byte* cid, byte* iid, void** obj) { *obj = null; return NoInterface; }
 
     // ── IComponentHandler ──
     private static IntPtr BuildComponentHandler()
@@ -85,7 +85,7 @@ internal static unsafe class Vst3Host
     private static int HandlerQueryInterface(void* self, byte* iid, void** obj)
     {
         if (IidEq(iid, IidComponentHandler) || IidEq(iid, IidFUnknown)) { *obj = self; return ResultOk; }
-        *obj = null; return -1;
+        *obj = null; return NoInterface;
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
@@ -114,7 +114,7 @@ internal static unsafe class Vst3Host
     private static int FrameQueryInterface(void* self, byte* iid, void** obj)
     {
         if (IidEq(iid, IidPlugFrame) || IidEq(iid, IidFUnknown)) { *obj = self; return ResultOk; }
-        *obj = null; return -1;
+        *obj = null; return NoInterface;
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]

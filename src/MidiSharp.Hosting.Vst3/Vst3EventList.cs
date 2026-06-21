@@ -73,7 +73,7 @@ internal sealed unsafe class Vst3EventList : IDisposable
     private static int QueryInterface(void* self, byte* iid, void** obj)
     {
         if (IidEq(iid, IidEventList) || IidEq(iid, IidFUnknown)) { *obj = self; return ResultOk; }
-        *obj = null; return -1;
+        *obj = null; return NoInterface;
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]

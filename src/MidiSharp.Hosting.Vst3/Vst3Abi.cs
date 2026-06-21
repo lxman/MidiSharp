@@ -12,9 +12,13 @@ namespace MidiSharp.Hosting.Vst3;
 /// </summary>
 internal static unsafe class Vst3Abi
 {
-    public const int ResultOk = 0;          // kResultOk == kResultTrue == 0
-    public const int ResultFalse = 1;
+    public const int ResultOk = 0;          // kResultOk == kResultTrue == 0 on every platform
+    public const int ResultFalse = 1;       // kResultFalse == 1 on every platform
     public static bool Ok(int r) => r == ResultOk;
+
+    // kNoInterface differs by platform: Windows VST3 is COM-compatible (HRESULT E_NOINTERFACE), the rest
+    // use -1. Our host-side COM objects must return the right one from queryInterface.
+    public static readonly int NoInterface = OperatingSystem.IsWindows() ? unchecked((int)0x80004002) : -1;
 
     public static readonly string[] FactoryExport = ["GetPluginFactory"];
     public const string AudioModuleCategory = "Audio Module Class";
@@ -42,13 +46,25 @@ internal static unsafe class Vst3Abi
     public static readonly byte[] IidEventHandler = Uid(0x561E65C9, 0x13A0496F, 0x813A2C35, 0x654D7983);
     public static readonly byte[] IidTimerHandler = Uid(0x10BDD94F, 0x41424774, 0x821FAD8F, 0xECA72CA9);
 
+    // Lay out a TUID from four uint32s the way the VST3 SMTG_INLINE_UID macro does — which differs by
+    // platform. Windows is COM-compatible (the GUID layout: first uint32 little-endian, second as two
+    // little-endian uint16s, last two big-endian); every other platform stores all four big-endian.
     public static byte[] Uid(uint a, uint b, uint c, uint d) =>
-    [
-        (byte)(a >> 24), (byte)(a >> 16), (byte)(a >> 8), (byte)a,
-        (byte)(b >> 24), (byte)(b >> 16), (byte)(b >> 8), (byte)b,
-        (byte)(c >> 24), (byte)(c >> 16), (byte)(c >> 8), (byte)c,
-        (byte)(d >> 24), (byte)(d >> 16), (byte)(d >> 8), (byte)d,
-    ];
+        OperatingSystem.IsWindows()
+        ?
+        [
+            (byte)a, (byte)(a >> 8), (byte)(a >> 16), (byte)(a >> 24),
+            (byte)(b >> 16), (byte)(b >> 24), (byte)b, (byte)(b >> 8),
+            (byte)(c >> 24), (byte)(c >> 16), (byte)(c >> 8), (byte)c,
+            (byte)(d >> 24), (byte)(d >> 16), (byte)(d >> 8), (byte)d,
+        ]
+        :
+        [
+            (byte)(a >> 24), (byte)(a >> 16), (byte)(a >> 8), (byte)a,
+            (byte)(b >> 24), (byte)(b >> 16), (byte)(b >> 8), (byte)b,
+            (byte)(c >> 24), (byte)(c >> 16), (byte)(c >> 8), (byte)c,
+            (byte)(d >> 24), (byte)(d >> 16), (byte)(d >> 8), (byte)d,
+        ];
 
     // ── Vtable structs (method order is the ABI; only called methods are typed) ──
     [StructLayout(LayoutKind.Sequential)]
