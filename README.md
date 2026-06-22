@@ -8,6 +8,8 @@ It also ships a patch-level **instrument-substitution** layer: list the instrume
 
 On top of that sits a **per-part mixer + effects** layer: each MIDI track gets its own fader, pan, sends, mute/solo and a drag-and-drop **insert rack**, plus a master bus — all driven by `MidiSharp.Dsp`, a small decoupled DSP library (EQ, brickwall limiter, gain, chainable processors) the host wires in caller-side. The browser player is a live mixing console on top of this.
 
+And it can **host external audio plugins** — CLAP, VST2, VST3, and LADSPA — as both effects (in any insert rack, beside the built-in DSP) and instruments (an alternative sound source to the synth). Plugins are discovered and run **out-of-process**, so a crashing plugin can't take the host down, and their **native editor windows** open on Linux (X11), Windows (Win32), and macOS (Cocoa).
+
 ## Quick start
 
 ```bash
@@ -51,11 +53,15 @@ MidiSharp.slnx                       Root solution file
 │   ├── MidiSharp.Synth.OwnAudio/    Cross-platform audio output via OwnAudioSharp (net10.0)
 │   ├── MidiSharp.PatchMap/          Instrument substitution — composes SoundBanks (netstandard2.1, Core-only)
 │   ├── MidiSharp.Dsp/               Buffer-processing DSP "plugins" — EQ, limiter, gain, chains (netstandard2.1, no synth deps)
+│   ├── MidiSharp.Hosting/           Format-agnostic plugin-host core — IHostedPlugin/IPluginFormat, PlanarBridge, registry (no P/Invoke; net10.0)
+│   ├── MidiSharp.Hosting.{Clap,Vst2,Vst3,Ladspa}/   Per-format native adapters — all the plugin interop lives here
+│   ├── MidiSharp.Hosting.EditorHost/  Native plugin-editor windows behind a per-OS seam — Linux/ (X11), Windows/ (Win32), MacArm/ (Cocoa)
+│   ├── MidiSharp.Hosting.Sandbox/, .Worker/   Out-of-process discovery + load (a crashing plugin can't take the host down)
 │   └── MidiSharp/                   Umbrella package host → ships the above as MidiSharp.Player on nuget.org
 ├── samples/
 │   ├── MidiSharp.Demo/              CLI: live playback / WAV render / --patches / --map / --limiter
-│   └── MidiSharp.Server/            Browser player: a live per-track mixing console (substitution + mix + EQ/limiter racks)
-├── tests/                           xUnit — 238 passing (Core, Synth, Loader, Audio, SF2.Net, PatchMap, Dsp)
+│   └── MidiSharp.Server/            Browser player: a live per-track mixing console (substitution + mix + EQ/limiter & hosted-plugin racks)
+├── tests/                           xUnit — 320 tests (Core, Synth, Loader, Audio, SF2.Net, PatchMap, Dsp, Hosting)
 ├── vendor/NVorbis/                  Vendored pure-managed Ogg Vorbis decoder (MIT, v0.10.5; assembly MidiSharp.Audio.Vorbis)
 ├── docs/                            SoundBank IR design doc
 └── MIDI/                            Reference PDFs (MIDI 1.0 / 2.0 / SMF / RPs / Universal SysEx)
@@ -120,7 +126,7 @@ Implemented: RP-001 (SMF 1.0), RP-013 (GM Level 1), RP-014 (Bank Select Response
 | Jump! (post-LFO-generator fix) | -4.26 dB at 10-20 kHz; ≤2 dB elsewhere | -0.99 dB |
 | Jump! with Tyroland (same-soundfont A/B) | -3.45 dB at 500-2000 Hz | -1.67 dB |
 
-238 unit tests across the suite cover MIDI parsing, sequencer timing, tempo map, RP-026 lyric parsing, the SF2 reader, synthesis (including the shelf/peaking filters and sample-and-hold/stepped LFOs), the sample decoders and all four loaders, patch substitution, the per-instrument mixer + insert engine (with bit-identity guards when untouched), and the DSP effects (EQ/limiter/chain).
+320 tests across the suite cover MIDI parsing, sequencer timing, tempo map, RP-026 lyric parsing, the SF2 reader, synthesis (including the shelf/peaking filters and sample-and-hold/stepped LFOs), the sample decoders and all four loaders, patch substitution, the per-instrument mixer + insert engine (with bit-identity guards when untouched), the DSP effects (EQ/limiter/chain), and the plugin-hosting stack (loading, the planar bridge, the per-OS editor backends); platform-specific editor/plugin tests self-skip off their OS.
 
 ### Mixing & effects (`MidiSharp.Dsp` + the synth's mix layer)
 
@@ -130,6 +136,17 @@ A complete signal path sits on top of the spec-faithful renderer, **without cont
 - **Per-instrument inserts (Tier-2).** An instrument with a registered `IInstrumentInsert` is summed into a private stereo bus, run through the insert, then mixed to master; instruments with no insert sum straight to master (bit-identical). The synth stays decoupled from `MidiSharp.Dsp` via this tiny interface — the host adapts a `ProcessorChain` to it.
 - **`MidiSharp.Dsp` — the effects library.** `IAudioProcessor` (interleaved-stereo, in place), `ProcessorChain` (lock-free reorderable rack), a clean-room RBJ `BiquadFilter`, `ParametricEq` (stereo cascade), a stereo-linked brickwall `LimiterProcessor`, and `GainProcessor`. No reference to the synth or MIDI — the host wires it at the audio-callback seam (master bus) and per-instrument inserts.
 - **Track-keyed mixing in the player.** The browser console keys each strip on the source MIDI *track* (the part), so a performer keeps one fader even as their program changes, and two tracks sharing a program get independent faders.
+
+## Plugin hosting (`MidiSharp.Hosting`)
+
+The mixer and insert racks aren't limited to the built-in DSP — they can host **external audio plugins**. One format-agnostic core (`MidiSharp.Hosting`, no P/Invoke) defines `IHostedPlugin`/`IPluginFormat`; each format's native interop lives in its own adapter, and a no-GC/no-lock `PlanarBridge` shuttles the engine's interleaved-stereo buffers to and from each plugin's planar `float**`.
+
+- **Four formats — CLAP, VST2, VST3, LADSPA.** CLAP is the anchor (pure C ABI, both effects and instruments, sample-accurate events); VST2/VST3 are adapters over the same plumbing; LADSPA is the Linux effects spike. All transcribed clean-room — no vendor SDK headers.
+- **Effects and instruments.** A hosted **effect** is an `IAudioProcessor` and drops into any `ProcessorChain`/insert rack beside the built-in EQ/limiter/gain. A hosted **instrument** feeds a part as an alternative sound source to the synth, carrying the full channel strip (gain/pan/mute/solo + its own inserts) and fed note-on/off with sample-accurate timing.
+- **Out-of-process by default (`MidiSharp.Hosting.Sandbox` + `.Worker`).** Discovery and load run in worker processes, so a plugin that crashes on scan or load takes down only its worker — not the server; per-file scan resume, a hung-plugin watchdog, and audio/parameter/state proxying over a shared-memory ring. Plugin state persists into saved per-song setups.
+- **Native editor windows (`MidiSharp.Hosting.EditorHost`).** A plugin's own editor opens as a real OS window (in the worker that holds the instance), behind one per-OS backend: **X11** (Linux), **Win32** (Windows), and **Cocoa** (macOS/arm64) — each pure platform P/Invoke (`libX11` / `user32`+`gdi32` / `libobjc`+AppKit) with its own run loop, embedding the plugin's child window and driving its timers/fds. Verified by embedding real plugins (u-he Podolski on Windows; Surge XT VST3 + CLAP on macOS).
+
+Discovery uses each format's standard per-OS directories (e.g. `~/.clap`, `%COMMONPROGRAMFILES%\CLAP`, `/Library/Audio/Plug-Ins/CLAP`). **AU** (Audio Units, macOS-only) is the one major format not yet adapted; **AAX** is parked.
 
 ## Instrument substitution (`MidiSharp.PatchMap`)
 
@@ -159,6 +176,7 @@ Both front-ends use it: the Demo CLI (`--patches`, `--map`) and the web player (
 - **Saved override presets** ("remaps") and instrument **upload** in the web player (overrides are currently in-session, sourced from the configured font folders).
 - **UMP-to-MIDI-1.0 translation layer** if MIDI 2.0 hardware ever shows up (most "MIDI 2.0" devices ship in 1.0-compatibility mode anyway).
 - Further SF3/SFZ/DLS hardening toward the SF2 path's fluidsynth-validated fidelity.
+- **AU (Audio Units) hosting** on macOS — the one major plugin format not yet adapted (AAX is parked).
 
 ## License
 

@@ -4,6 +4,46 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+A plugin-hosting subsystem — load and run third-party audio plugins inside the mixer — and native plugin
+editors on Linux, Windows, and macOS.
+
+### Added
+
+- **Plugin hosting (`MidiSharp.Hosting`).** Host external **CLAP, VST2, VST3, and LADSPA** plugins as both
+  **effects** (drop into any `ProcessorChain`/insert rack next to the built-in EQ/limiter/gain) and
+  **instruments** (an alternative sound source to the synth, fed sample-accurate note events and carrying the
+  full channel strip). The format-agnostic core holds no P/Invoke — each format's native interop lives in its
+  own adapter (`MidiSharp.Hosting.{Clap,Vst2,Vst3,Ladspa}`) — and a no-GC/no-lock `PlanarBridge` shuttles the
+  engine's interleaved stereo to and from each plugin's planar buffers. ABIs are transcribed clean-room (no
+  vendor SDK headers).
+- **Out-of-process sandboxing (`MidiSharp.Hosting.Sandbox` + `MidiSharp.Hosting.Worker`).** Discovery and load
+  run in worker processes, so a plugin that crashes on scan or load takes down only its worker, not the server;
+  per-file scan resume, a hung-plugin watchdog, and audio/parameter/state proxying over a shared-memory ring.
+  On by default in the web player (`MIDISHARP_SANDBOX=0` disables it). Plugin state persists into saved setups.
+- **Native plugin editors (`MidiSharp.Hosting.EditorHost`).** A plugin's own editor opens as a real OS window
+  — hosted in the sandbox worker, opened from the web player — behind one per-OS backend: **X11** (Linux),
+  **Win32** (Windows), and **Cocoa** (macOS/arm64). Each is pure platform P/Invoke (`libX11` /
+  `user32`+`gdi32` / `libobjc`+AppKit) with its own run loop (`poll` / `MsgWaitForMultipleObjectsEx` /
+  `NSApp`), embedding the plugin's child window and driving its timers/fds. Verified by embedding real plugins
+  (u-he Podolski on Windows; Surge XT VST3 + CLAP on macOS).
+- **macOS plugin discovery** now also searches the system `/Library/Audio/Plug-Ins/{VST3,CLAP}` directories and
+  resolves `.clap` **bundles** (`Contents/MacOS/<name>`), not just per-user flat files.
+
+### Changed
+
+- The web player's insert racks and the per-part instrument selector can bind hosted plugins alongside the
+  built-in synth and DSP.
+- The editor-host backends are organized into per-OS folders/namespaces
+  (`MidiSharp.Hosting.EditorHost.{Linux,Windows,MacArm}`); shared windowing-agnostic code stays in the root.
+- 320 tests across the suite (adds the Hosting suite); CI green on Linux, Windows, and macOS; platform-specific
+  editor/plugin tests self-skip off their OS.
+
+### Notes
+
+- **AU (Audio Units)** is the one major plugin format not yet adapted (macOS-only); **AAX** is parked.
+
 ## [0.10.0] - 2026-06-19
 
 A mixing-and-effects layer on top of the renderer — without touching the spec-faithful core.
@@ -117,5 +157,6 @@ The Ogg Vorbis decoder (`MidiSharp.Audio.Vorbis`) is a maintained fork of
 
 **License:** MIT.
 
+[Unreleased]: https://github.com/lxman/MidiSharp/compare/v0.10.0...HEAD
 [0.10.0]: https://github.com/lxman/MidiSharp/releases/tag/v0.10.0
 [0.9.0]: https://github.com/lxman/MidiSharp/releases/tag/v0.9.0
