@@ -50,11 +50,10 @@ public sealed class EditorSession : IDisposable
             IEditorPlatform platform = EditorPlatform.Current;
             if (!platform.IsAvailable) { _error = "no windowing backend available (no display?)."; return; }
 
-            // A default starting size; the real size comes from the plugin once it has laid out (after show).
-            var w = 400; var h = 300;
-            if (_gui.TryGetSize(out int gw0, out int gh0) && gw0 > 0 && gh0 > 0) { w = gw0; h = gh0; }
-
-            _window = platform.CreateWindow(title, w, h);
+            // A default starting size; the real size is queried from the plugin after gui.Create() below (CLAP
+            // forbids gui.size() before create()) and again after show() once it has laid out. The window is
+            // resized before it's mapped, so this provisional size is never shown.
+            _window = platform.CreateWindow(title, 400, 300);
             if (_window == null) { _error = "could not create a host window."; return; }
 
             // Bind the run loop, then create the editor — on THIS thread, so VST3 createView / CLAP gui.create

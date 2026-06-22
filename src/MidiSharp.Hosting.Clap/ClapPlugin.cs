@@ -77,9 +77,15 @@ public sealed unsafe class ClapPlugin : IHostedPlugin, IPluginGui
         BuildParameters();
         _gui = (ClapPluginGui*)_plugin->GetExtension(_plugin, FixedConst(ExtGui));   // null when the plugin has no editor
 
-        if (_plugin->Activate(_plugin, config.SampleRate, 1, max) == 0)
+        if (_plugin->Activate(_plugin, config.SampleRate, 1, max) == 0)   // [main-thread]
             throw new InvalidOperationException($"CLAP activate failed for '{Descriptor.Name}'.");
-        if (_plugin->StartProcessing(_plugin) == 0)
+
+        // start_processing is a CLAP [audio-thread] call. The lock-step worker has no separate RT thread, so we
+        // enter the audio-thread context (the same bracket Process uses) to keep clap.thread-check honest.
+        _host.SetInProcess(true);
+        int started = _plugin->StartProcessing(_plugin);
+        _host.SetInProcess(false);
+        if (started == 0)
             throw new InvalidOperationException($"CLAP start_processing failed for '{Descriptor.Name}'.");
 
         // Allocate the reusable process graph: 2-channel planar in/out, an empty-by-default event list.
@@ -123,7 +129,11 @@ public sealed unsafe class ClapPlugin : IHostedPlugin, IPluginGui
     public void Deactivate()
     {
         if (!_active) return;
+
+        // stop_processing is [audio-thread] (mirrors start_processing); deactivate is [main-thread].
+        _host.SetInProcess(true);
         _plugin->StopProcessing(_plugin);
+        _host.SetInProcess(false);
         _plugin->Deactivate(_plugin);
 
         if (_inData32 != null) NativeMemory.Free(_inData32);
