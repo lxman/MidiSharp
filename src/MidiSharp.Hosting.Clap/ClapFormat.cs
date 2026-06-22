@@ -39,6 +39,7 @@ public sealed unsafe class ClapFormat : IPluginFormat
             string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             if (!string.IsNullOrEmpty(localAppData)) yield return Path.Combine(localAppData, "Programs", "Common", "CLAP");   // Windows user
             yield return Path.Combine(home, "Library", "Audio", "Plug-Ins", "CLAP");    // macOS user
+            yield return "/Library/Audio/Plug-Ins/CLAP";                                // macOS system
         }
     }
 
@@ -47,8 +48,9 @@ public sealed unsafe class ClapFormat : IPluginFormat
         foreach (string dir in searchPaths)
         {
             if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) continue;
-            foreach (string file in Directory.EnumerateFiles(dir, "*.clap").OrderBy(f => f, StringComparer.Ordinal))
-                yield return file;
+            // *.clap is a flat shared library (Linux/Windows) or, on macOS, a bundle directory — match both.
+            foreach (string entry in Directory.EnumerateFileSystemEntries(dir, "*.clap").OrderBy(f => f, StringComparer.Ordinal))
+                yield return entry;
         }
     }
 
@@ -59,7 +61,8 @@ public sealed unsafe class ClapFormat : IPluginFormat
     public IEnumerable<PluginDescriptor> ScanFile(string file)
     {
         var results = new List<PluginDescriptor>();
-        if (!NativeLibrary.TryLoad(file, out IntPtr lib)) return results;
+        string? binary = ResolveBinary(file);
+        if (binary == null || !NativeLibrary.TryLoad(binary, out IntPtr lib)) return results;
         try
         {
             if (!NativeLibrary.TryGetExport(lib, EntryExport, out IntPtr entryPtr)) return results;
@@ -96,7 +99,9 @@ public sealed unsafe class ClapFormat : IPluginFormat
         if (descriptor.Format != Name)
             throw new ArgumentException($"Not a CLAP descriptor: {descriptor.Format}", nameof(descriptor));
 
-        IntPtr lib = NativeLibrary.Load(descriptor.Path);
+        string? binary = ResolveBinary(descriptor.Path)
+            ?? throw new InvalidOperationException($"Could not resolve a loadable binary for '{descriptor.Path}'.");
+        IntPtr lib = NativeLibrary.Load(binary);
         ClapHost? host = null;
         try
         {
@@ -136,6 +141,20 @@ public sealed unsafe class ClapFormat : IPluginFormat
             NativeLibrary.Free(lib);
             throw;
         }
+    }
+
+    // A .clap is either a flat shared library (Linux/Windows, and our test fixture) or, on macOS, a bundle
+    // directory with the binary at Contents/MacOS/<name>. Return the loadable binary; clap_entry.init still
+    // receives the original .clap path so the plugin can locate its bundle resources.
+    internal static string? ResolveBinary(string clap)
+    {
+        if (File.Exists(clap)) return clap;
+        if (!Directory.Exists(clap)) return null;
+        string macos = Path.Combine(clap, "Contents", "MacOS");
+        if (!Directory.Exists(macos)) return null;
+        string named = Path.Combine(macos, Path.GetFileNameWithoutExtension(clap));
+        return File.Exists(named) ? named
+             : Directory.EnumerateFiles(macos).OrderBy(f => f, StringComparer.Ordinal).FirstOrDefault();
     }
 
     private static bool HasFeature(ClapPluginDescriptor* desc, string feature)

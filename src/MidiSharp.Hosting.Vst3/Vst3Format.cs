@@ -36,6 +36,7 @@ public sealed unsafe class Vst3Format : IPluginFormat
             string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             if (!string.IsNullOrEmpty(localAppData)) yield return Path.Combine(localAppData, "Programs", "Common", "VST3");   // Windows user
             yield return Path.Combine(home, "Library", "Audio", "Plug-Ins", "VST3");    // macOS user
+            yield return "/Library/Audio/Plug-Ins/VST3";                                // macOS system
         }
     }
 
