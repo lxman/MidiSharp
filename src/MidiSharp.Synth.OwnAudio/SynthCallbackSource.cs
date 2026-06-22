@@ -20,6 +20,14 @@ internal sealed class SynthCallbackSource(int sampleRate, int channels) : BaseAu
     };
     private float[] _temp = [];
 
+    // Teardown gate. OwnAudio's mix thread isn't joined on Stop() (AudioMixer.Stop just flips a flag),
+    // so a ReadSamples call can be mid-Callback when the host tears playback down — and the callback
+    // reads memory-mapped SoundFont samples that Stop disposes. Reading those after the mmap is
+    // released is a native use-after-free (AccessViolationException). _cbGate serializes the callback
+    // against teardown; _stopping permanently blocks further callbacks once teardown begins.
+    private readonly object _cbGate = new();
+    private volatile bool _stopping;
+
     public AudioCallback? Callback { get; set; }
 
     public override AudioConfig Config => _config;
@@ -41,7 +49,8 @@ internal sealed class SynthCallbackSource(int sampleRate, int channels) : BaseAu
         int sampleCount = frameCount * _config.Channels;
         Span<float> output = buffer.Slice(0, sampleCount);
 
-        if (State != AudioState.Playing || Callback is null)
+        // Cheap pre-check (also avoids taking the gate once teardown has begun).
+        if (_stopping || State != AudioState.Playing || Callback is null)
         {
             output.Clear();
             return frameCount;
@@ -51,9 +60,28 @@ internal sealed class SynthCallbackSource(int sampleRate, int channels) : BaseAu
             _temp = new float[sampleCount];
 
         Array.Clear(_temp, 0, sampleCount);
-        Callback(_temp, frameCount);
+        // Hold the gate across the callback so DrainCallbacks() can wait for an in-flight call to
+        // finish before the host disposes the SoundFont. Re-check _stopping inside the lock to close
+        // the race where teardown set it after the pre-check above.
+        lock (_cbGate)
+        {
+            if (_stopping || Callback is null) { output.Clear(); return frameCount; }
+            Callback(_temp, frameCount);
+        }
         _temp.AsSpan(0, sampleCount).CopyTo(output);
         return frameCount;
+    }
+
+    /// <summary>
+    /// Permanently stop invoking <see cref="Callback"/> and block until any in-flight callback has
+    /// returned. After this the host can safely dispose resources the callback touches (the
+    /// memory-mapped SoundFont), even though OwnAudio's mix thread may still be alive and calling
+    /// <see cref="ReadSamples"/> — those calls now just emit silence.
+    /// </summary>
+    public void DrainCallbacks()
+    {
+        _stopping = true;
+        lock (_cbGate) { }   // waits out an in-flight callback; once acquired, none can start
     }
 
     public override bool Seek(double positionInSeconds) => false;

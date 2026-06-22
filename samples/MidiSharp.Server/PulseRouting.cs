@@ -19,9 +19,14 @@ internal static class PulseRouting
     public static bool IsAvailable()
     {
         if (s_available is { } cached) return cached;
-        bool ok;
-        try { ok = Run("info", out _, timeoutMs: 2000); }
-        catch { ok = false; }
+        // pactl is a Linux sound-server tool; on Windows/macOS short-circuit so we don't spawn a
+        // doomed process just to catch its failure. Elsewhere, probe by actually running it.
+        bool ok = OperatingSystem.IsLinux();
+        if (ok)
+        {
+            try { ok = Run("info", out _, timeoutMs: 2000); }
+            catch { ok = false; }
+        }
         s_available = ok;
         return ok;
     }

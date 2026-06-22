@@ -23,6 +23,7 @@
             text-transform: uppercase; letter-spacing: .04em; }
     select { width: 100%; padding: .55rem .6rem; background: #1e2128; color: #e6e6e6;
              border: 1px solid #333a46; border-radius: 6px; font-size: .95rem; }
+    #hostApi { margin-bottom: .4rem; }
     .picker { width: 100%; text-align: left; padding: .6rem .7rem; background: #1e2128;
               color: #e6e6e6; border: 1px solid #333a46; border-radius: 6px; font-size: .95rem;
               cursor: pointer; font-weight: 400; }
@@ -205,6 +206,7 @@
       <p class="sub">Audio plays on the server machine. The browser is the remote.</p>
 
       <label for="device">Output device</label>
+      <select id="hostApi" hidden></select>
       <select id="device"></select>
 
       <label>MIDI file</label>

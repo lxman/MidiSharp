@@ -33,7 +33,7 @@ public sealed class PluginHost
 
     private static readonly string[] Formats = ["CLAP", "VST3", "VST2", "LADSPA"];
 
-    private readonly int _sampleRate;
+    private int _sampleRate;
     private readonly string? _workerDll;
     private readonly bool _sandbox;
     private List<PluginDescriptor> _plugins = [];
@@ -52,6 +52,13 @@ public sealed class PluginHost
     }
 
     public AudioConfig Config => new(_sampleRate, MaxBlockFrames, ChannelCount: 2);
+
+    /// <summary>
+    /// Set the rate used for <see cref="Config"/> (i.e. the rate plugin instances are created at).
+    /// Discovery is rate-independent, so the already-discovered plugin list is untouched. Take effect
+    /// for instances created after this call — the host quiesces playback before changing the rate.
+    /// </summary>
+    public void SetSampleRate(int sampleRate) => _sampleRate = sampleRate;
 
     /// <summary>True when plugins are hosted out-of-process.</summary>
     public bool Sandboxed => _sandbox;

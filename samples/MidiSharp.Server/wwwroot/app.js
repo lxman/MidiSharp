@@ -44,20 +44,87 @@ let refreshMasterBadge = () => {};
 let loadedMix = null;             // "bank:program" -> mix DTO, while a setup is loading
 let isPlaying = false;            // from the status socket — live mixer POSTs only matter while playing
 
+// ---------------- output device picker ----------------
+// /api/devices is a flat list, each device tagged with an `engine` (e.g. "Portaudio.Windows WASAPI").
+// On Windows, PortAudio enumerates every host API (MME/DirectSound/WASAPI/WDM-KS), so each physical
+// device appears once per API. When more than one host API is present we show a two-stage picker
+// (host API → device) defaulting to WASAPI; otherwise (Linux PipeWire sinks, macOS Core Audio, or any
+// single-API box) we keep one flat dropdown. macOS gets the two-stage UI automatically only if its
+// PortAudio ever exposes multiple host APIs. Selection always resolves server-side by device id, so
+// what we show here never affects which device actually opens.
+let allDevices = [];
+
+// Friendlier host-API label: "Portaudio.Windows WASAPI" → "WASAPI", "Portaudio.MME" → "MME".
+const hostApiLabel = engine => ((engine || '').split('.').pop().replace(/^Windows\s+/, '') || engine || 'Audio');
+// Preferred order: WASAPI first (modern default), then DirectSound, MME, WDM-KS, then anything else.
+const HOST_API_RANK = { WASAPI: 0, DirectSound: 1, MME: 2, 'WDM-KS': 3 };
+const hostApiRank = engine => HOST_API_RANK[hostApiLabel(engine)] ?? 9;
+
+// The host-API <select> normally lives in index.html, but create it on the fly if it's absent —
+// a browser may have a stale cached index.html while running fresh app.js, and we don't want that
+// mismatch to break device loading entirely.
+function ensureHostApiSelect() {
+  let host = $('hostApi');
+  if (!host) {
+    host = document.createElement('select');
+    host.id = 'hostApi';
+    host.hidden = true;
+    host.style.marginBottom = '.4rem';
+    const dev = $('device');
+    if (dev && dev.parentNode) dev.parentNode.insertBefore(host, dev);
+    else document.body.appendChild(host);
+  }
+  return host;
+}
+
 async function loadDevices() {
-  const devices = await fetch('/api/devices').then(r => r.json());
+  allDevices = await fetch('/api/devices').then(r => r.json());
+
+  const engines = [...new Set(allDevices.map(d => d.engine || ''))].sort((a, b) => hostApiRank(a) - hostApiRank(b));
+  const hostSel = ensureHostApiSelect();
+  const twoStage = engines.length > 1;
+  hostSel.hidden = !twoStage;
+
+  if (!twoStage) { fillDeviceOptions(allDevices); return; }
+
+  hostSel.innerHTML = '';
+  for (const eng of engines) {
+    const o = document.createElement('option');
+    o.value = eng;
+    o.textContent = hostApiLabel(eng);
+    hostSel.appendChild(o);
+  }
+  // Restore the saved host API if still present; otherwise the top-ranked one (WASAPI when available).
+  const savedApi = localStorage.getItem('outputHostApi');
+  hostSel.value = (savedApi && engines.includes(savedApi)) ? savedApi : engines[0];
+  localStorage.setItem('outputHostApi', hostSel.value);
+  hostSel.onchange = () => {
+    localStorage.setItem('outputHostApi', hostSel.value);
+    fillDeviceOptions(allDevices.filter(d => (d.engine || '') === hostSel.value));
+  };
+  fillDeviceOptions(allDevices.filter(d => (d.engine || '') === hostSel.value));
+}
+
+// Fill the device <select> from a device list and pick a sensible selection: the last-used device if
+// it's in this list, else this host's own default, else the device matching the system default by name
+// (the global default may live under another host API), else the first. Persist the result so the
+// dropdown, localStorage, and the next Play request all agree.
+function fillDeviceOptions(devices) {
   const dev = $('device');
   dev.innerHTML = '';
   for (const d of devices) {
     const o = document.createElement('option');
     o.value = d.id;
     o.textContent = d.name + (d.isDefault ? '  (default)' : '');
-    if (d.isDefault) o.selected = true;
     dev.appendChild(o);
   }
-  // Restore the last-used device if it's still available; otherwise keep the engine default.
   const saved = localStorage.getItem('outputDeviceId');
-  if (saved && [...dev.options].some(o => o.value === saved)) dev.value = saved;
+  const globalDefaultName = allDevices.find(d => d.isDefault)?.name;
+  const pick = devices.find(d => d.id === saved)
+    || devices.find(d => d.isDefault)
+    || devices.find(d => d.name === globalDefaultName)
+    || devices[0];
+  if (pick) { dev.value = pick.id; localStorage.setItem('outputDeviceId', pick.id); }
   dev.onchange = () => localStorage.setItem('outputDeviceId', dev.value);
 }
 

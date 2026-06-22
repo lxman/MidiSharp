@@ -67,8 +67,16 @@ public sealed record SoundfontCatalogDto(string Name, SoundfontPatchDto[] Patche
 /// </summary>
 public sealed class PlayerService : IDisposable
 {
-    private const int SampleRate = 48000;   // match PipeWire/JACK graph rate → no resampling
+    // Preferred rate: matches the Linux PipeWire/JACK graph rate (no resampling there). On Windows a
+    // chosen device may open only at its own native rate (WASAPI/WDM-KS are exact-format), so the
+    // effective rate is negotiated per play (see _sampleRate / SetSampleRate) and the whole pipeline
+    // — synth, master rack, plugin host, inserts — is rebuilt at it. No resampling anywhere.
+    private const int DefaultSampleRate = 48000;
     private const double TailSeconds = 2.0;   // render this long past the last event before "done"
+
+    // The rate the current pipeline runs at. Starts at the preferred rate; SetSampleRate switches it
+    // (and rebuilds the rate-dependent state) when a chosen device needs a different one.
+    private int _sampleRate = DefaultSampleRate;
 
     private readonly IHostApplicationLifetime _lifetime;
     private readonly PluginHost _pluginHost;
@@ -77,8 +85,8 @@ public sealed class PlayerService : IDisposable
     public PlayerService(IHostApplicationLifetime lifetime)
     {
         _lifetime = lifetime;
-        _pluginHost = new PluginHost(SampleRate);
-        _masterRack = new EffectRack(SampleRate, _pluginHost);
+        _pluginHost = new PluginHost(DefaultSampleRate);
+        _masterRack = new EffectRack(DefaultSampleRate, _pluginHost);
     }
 
     private OwnAudioOutput? _output;
@@ -87,8 +95,9 @@ public sealed class PlayerService : IDisposable
     private PatchMapSession? _session;   // owns the base + override source fonts for the current play
 
     // Master-bus DSP rack, caller-side (the synth has no reference to MidiSharp.Dsp). Persists across
-    // plays (it's a setting); applied in the audio callback after the synth fills the block.
-    private readonly EffectRack _masterRack;
+    // plays (it's a setting); applied in the audio callback after the synth fills the block. Rebuilt
+    // by SetSampleRate when the pipeline rate changes (its EQ/limiter are rate-dependent).
+    private EffectRack _masterRack;
     // Per-track insert racks, keyed by trackIndex. Rebuilt from the play request and updated live;
     // a non-empty rack is registered with the synth as that track's IInstrumentInsert.
     private readonly Dictionary<int, EffectRack> _instrumentRacks = new();
@@ -216,6 +225,19 @@ public sealed class PlayerService : IDisposable
                 SmfRepairResult repair = SmfRepairFilter.Scan(File.ReadAllBytes(req.MidiPath));
                 MidiFile midi = MidiFileReader.Read(repair.Data);
 
+                // Device routing splits by environment. On PulseAudio/PipeWire, req.DeviceId is a
+                // server sink name: open OwnAudio on the system default (ALSA "default") and move our
+                // own stream to the chosen sink after start. On bare ALSA / Windows / macOS, req.DeviceId
+                // is an OwnAudio device id. Negotiate the rate FIRST (before building the synth), because
+                // a chosen device may only open at its own native rate — then run the whole pipeline at
+                // that rate (no resampling). Pulse and the system-default path keep the preferred rate.
+                bool routeViaPulse = PulseRouting.IsAvailable();
+                string? targetSink = string.IsNullOrEmpty(req.DeviceId) ? null : req.DeviceId;
+                int rate = !routeViaPulse && targetSink is not null
+                    ? OwnAudioOutput.NegotiateSampleRate(targetSink, DefaultSampleRate)
+                    : DefaultSampleRate;
+                SetSampleRate(rate);
+
                 // The session owns the base font and every override source font for this play.
                 // Assigned to _session immediately so StopLocked disposes it even if a later
                 // step throws. The composite it builds is a borrowed view the synth consumes.
@@ -226,7 +248,7 @@ public sealed class PlayerService : IDisposable
                 ApplyTrackOverrides(session, req.TrackOverrides, sources);
                 ApplyPartOverrides(session, req.PartOverrides, sources);
 
-                var synth = new Synthesizer(SampleRate);
+                var synth = new Synthesizer(_sampleRate);
                 CompositeResult composite = session.BuildResolved();
                 synth.LoadSoundFont(composite.Bank);
                 synth.SetTrackPatchMap(composite.TrackPatchMap);
@@ -240,13 +262,8 @@ public sealed class PlayerService : IDisposable
                 _masterRack.Reset();
                 var player = new RealtimePlayer(midi, synth);
                 ApplyInstrumentBindings(req.Instruments, req.Mix, synth, player);
-                // Device routing splits by environment. On PulseAudio/PipeWire, req.DeviceId is a
-                // server sink name: open OwnAudio on the system default (ALSA "default") and move our
-                // own stream to the chosen sink after start (see below). On bare ALSA / Windows / macOS,
-                // req.DeviceId is an OwnAudio device id applied at engine init.
-                bool routeViaPulse = PulseRouting.IsAvailable();
-                string? targetSink = string.IsNullOrEmpty(req.DeviceId) ? null : req.DeviceId;
-                var output = new OwnAudioOutput(SampleRate, channels: 2,
+                // Device + rate were resolved up front (see top of Play). Open at the negotiated rate.
+                var output = new OwnAudioOutput(_sampleRate, channels: 2,
                     outputDeviceId: routeViaPulse ? null : targetSink);
                 // Synth fills the block (per-instrument inserts already applied inside it); any hosted
                 // plugin instruments render their bound channels and sum in; the master rack processes the
@@ -452,6 +469,23 @@ public sealed class PlayerService : IDisposable
         im.ChorusSend = m.ChorusSend;
     }
 
+    // Switch the pipeline's sample rate, rebuilding everything rate-dependent. Called at the top of a
+    // play (before the synth/racks are built) once the device's rate is negotiated. No-op when the rate
+    // is unchanged. The plugin host keeps its discovered-plugin list (rate only affects the Config used
+    // when instances are created); the master rack and the cached per-part insert racks are torn down
+    // and rebuilt at the new rate (their EQ/limiter and plugin instances are rate-dependent). Safe here
+    // because StopLocked has already quiesced the previous play's audio.
+    private void SetSampleRate(int rate)
+    {
+        if (rate == _sampleRate) return;
+        _sampleRate = rate;
+        _pluginHost.SetSampleRate(rate);
+        try { _masterRack.Dispose(); } catch { /* best-effort */ }
+        _masterRack = new EffectRack(rate, _pluginHost);
+        foreach (EffectRack r in _instrumentRacks.Values) { try { r.Dispose(); } catch { } }
+        _instrumentRacks.Clear();
+    }
+
     // Configure the master rack from an ordered effect list (the explicit `effects`, else an
     // [eq, limiter] rack synthesized from the legacy scalar fields for back-compat).
     private void ConfigureMaster(MasterDto? master) => _masterRack.Configure(ResolveEffects(master), master?.MasterGainDb ?? 0);
@@ -512,7 +546,7 @@ public sealed class PlayerService : IDisposable
             keep.Add(part);
             if (!_instrumentRacks.TryGetValue(part, out EffectRack? rack))
             {
-                rack = new EffectRack(SampleRate, _pluginHost);
+                rack = new EffectRack(_sampleRate, _pluginHost);
                 _instrumentRacks[part] = rack;
             }
             rack.Configure(m.Inserts);
@@ -537,7 +571,7 @@ public sealed class PlayerService : IDisposable
             int part = Synthesizer.TrackPart(dto.TrackIndex, dto.Channel);
             if (!_instrumentRacks.TryGetValue(part, out EffectRack? rack))
             {
-                rack = new EffectRack(SampleRate, _pluginHost);
+                rack = new EffectRack(_sampleRate, _pluginHost);
                 _instrumentRacks[part] = rack;
             }
             rack.Configure(dto.Effects);
@@ -620,7 +654,7 @@ public sealed class PlayerService : IDisposable
         // OR once we've rendered the whole piece plus a tail window. The time backstop
         // covers files with stuck notes / infinite-release patches whose voices never go
         // silent, so IsFinished would otherwise hang the monitor forever.
-        var completionFrame = (long)((player.Duration.TotalSeconds + TailSeconds) * SampleRate);
+        var completionFrame = (long)((player.Duration.TotalSeconds + TailSeconds) * _sampleRate);
         try
         {
             while (gen == Volatile.Read(ref _generation)
