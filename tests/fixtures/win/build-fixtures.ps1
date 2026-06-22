@@ -13,3 +13,7 @@ if (-not (Test-Path $clapInc)) { throw "CLAP include path not found: $clapInc. S
 & $clang -shared -O2 -I $clapInc -o (Join-Path $out "midisharp_gui.clap") (Join-Path $root "clap_gui_fixture.c") -luser32
 if ($LASTEXITCODE -ne 0) { throw "clang failed building clap fixture ($LASTEXITCODE)" }
 Write-Host "Built: $(Join-Path $out 'midisharp_gui.clap')"
+
+& $clang -shared -O2 -D_CRT_SECURE_NO_WARNINGS -o (Join-Path $out "midisharp_gain_vst2.dll") (Join-Path $root "vst2_gain_fixture.c") -luser32
+if ($LASTEXITCODE -ne 0) { throw "clang failed building vst2 fixture ($LASTEXITCODE)" }
+Write-Host "Built: $(Join-Path $out 'midisharp_gain_vst2.dll')"
