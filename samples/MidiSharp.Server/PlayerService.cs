@@ -120,10 +120,15 @@ public sealed class PlayerService : IDisposable
     private string? _soundfontName;
     private int _generation;   // bumped on every start/stop so stale completion monitors no-op
 
+    // On PulseAudio/PipeWire, the meaningful output picker is the server's sinks (friendly names,
+    // per-sink routable via move-sink-input). On bare ALSA / Windows / macOS there is no such
+    // server, so fall back to OwnAudio's own device enumeration (selected via SetOutputDeviceByName).
     public IReadOnlyList<DeviceDto> GetDevices() =>
-        OwnAudioOutput.GetOutputDevices()
-            .Select(d => new DeviceDto(d.Id, d.Name, d.EngineName, d.IsDefault))
-            .ToList();
+        PulseRouting.IsAvailable()
+            ? PulseRouting.GetSinks()
+            : OwnAudioOutput.GetOutputDevices()
+                .Select(d => new DeviceDto(d.Id, d.Name, d.EngineName, d.IsDefault))
+                .ToList();
 
     /// <summary>
     /// The patches a song actually uses, named against <paramref name="soundfontPath"/> — i.e.
@@ -235,8 +240,14 @@ public sealed class PlayerService : IDisposable
                 _masterRack.Reset();
                 var player = new RealtimePlayer(midi, synth);
                 ApplyInstrumentBindings(req.Instruments, req.Mix, synth, player);
+                // Device routing splits by environment. On PulseAudio/PipeWire, req.DeviceId is a
+                // server sink name: open OwnAudio on the system default (ALSA "default") and move our
+                // own stream to the chosen sink after start (see below). On bare ALSA / Windows / macOS,
+                // req.DeviceId is an OwnAudio device id applied at engine init.
+                bool routeViaPulse = PulseRouting.IsAvailable();
+                string? targetSink = string.IsNullOrEmpty(req.DeviceId) ? null : req.DeviceId;
                 var output = new OwnAudioOutput(SampleRate, channels: 2,
-                    outputDeviceId: string.IsNullOrEmpty(req.DeviceId) ? null : req.DeviceId);
+                    outputDeviceId: routeViaPulse ? null : targetSink);
                 // Synth fills the block (per-instrument inserts already applied inside it); any hosted
                 // plugin instruments render their bound channels and sum in; the master rack processes the
                 // summed mix caller-side before output.
@@ -276,6 +287,11 @@ public sealed class PlayerService : IDisposable
                     _masterRack.Process(span);
                 });
                 output.Start();
+
+                // PulseAudio/PipeWire: route our own (uniquely-named) stream onto the requested sink.
+                // Best-effort and off the lock-critical path — failure just leaves it on the default.
+                if (routeViaPulse && targetSink is not null)
+                    _ = Task.Run(() => PulseRouting.MoveOurStreamToSink(targetSink));
 
                 _output = output;
                 _player = player;

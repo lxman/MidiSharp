@@ -29,13 +29,28 @@ public sealed class OwnAudioOutput : IAudioOutput
     private static readonly object s_initLock = new();
     private static int s_initRefCount;
 
-    // On Linux, target JACK: with libportaudio2 present OwnAudio uses the PortAudio
-    // engine and connects as a native JACK client (PipeWire's JACK), running at the
-    // JACK graph rate with no extra resampling. If PortAudio is absent OwnAudio falls
-    // back to MiniAudio, which ignores HostType and uses ALSA — so this stays safe.
-    // Other platforms keep the engine default.
+    // Linux default is HostType.None → PortAudio opens its platform-default host API (ALSA),
+    // i.e. the ALSA "default" PCM, which routes transparently on bare ALSA, PulseAudio, AND
+    // PipeWire, and shows up as a normal sink-input the host can re-route. Forcing JACK was
+    // wrong on desktops: PortAudio-JACK enumerates JACK *clients* (e.g. "GNOME Settings") as
+    // "devices" and can't target a sink — output just follows the default. Pro-audio users who
+    // genuinely want a native JACK client can opt in with MIDISHARP_AUDIO_JACK=1. (MiniAudio
+    // ignores HostType entirely; non-Linux platforms get None → WASAPI / CoreAudio.)
     private static readonly EngineHostType DefaultHostType =
-        OperatingSystem.IsLinux() ? EngineHostType.JACK : EngineHostType.None;
+        OperatingSystem.IsLinux() && Environment.GetEnvironmentVariable("MIDISHARP_AUDIO_JACK") == "1"
+            ? EngineHostType.JACK
+            : EngineHostType.None;
+
+    private const string PipeWireAlsaEnvVar = "PIPEWIRE_ALSA";
+
+    /// <summary>
+    /// PipeWire <c>node.name</c> given to our Linux playback stream. A host can locate exactly this
+    /// stream (e.g. to route it to a chosen sink) via <c>pactl list sink-inputs</c>. Linux only.
+    /// </summary>
+    public const string LinuxPipeWireNodeName = "MidiSharp-Player";
+
+    /// <summary>PipeWire <c>application.name</c> for our Linux playback stream (shown in mixers).</summary>
+    public const string LinuxPipeWireAppName = "MidiSharp";
 
     /// <inheritdoc />
     public int SampleRate => _sampleRate;
@@ -54,7 +69,8 @@ public sealed class OwnAudioOutput : IAudioOutput
     /// <param name="bufferSizeFrames">Audio engine buffer size in frames; smaller = lower latency.</param>
     /// <param name="outputDeviceId">
     /// Output device id from <see cref="GetOutputDevices"/> (an <c>AudioDeviceInfo.DeviceId</c>),
-    /// or null for the system default. Applied via <c>AudioConfig.OutputDeviceId</c> at engine init.
+    /// or null for the system default. Applied via <c>SetOutputDeviceByName</c> after engine init
+    /// and before start (OwnAudio ignores <c>AudioConfig.OutputDeviceId</c> at Initialize).
     /// </param>
     public OwnAudioOutput(int sampleRate = 44100, int channels = 2, int bufferSizeFrames = 1024, string? outputDeviceId = null)
     {
@@ -170,6 +186,20 @@ public sealed class OwnAudioOutput : IAudioOutput
         {
             if (s_initRefCount++ > 0) return;
 
+            // Linux/PipeWire (and the PipeWire ALSA plugin): give our playback stream a stable,
+            // app-identifiable name BEFORE the engine opens the PCM. This makes the stream show as
+            // "MidiSharp" in mixers (not "dotnet"), gives it its own module-stream-restore entry,
+            // and lets a host (e.g. MidiSharp.Server) find and route exactly this stream. We set the
+            // REAL C environment via libc setenv — Environment.SetEnvironmentVariable updates only the
+            // CLR's view and the native ALSA plugin's getenv would never see it. We don't override a
+            // value the user already supplied.
+            if (OperatingSystem.IsLinux() &&
+                string.IsNullOrEmpty(Environment.GetEnvironmentVariable(PipeWireAlsaEnvVar)))
+            {
+                LibcEnv.TrySetEnv(PipeWireAlsaEnvVar,
+                    $"{{ \"node.name\": \"{LinuxPipeWireNodeName}\", \"application.name\": \"{LinuxPipeWireAppName}\" }}");
+            }
+
             var config = new AudioConfig
             {
                 SampleRate = sampleRate,
@@ -179,7 +209,54 @@ public sealed class OwnAudioOutput : IAudioOutput
                 OutputDeviceId = outputDeviceId,   // null = system default
             };
             OwnaudioNet.Initialize(config);
+
+            // OwnAudio 3.1.3 does NOT honor AudioConfig.OutputDeviceId at Initialize() on either
+            // the PortAudio or MiniAudio backend (the device-id resolution lives only in the
+            // device-switch path, not the initial open). The device only takes effect via
+            // SetOutputDeviceByName/ByIndex, which must run AFTER Initialize and BEFORE the engine
+            // Start (it refuses while the stream is running). Resolve the requested id to a device
+            // name and apply it here; on failure we fall back to the system default.
+            if (!string.IsNullOrEmpty(outputDeviceId))
+                ApplyOutputDevice(outputDeviceId);
+
             OwnaudioNet.Start();
+        }
+    }
+
+    // Sets a variable in the real C environment so native code (the PipeWire ALSA plugin) sees it
+    // via getenv. .NET's Environment.SetEnvironmentVariable only updates the managed view and would
+    // not be visible to the native plugin. Linux only; best-effort.
+    private static class LibcEnv
+    {
+        [System.Runtime.InteropServices.DllImport("libc", SetLastError = true)]
+        private static extern int setenv(string name, string value, int overwrite);
+
+        public static void TrySetEnv(string name, string value)
+        {
+            try { setenv(name, value, 1); } catch { /* non-Linux / no libc → no-op */ }
+        }
+    }
+
+    // Resolve a DeviceId (as returned by GetOutputDevices) to its device name and select it on
+    // the live engine. Must be called after Initialize and before the engine Start. Best-effort:
+    // if the id no longer matches an enumerated device, or the engine rejects it, we leave the
+    // engine on its default device rather than fail the whole playback.
+    private static void ApplyOutputDevice(string outputDeviceId)
+    {
+        try
+        {
+            var engine = OwnaudioNet.Engine;
+            if (engine is null) return;
+            foreach (var d in engine.UnderlyingEngine.GetOutputDevices())
+            {
+                if (d.DeviceId != outputDeviceId) continue;
+                engine.SetOutputDeviceByName(d.Name);
+                return;
+            }
+        }
+        catch
+        {
+            // Best-effort device selection — fall back to the system default.
         }
     }
 
