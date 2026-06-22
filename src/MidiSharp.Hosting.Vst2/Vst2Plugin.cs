@@ -157,7 +157,7 @@ public sealed unsafe class Vst2Plugin : IHostedPlugin, IPluginGui
     bool IPluginGui.HasEditor => (_eff->Flags & FlagsHasEditor) != 0;
 
     bool IPluginGui.IsApiSupported(string windowApi, bool floating)
-        => (_eff->Flags & FlagsHasEditor) != 0 && windowApi is "x11" or "win32";   // X11 on Linux, HWND on Windows
+        => (_eff->Flags & FlagsHasEditor) != 0 && windowApi is "x11" or "win32" or "cocoa";   // X11 / HWND / NSView
 
     bool IPluginGui.Create(string windowApi, bool floating) => (_eff->Flags & FlagsHasEditor) != 0;
     bool IPluginGui.SetScale(double scale) => true;
@@ -174,8 +174,8 @@ public sealed unsafe class Vst2Plugin : IHostedPlugin, IPluginGui
 
     bool IPluginGui.SetParent(string windowApi, ulong windowHandle)
     {
-        if ((_eff->Flags & FlagsHasEditor) == 0 || windowApi is not ("x11" or "win32")) return false;
-        _eff->Dispatcher(_eff, EffEditOpen, 0, IntPtr.Zero, (void*)(nuint)windowHandle, 0);   // ptr = parent HWND on Windows
+        if ((_eff->Flags & FlagsHasEditor) == 0 || windowApi is not ("x11" or "win32" or "cocoa")) return false;
+        _eff->Dispatcher(_eff, EffEditOpen, 0, IntPtr.Zero, (void*)(nuint)windowHandle, 0);   // ptr = parent HWND (Windows) / NSView* (macOS)
         _editorOpen = true;
         return true;
     }
