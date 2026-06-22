@@ -118,31 +118,27 @@ public sealed class ClapLiveTests
     [Fact]
     public void Loads_a_clap_effect_and_applies_its_parameter()
     {
-        var found = ScanAll();
-        Assert.SkipWhen(found.Length == 0, "No CLAP plugins on the search path — install one to run this.");
+        // Target the known gain fixture by id. Loading an ARBITRARY real plugin in-process is unsafe — it
+        // can hang or segfault on load/teardown (that robustness is the out-of-process sandbox's job; see
+        // Loads_a_specific_real_clap_effect_and_processes_audio). The fixture's [0..2] linear gain is also
+        // what the ratio math below assumes.
+        var desc = ScanAll().FirstOrDefault(p => p.Id.Equals("midisharp.test.gain", StringComparison.OrdinalIgnoreCase));
+        Assert.SkipWhen(desc == null, "gain fixture (midisharp.test.gain) not installed.");
 
-        // Prefer the gain test fixture; else the first non-instrument plugin that loads as stereo.
-        var ordered = found.OrderByDescending(p => p.Id.Contains("gain", StringComparison.OrdinalIgnoreCase))
-                           .ThenBy(p => p.IsInstrument);
-        IHostedPlugin? plugin = null;
-        foreach (var desc in ordered)
-        {
-            try { plugin = _format.Load(desc, Config); break; }
-            catch (NotSupportedException) { /* non-stereo main port — try next */ }
-        }
-        Assert.SkipWhen(plugin == null, "No stereo-compatible CLAP effect found.");
+        IHostedPlugin plugin;
+        try { plugin = _format.Load(desc!, Config); }
+        catch (NotSupportedException) { Assert.Skip("gain fixture is not a stereo effect."); return; }
 
-        using var effect = new HostedEffect(plugin!, Config);
-        _out.WriteLine($"Loaded: {plugin!.Descriptor.Name}");
-        foreach (var par in plugin.Parameters)
-            _out.WriteLine($"  [{par.Index}] {par.Name} [{par.MinValue:0.###}..{par.MaxValue:0.###}] def {par.DefaultValue:0.###}");
+        using var effect = new HostedEffect(plugin, Config);
+        var gain = plugin.Parameters.FirstOrDefault(p => p.Name.Contains("gain", StringComparison.OrdinalIgnoreCase));
+        Assert.SkipWhen(gain == null, "gain fixture exposes no gain parameter.");
 
         const double amp = 0.4;
         var inputRms = amp / Math.Sqrt(2);
 
-        double RenderRms(int? paramIndex, double normalized)
+        double RenderRms(double normalized)
         {
-            if (paramIndex is { } pi) plugin.SetParameter(pi, normalized);
+            plugin.SetParameter(gain!.Index, normalized);
             effect.Reset();
             double sumSq = 0; long n = 0; var phase = 0.0;
             var buf = new float[Block * 2];
@@ -160,29 +156,9 @@ public sealed class ClapLiveTests
             return Math.Sqrt(sumSq / n);
         }
 
-        // Only assert gain ratios when we're talking to the gain fixture — its [0..2] linear scale is what
-        // the ratio math assumes. Any other real plugin (ChowMultiTool, etc.) may have a "gain" param with
-        // completely different semantics; just prove the audio path runs and every sample stays finite.
-        var isGainFixture = plugin.Descriptor.Id.Equals("midisharp.test.gain", StringComparison.OrdinalIgnoreCase);
-        var gain = isGainFixture
-            ? plugin.Parameters.FirstOrDefault(p => p.Name.Contains("gain", StringComparison.OrdinalIgnoreCase))
-            : null;
-
-        if (gain == null)
-        {
-            // Not the gain fixture (an arbitrary real effect like ChowMultiTool, or one with no gain param)
-            // — don't assume a gain control or non-silence. Just prove the audio path runs and every sample
-            // stays finite (RenderRms asserts float.IsFinite on every sample it renders).
-            var rms = RenderRms(null, 0);
-            _out.WriteLine($"output RMS (no recognizable gain param): {rms:F5}");
-            return;
-        }
-
-        // A gain in [0..2]: normalized 0.5 → ×1 (transparent), 0.25 → ×0.5, 1.0 → ×2. The output level
-        // must track the parameter — end-to-end proof of the param-event path and the process call.
-        var rmsUnity = RenderRms(gain.Index, gain.Normalize(1.0));
-        var rmsHalf = RenderRms(gain.Index, gain.Normalize(0.5));
-        var rmsDouble = RenderRms(gain.Index, gain.Normalize(2.0));
+        var rmsUnity = RenderRms(gain!.Normalize(1.0));
+        var rmsHalf = RenderRms(gain.Normalize(0.5));
+        var rmsDouble = RenderRms(gain.Normalize(2.0));
         _out.WriteLine($"input={inputRms:F5}  unity={rmsUnity:F5}  half={rmsHalf:F5}  double={rmsDouble:F5}");
 
         Assert.True(Math.Abs(rmsUnity - inputRms) < 0.01, $"×1 gain should be transparent (got {rmsUnity:F5}).");
