@@ -160,15 +160,21 @@ public sealed class ClapLiveTests
             return Math.Sqrt(sumSq / n);
         }
 
-        var gain = plugin.Parameters.FirstOrDefault(p => p.Name.Contains("gain", StringComparison.OrdinalIgnoreCase))
-                   ?? plugin.Parameters.FirstOrDefault();
+        // Only assert gain ratios when we're talking to the gain fixture — its [0..2] linear scale is what
+        // the ratio math assumes. Any other real plugin (ChowMultiTool, etc.) may have a "gain" param with
+        // completely different semantics; just prove the audio path runs and every sample stays finite.
+        var isGainFixture = plugin.Descriptor.Id.Equals("midisharp.test.gain", StringComparison.OrdinalIgnoreCase);
+        var gain = isGainFixture
+            ? plugin.Parameters.FirstOrDefault(p => p.Name.Contains("gain", StringComparison.OrdinalIgnoreCase))
+            : null;
 
         if (gain == null)
         {
-            // No parameters — at least prove the audio path runs and produces finite, non-silent output.
+            // Not the gain fixture (an arbitrary real effect like ChowMultiTool, or one with no gain param)
+            // — don't assume a gain control or non-silence. Just prove the audio path runs and every sample
+            // stays finite (RenderRms asserts float.IsFinite on every sample it renders).
             var rms = RenderRms(null, 0);
-            _out.WriteLine($"output RMS (no params): {rms:F5}");
-            Assert.True(rms > 0, "Expected non-silent output.");
+            _out.WriteLine($"output RMS (no recognizable gain param): {rms:F5}");
             return;
         }
 
