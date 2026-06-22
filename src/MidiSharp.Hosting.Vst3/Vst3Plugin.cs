@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
-using MidiSharp.Hosting;
 using static MidiSharp.Hosting.Vst3.Vst3Abi;
 
 namespace MidiSharp.Hosting.Vst3;
@@ -91,7 +90,7 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
             if (Ok(Comp->GetBusInfo(_component, 0, 1, 0, &bus)) && bus.ChannelCount is 1 or 2)
                 _outputChannels = bus.ChannelCount;
         }
-        var eventInputs = Comp->GetBusCount(_component, 1, 0);   // kEvent, kInput
+        int eventInputs = Comp->GetBusCount(_component, 1, 0);   // kEvent, kInput
 
         // Activate every bus on the main media types, then go active and start processing.
         for (var i = 0; i < _audioInputs; i++) Comp->ActivateBus(_component, 0, 0, i, 1);
@@ -133,7 +132,7 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
             }
 
         if (_factory == null) return;
-        var cid = stackalloc byte[16];
+        byte* cid = stackalloc byte[16];
         if (!Ok(Comp->GetControllerClassId(_component, cid))) return;
 
         var fac = (FactoryVtbl*)*(void**)_factory;
@@ -172,10 +171,10 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
     // parameter cache reflects the processor. Best-effort: a component that writes no state is fine.
     private void SyncControllerToComponentState()
     {
-        using var stream = Vst3BStream.ForWrite();
+        using Vst3BStream stream = Vst3BStream.ForWrite();
         if (Ok(Comp->GetState(_component, stream.Pointer)))
         {
-            using var read = Vst3BStream.ForRead(stream.ToArray());
+            using Vst3BStream read = Vst3BStream.ForRead(stream.ToArray());
             Ctrl->SetComponentState(_controller, read.Pointer);
         }
     }
@@ -201,7 +200,7 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
         // Parameter changes are block-granular for a host driving setParamNormalized; note events go to the
         // instrument's event list (sample-accurate via the event's sampleOffset).
         _eventList?.Clear();
-        foreach (var e in events)
+        foreach (HostEvent e in events)
         {
             if (e.Kind == HostEventKind.Param)
             {
@@ -210,8 +209,8 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
             }
             else if (_eventList != null && e.Kind == HostEventKind.Midi)
             {
-                var status = e.Status & 0xF0;
-                var channel = e.Status & 0x0F;
+                int status = e.Status & 0xF0;
+                int channel = e.Status & 0x0F;
                 if (status == 0x90 && e.Data2 > 0) _eventList.AddNoteOn(e.SampleOffset, channel, e.Data1, e.Data2);
                 else if (status == 0x80 || (status == 0x90 && e.Data2 == 0)) _eventList.AddNoteOff(e.SampleOffset, channel, e.Data1, e.Data2);
             }
@@ -230,15 +229,15 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
     public double GetParameter(int index)
     {
         if (_controller == null || (uint)index >= (uint)_parameters.Count) return 0;
-        var id = _paramIds[index];
+        uint id = _paramIds[index];
         return OnUiThread(() => Ctrl->GetParamNormalized(_controller, id));
     }
 
     public void SetParameter(int index, double normalized)
     {
         if (_controller == null || (uint)index >= (uint)_parameters.Count) return;
-        var id = _paramIds[index];
-        var v = Math.Clamp(normalized, 0, 1);
+        uint id = _paramIds[index];
+        double v = Math.Clamp(normalized, 0, 1);
         OnUiThread(() => { Ctrl->SetParamNormalized(_controller, id, v); return 0.0; });
     }
 
@@ -247,7 +246,7 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
     // directly. Bounded wait so a wedged editor can't hang a param request.
     private double OnUiThread(Func<double> fn)
     {
-        var loop = _editorLoop;
+        IEditorRunLoop? loop = _editorLoop;
         if (loop == null) return fn();
         double result = 0;
         using var done = new System.Threading.ManualResetEventSlim(false);
@@ -262,14 +261,14 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
     // blob is length-prefixed [compLen][comp][ctrlLen][ctrl] so either half may be empty.
     public byte[] SaveState()
     {
-        using var comp = Vst3BStream.ForWrite();
+        using Vst3BStream comp = Vst3BStream.ForWrite();
         Comp->GetState(_component, comp.Pointer);
-        var compBytes = comp.ToArray();
+        byte[] compBytes = comp.ToArray();
 
-        var ctrlBytes = Array.Empty<byte>();
+        byte[] ctrlBytes = Array.Empty<byte>();
         if (_controllerSeparate)
         {
-            using var ctrl = Vst3BStream.ForWrite();
+            using Vst3BStream ctrl = Vst3BStream.ForWrite();
             if (Ok(Ctrl->GetState(_controller, ctrl.Pointer))) ctrlBytes = ctrl.ToArray();
         }
 
@@ -286,14 +285,14 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
         if (state.Length < 8) return;
         var compLen = BitConverter.ToInt32(state[..4]);
         if (compLen < 0 || 4 + compLen + 4 > state.Length) return;
-        var compBytes = state.Slice(4, compLen);
+        ReadOnlySpan<byte> compBytes = state.Slice(4, compLen);
         var ctrlLen = BitConverter.ToInt32(state.Slice(4 + compLen, 4));
-        var ctrlBytes = ctrlLen > 0 && 8 + compLen + ctrlLen <= state.Length
+        ReadOnlySpan<byte> ctrlBytes = ctrlLen > 0 && 8 + compLen + ctrlLen <= state.Length
             ? state.Slice(8 + compLen, ctrlLen) : ReadOnlySpan<byte>.Empty;
 
         if (compLen > 0)
         {
-            using var comp = Vst3BStream.ForRead(compBytes);
+            using Vst3BStream comp = Vst3BStream.ForRead(compBytes);
             Comp->SetState(_component, comp.Pointer);
             if (_controllerSeparate)
             {
@@ -303,7 +302,7 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
         }
         if (_controllerSeparate && !ctrlBytes.IsEmpty)
         {
-            using var ctrl = Vst3BStream.ForRead(ctrlBytes);
+            using Vst3BStream ctrl = Vst3BStream.ForRead(ctrlBytes);
             Ctrl->SetState(_controller, ctrl.Pointer);
         }
     }
@@ -344,7 +343,7 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
     bool IPluginGui.IsApiSupported(string windowApi, bool floating)
     {
         EnsureView();
-        var platformType = PlatformTypeFor(windowApi);
+        string? platformType = PlatformTypeFor(windowApi);
         if (_view == null || platformType == null) return false;
         Span<byte> t = stackalloc byte[20];
         AsciiZ(platformType, t);
@@ -374,7 +373,7 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
 
     bool IPluginGui.SetParent(string windowApi, ulong windowHandle)
     {
-        var platformType = PlatformTypeFor(windowApi);
+        string? platformType = PlatformTypeFor(windowApi);
         if (_view == null || platformType == null) return false;
         Span<byte> t = stackalloc byte[20];
         AsciiZ(platformType, t);
@@ -392,7 +391,7 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
 
     private static void AsciiZ(string s, Span<byte> dst)
     {
-        var n = Math.Min(s.Length, dst.Length - 1);
+        int n = Math.Min(s.Length, dst.Length - 1);
         for (var i = 0; i < n; i++) dst[i] = (byte)s[i];
         dst[n] = 0;
     }
@@ -414,12 +413,12 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
 
     private void BuildParameters()
     {
-        var count = Ctrl->GetParameterCount(_controller);
+        int count = Ctrl->GetParameterCount(_controller);
         for (var i = 0; i < count; i++)
         {
             ParameterInfo info;
             if (!Ok(Ctrl->GetParameterInfo(_controller, i, &info))) continue;
-            var name = Utf16(info.Title, 128);
+            string name = Utf16(info.Title, 128);
             _parameters.Add(new PluginParameter(_paramIds.Count, string.IsNullOrEmpty(name) ? $"Param {i + 1}" : name,
                 label: "", minValue: 0, maxValue: 1, defaultValue: info.DefaultNormalizedValue));
             _paramIds.Add(info.Id);
@@ -432,7 +431,7 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
     // Call FUnknown::release (vtable slot 2) on any interface pointer.
     private static uint Release(void* obj)
     {
-        var vtbl = *(IntPtr**)obj;
+        IntPtr* vtbl = *(IntPtr**)obj;
         return ((delegate* unmanaged[Cdecl]<void*, uint>)vtbl[2])(obj);
     }
 }

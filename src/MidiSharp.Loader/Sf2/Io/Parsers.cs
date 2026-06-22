@@ -8,12 +8,12 @@ internal static class Parsers
 {
     public static PresetHeaderRecord[] ParsePhdr(ReadOnlyMemory<byte> chunk)
     {
-        var span = chunk.Span;
-        var count = span.Length / 38;
+        ReadOnlySpan<byte> span = chunk.Span;
+        int count = span.Length / 38;
         var result = new PresetHeaderRecord[count];
         for (var i = 0; i < count; i++)
         {
-            var o = i * 38;
+            int o = i * 38;
             result[i] = new PresetHeaderRecord
             {
                 Name = BinaryHelpers.ReadFixedAscii(span, o, 20),
@@ -30,12 +30,12 @@ internal static class Parsers
 
     public static BagRecord[] ParseBag(ReadOnlyMemory<byte> chunk)
     {
-        var span = chunk.Span;
-        var count = span.Length / 4;
+        ReadOnlySpan<byte> span = chunk.Span;
+        int count = span.Length / 4;
         var result = new BagRecord[count];
         for (var i = 0; i < count; i++)
         {
-            var o = i * 4;
+            int o = i * 4;
             result[i] = new BagRecord
             {
                 GenIndex = BinaryHelpers.ReadUInt16LE(span, o),
@@ -47,12 +47,12 @@ internal static class Parsers
 
     public static Modulator[] ParseMod(ReadOnlyMemory<byte> chunk)
     {
-        var span = chunk.Span;
-        var count = span.Length / 10;
+        ReadOnlySpan<byte> span = chunk.Span;
+        int count = span.Length / 10;
         var result = new Modulator[count];
         for (var i = 0; i < count; i++)
         {
-            var o = i * 10;
+            int o = i * 10;
             result[i] = new Modulator
             {
                 SourceOperator = BinaryHelpers.ReadUInt16LE(span, o),
@@ -67,12 +67,12 @@ internal static class Parsers
 
     public static Generator[] ParseGen(ReadOnlyMemory<byte> chunk)
     {
-        var span = chunk.Span;
-        var count = span.Length / 4;
+        ReadOnlySpan<byte> span = chunk.Span;
+        int count = span.Length / 4;
         var result = new Generator[count];
         for (var i = 0; i < count; i++)
         {
-            var o = i * 4;
+            int o = i * 4;
             result[i] = new Generator(
                 (SFGenerator)BinaryHelpers.ReadUInt16LE(span, o),
                 new GeneratorAmount(BinaryHelpers.ReadUInt16LE(span, o + 2)));
@@ -82,12 +82,12 @@ internal static class Parsers
 
     public static InstrumentRecord[] ParseInst(ReadOnlyMemory<byte> chunk)
     {
-        var span = chunk.Span;
-        var count = span.Length / 22;
+        ReadOnlySpan<byte> span = chunk.Span;
+        int count = span.Length / 22;
         var result = new InstrumentRecord[count];
         for (var i = 0; i < count; i++)
         {
-            var o = i * 22;
+            int o = i * 22;
             result[i] = new InstrumentRecord
             {
                 Name = BinaryHelpers.ReadFixedAscii(span, o, 20),
@@ -99,12 +99,12 @@ internal static class Parsers
 
     public static SampleHeader[] ParseShdr(ReadOnlyMemory<byte> chunk)
     {
-        var span = chunk.Span;
-        var count = span.Length / 46;
+        ReadOnlySpan<byte> span = chunk.Span;
+        int count = span.Length / 46;
         var result = new SampleHeader[count];
         for (var i = 0; i < count; i++)
         {
-            var o = i * 46;
+            int o = i * 46;
             result[i] = new SampleHeader
             {
                 Name = BinaryHelpers.ReadFixedAscii(span, o, 20),

@@ -31,13 +31,13 @@ public sealed class PluginRegistry
     /// </summary>
     public void Rescan(IEnumerable<string>? extraPaths = null)
     {
-        var extra = extraPaths?.ToArray() ?? [];
+        string[] extra = extraPaths?.ToArray() ?? [];
         _plugins.Clear();
-        foreach (var format in _formats)
+        foreach (IPluginFormat format in _formats)
         {
             try
             {
-                var paths = format.DefaultSearchPaths.Concat(extra);
+                IEnumerable<string> paths = format.DefaultSearchPaths.Concat(extra);
                 _plugins.AddRange(format.Scan(paths));
             }
             catch
@@ -50,8 +50,8 @@ public sealed class PluginRegistry
     /// <summary>Load a descriptor with the format that produced it.</summary>
     public IHostedPlugin Load(PluginDescriptor descriptor, AudioConfig config)
     {
-        var format = _formats.FirstOrDefault(f => f.Name == descriptor.Format)
-                     ?? throw new KeyNotFoundException($"No registered format named '{descriptor.Format}'.");
+        IPluginFormat format = _formats.FirstOrDefault(f => f.Name == descriptor.Format)
+                               ?? throw new KeyNotFoundException($"No registered format named '{descriptor.Format}'.");
         return format.Load(descriptor, config);
     }
 }

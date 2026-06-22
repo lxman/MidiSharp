@@ -27,7 +27,7 @@ internal sealed class ConcatenatedSampleSource : ISampleSource
         _sources = sources.ToArray();
 
         var total = 0;
-        foreach (var s in _sources) total += s.Count;
+        foreach (ISampleSource s in _sources) total += s.Count;
         _count = total;
 
         _sourceOf = new int[total];
@@ -37,13 +37,13 @@ internal sealed class ConcatenatedSampleSource : ISampleSource
         var offset = 0;
         for (var si = 0; si < _sources.Length; si++)
         {
-            var src = _sources[si];
+            ISampleSource src = _sources[si];
             for (var li = 0; li < src.Count; li++)
             {
-                var gid = offset + li;
+                int gid = offset + li;
                 _sourceOf[gid] = si;
                 _localOf[gid] = li;
-                var md = src.Metadata(li);
+                SampleMetadata md = src.Metadata(li);
                 _metadata[gid] = md.StereoLinkSampleId is { } link ? Rebase(md, link + offset) : md;
             }
             offset += src.Count;

@@ -27,11 +27,11 @@ internal sealed class PresetExtractor(SoundFont sf, SdtaChunkReader sdta)
 
         // Find which instruments this preset references.
         var instRefs = new HashSet<int>();
-        foreach (var z in preset.Zones)
+        foreach (Zone? z in preset.Zones)
             if (z.InstrumentIndex >= 0) instRefs.Add(z.InstrumentIndex);
 
         // Build inst/ibag/igen/imod/shdr/smpl chunks by walking each referenced instrument.
-        foreach (var instrument in sf.Instruments)
+        foreach (Instrument? instrument in sf.Instruments)
         {
             if (!instRefs.Contains(instrument.Index)) continue;
 
@@ -43,14 +43,14 @@ internal sealed class PresetExtractor(SoundFont sf, SdtaChunkReader sdta)
 
             // Dedupe & emit samples referenced by this instrument.
             var samplesReferenced = new List<ExcisedSample>();
-            foreach (var z in instrument.Zones)
+            foreach (Zone? z in instrument.Zones)
             {
                 if (z.Sample is null) continue;
-                var newHeader = CloneAndRebaseHeader(z.Sample);
+                SampleHeader newHeader = CloneAndRebaseHeader(z.Sample);
 
                 // Try to find a previously emitted identical sample.
                 ExcisedSample? match = null;
-                foreach (var es in samplesReferenced)
+                foreach (ExcisedSample? es in samplesReferenced)
                 {
                     if (HeadersEquivalent(newHeader, es.Header))
                     {
@@ -64,17 +64,17 @@ internal sealed class PresetExtractor(SoundFont sf, SdtaChunkReader sdta)
                     continue;
                 }
 
-                var raw = sdta.GetRawBytes(z.Sample.Start, z.Sample.End).ToArray();
+                byte[]? raw = sdta.GetRawBytes(z.Sample.Start, z.Sample.End).ToArray();
 
                 if (raw.Length == 0) return [];
 
                 // Pad with trailing zeros so there are at least 93 bytes of silence after the loop end.
                 var zeroCount = 0;
-                var idx = raw.Length - 1;
+                int idx = raw.Length - 1;
                 while (idx >= 0 && raw[idx] == 0) { zeroCount++; idx--; }
                 if (zeroCount < 93)
                 {
-                    var extra = 93 - zeroCount;
+                    int extra = 93 - zeroCount;
                     Array.Resize(ref raw, raw.Length + extra);
                 }
 
@@ -93,7 +93,7 @@ internal sealed class PresetExtractor(SoundFont sf, SdtaChunkReader sdta)
             }
 
             // Append sample data, rebase headers to their new positions in smpl, write shdr entries.
-            foreach (var es in samplesReferenced)
+            foreach (ExcisedSample? es in samplesReferenced)
             {
                 var offset = (uint)(smpl.Length / 2);
                 smpl.Write(es.Data, 0, es.Data.Length);
@@ -105,9 +105,9 @@ internal sealed class PresetExtractor(SoundFont sf, SdtaChunkReader sdta)
                 // Stereo link fix-up: try to find the linked partner among samples we just wrote.
                 if (IsStereo(es.Header.SampleType))
                 {
-                    var originalLink = es.Header.SampleLink;
+                    ushort originalLink = es.Header.SampleLink;
                     var foundLink = false;
-                    foreach (var other in samplesReferenced)
+                    foreach (ExcisedSample? other in samplesReferenced)
                     {
                         if (originalLink == other.Header.OriginalIndex)
                         {
@@ -134,7 +134,7 @@ internal sealed class PresetExtractor(SoundFont sf, SdtaChunkReader sdta)
             }
 
             // Emit ibag/igen/imod entries for each zone in the instrument.
-            foreach (var z in instrument.Zones)
+            foreach (Zone? z in instrument.Zones)
             {
                 var bag = new BagRecord
                 {
@@ -149,7 +149,7 @@ internal sealed class PresetExtractor(SoundFont sf, SdtaChunkReader sdta)
                         new GeneratorAmount((ushort)z.ExcisedSample.Header.Index)));
                 }
 
-                var n = Math.Max(z.Generators.Count, z.Modulators.Count);
+                int n = Math.Max(z.Generators.Count, z.Modulators.Count);
                 for (var i = 0; i < n; i++)
                 {
                     if (i < z.Generators.Count)
@@ -173,7 +173,7 @@ internal sealed class PresetExtractor(SoundFont sf, SdtaChunkReader sdta)
 
             // Update preset zone InstrumentIndex values to point at this instrument's new index.
             var newInstIdx = (int)(inst.Length / 22);
-            foreach (var pz in preset.Zones)
+            foreach (Zone? pz in preset.Zones)
                 if (pz.InstrumentIndex == instrument.Index)
                     pz.InstrumentIndex = newInstIdx;
 
@@ -183,21 +183,21 @@ internal sealed class PresetExtractor(SoundFont sf, SdtaChunkReader sdta)
         }
 
         // Now build pgen/pmod/pbag with this preset's zones, re-adding the instrument generator at the end.
-        foreach (var pz in preset.Zones)
+        foreach (Zone? pz in preset.Zones)
         {
             if (pz.InstrumentIndex >= 0)
                 pz.Generators.Add(new Generator(SFGenerator.Instrument,
                     new GeneratorAmount((ushort)pz.InstrumentIndex)));
         }
 
-        foreach (var pz in preset.Zones)
+        foreach (Zone? pz in preset.Zones)
         {
             var bag = new BagRecord
             {
                 GenIndex = (ushort)(pgen.Length / 4),
                 ModIndex = (ushort)(pmod.Length / 10),
             };
-            var n = Math.Max(pz.Generators.Count, pz.Modulators.Count);
+            int n = Math.Max(pz.Generators.Count, pz.Modulators.Count);
             for (var i = 0; i < n; i++)
             {
                 if (i < pz.Generators.Count)
@@ -293,11 +293,11 @@ internal sealed class PresetExtractor(SoundFont sf, SdtaChunkReader sdta)
 
         // Build sdta LIST.
         if ((smpl.Length & 1) != 0) smpl.WriteByte(0);
-        var smplBytes = smpl.ToArray();
-        var sdta1 = WrapList("sdta", [("smpl", smplBytes)]);
+        byte[] smplBytes = smpl.ToArray();
+        byte[] sdta1 = WrapList("sdta", [("smpl", smplBytes)]);
 
         // Build pdta LIST.
-        var pdtaParts = new[]
+        (string, byte[])[] pdtaParts = new[]
         {
             ("phdr", PadEven(phdr.ToArray())),
             ("pbag", PadEven(pbag.ToArray())),
@@ -309,11 +309,11 @@ internal sealed class PresetExtractor(SoundFont sf, SdtaChunkReader sdta)
             ("igen", PadEven(igen.ToArray())),
             ("shdr", PadEven(shdr.ToArray())),
         };
-        var pdta = WrapList("pdta", pdtaParts);
+        byte[] pdta = WrapList("pdta", pdtaParts);
 
         // Build INFO LIST.
-        var infoBody = InfoAssembler.Build(sf.Info, overrideBankName: preset.Name);
-        var info = WrapList("INFO", [(null!, infoBody)], infoBodyRaw: true);
+        byte[] infoBody = InfoAssembler.Build(sf.Info, overrideBankName: preset.Name);
+        byte[] info = WrapList("INFO", [(null!, infoBody)], infoBodyRaw: true);
 
         // Final RIFF/sfbk.
         return BuildRiffSfbk(info, sdta1, pdta);
@@ -373,7 +373,7 @@ internal sealed class PresetExtractor(SoundFont sf, SdtaChunkReader sdta)
         }
         else
         {
-            foreach ((var tag, var body) in children)
+            foreach ((string tag, byte[] body) in children)
             {
                 ms.Write(BinaryHelpers.Ascii.GetBytes(tag), 0, 4);
                 Span<byte> size = stackalloc byte[4];
@@ -383,7 +383,7 @@ internal sealed class PresetExtractor(SoundFont sf, SdtaChunkReader sdta)
                 if ((body.Length & 1) != 0) ms.WriteByte(0);
             }
         }
-        var body2 = ms.ToArray();
+        byte[] body2 = ms.ToArray();
         var outMs = new MemoryStream();
         outMs.Write(BinaryHelpers.Ascii.GetBytes("LIST"), 0, 4);
         Span<byte> sz = stackalloc byte[4];
@@ -396,7 +396,7 @@ internal sealed class PresetExtractor(SoundFont sf, SdtaChunkReader sdta)
 
     private static byte[] BuildRiffSfbk(byte[] info, byte[] sdta, byte[] pdta)
     {
-        var bodyLen = 4 + info.Length + sdta.Length + pdta.Length; // "sfbk" + 3 LIST chunks
+        int bodyLen = 4 + info.Length + sdta.Length + pdta.Length; // "sfbk" + 3 LIST chunks
         var ms = new MemoryStream(bodyLen + 8);
         ms.Write(BinaryHelpers.Ascii.GetBytes("RIFF"), 0, 4);
         Span<byte> sz = stackalloc byte[4];

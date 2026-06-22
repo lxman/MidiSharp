@@ -86,39 +86,39 @@ public sealed class SoundFont
     public static SoundFont Load(ReadOnlyMemory<byte> data)
     {
         var riff = new RiffReader(data);
-        var info = InfoChunkReader.Read(riff.Info);
+        InfoMetadata info = InfoChunkReader.Read(riff.Info);
         var sdta = new SdtaChunkReader(riff.Sdta);
         var pdta = new PdtaChunkReader(riff.Pdta);
 
-        var phdrs = Parsers.ParsePhdr(pdta.Phdr);
-        var pbags = Parsers.ParseBag(pdta.Pbag);
-        var pmods = Parsers.ParseMod(pdta.Pmod);
-        var pgens = Parsers.ParseGen(pdta.Pgen);
-        var insts = Parsers.ParseInst(pdta.Inst);
-        var ibags = Parsers.ParseBag(pdta.Ibag);
-        var imods = Parsers.ParseMod(pdta.Imod);
-        var igens = Parsers.ParseGen(pdta.Igen);
-        var shdrs = Parsers.ParseShdr(pdta.Shdr);
+        PresetHeaderRecord[] phdrs = Parsers.ParsePhdr(pdta.Phdr);
+        BagRecord[] pbags = Parsers.ParseBag(pdta.Pbag);
+        Modulator[] pmods = Parsers.ParseMod(pdta.Pmod);
+        Generator[] pgens = Parsers.ParseGen(pdta.Pgen);
+        InstrumentRecord[] insts = Parsers.ParseInst(pdta.Inst);
+        BagRecord[] ibags = Parsers.ParseBag(pdta.Ibag);
+        Modulator[] imods = Parsers.ParseMod(pdta.Imod);
+        Generator[] igens = Parsers.ParseGen(pdta.Igen);
+        SampleHeader[] shdrs = Parsers.ParseShdr(pdta.Shdr);
 
         ValidatePresets(phdrs, pbags, pgens, pmods);
         ValidateInstruments(insts, ibags, igens, imods);
 
-        var presets = BuildPresets(phdrs, pbags, pgens, pmods);
-        var instruments = BuildInstruments(insts, ibags, igens, imods, shdrs);
+        Preset[] presets = BuildPresets(phdrs, pbags, pgens, pmods);
+        Instrument[] instruments = BuildInstruments(insts, ibags, igens, imods, shdrs);
 
         // Strip terminal EOS sample header.
-        var realSamples = shdrs.Where(s => s.Name != "EOS").ToArray();
+        SampleHeader[] realSamples = shdrs.Where(s => s.Name != "EOS").ToArray();
 
         // Compute EndOfRegion (next sample's start, or end of smpl buffer for the last).
-        var sortedByStart = realSamples.OrderBy(s => s.Start).ToArray();
+        SampleHeader[] sortedByStart = realSamples.OrderBy(s => s.Start).ToArray();
         for (var i = 0; i < sortedByStart.Length - 1; i++)
             sortedByStart[i].EndOfRegion = sortedByStart[i + 1].Start;
         if (sortedByStart.Length > 0)
             sortedByStart[^1].EndOfRegion = (uint)sdta.FrameCount + 1;
 
         // Strip terminal EOP/EOI from public lists.
-        var presetList = presets.Where(p => p.Name != "EOP").ToArray();
-        var instrumentList = instruments.Where(i => i.Name != "EOI").ToArray();
+        Preset[] presetList = presets.Where(p => p.Name != "EOP").ToArray();
+        Instrument[] instrumentList = instruments.Where(i => i.Name != "EOI").ToArray();
 
         return new SoundFont(info, presetList, instrumentList, realSamples, sdta);
     }
@@ -190,7 +190,7 @@ public sealed class SoundFont
         var presets = new Preset[phdrs.Length - 1];
         for (var i = 0; i < phdrs.Length - 1; i++)
         {
-            var ph = phdrs[i];
+            PresetHeaderRecord ph = phdrs[i];
             presets[i] = new Preset
             {
                 Name = ph.Name,
@@ -207,16 +207,16 @@ public sealed class SoundFont
             int bagStart = phdrs[i].BagIndex;
             int bagEnd = phdrs[i + 1].BagIndex;
             var zoneIndex = 0;
-            for (var b = bagStart; b < bagEnd; b++)
+            for (int b = bagStart; b < bagEnd; b++)
             {
                 var zone = new Zone { Index = zoneIndex++ };
                 int genStart = pbags[b].GenIndex;
-                var genEnd = b + 1 < pbags.Length ? pbags[b + 1].GenIndex : pgens.Length;
-                for (var g = genStart; g < genEnd; g++)
+                int genEnd = b + 1 < pbags.Length ? pbags[b + 1].GenIndex : pgens.Length;
+                for (int g = genStart; g < genEnd; g++)
                     zone.Generators.Add(pgens[g]);
                 int modStart = pbags[b].ModIndex;
-                var modEnd = b + 1 < pbags.Length ? pbags[b + 1].ModIndex : pmods.Length;
-                for (var m = modStart; m < modEnd; m++)
+                int modEnd = b + 1 < pbags.Length ? pbags[b + 1].ModIndex : pmods.Length;
+                for (int m = modStart; m < modEnd; m++)
                     zone.Modulators.Add(pmods[m]);
 
                 // Trailing 'instrument' generator becomes the zone's InstrumentIndex.
@@ -243,22 +243,22 @@ public sealed class SoundFont
             int bagStart = insts[i].BagIndex;
             int bagEnd = insts[i + 1].BagIndex;
             var zoneIndex = 0;
-            for (var b = bagStart; b < bagEnd; b++)
+            for (int b = bagStart; b < bagEnd; b++)
             {
                 var zone = new Zone { Index = zoneIndex++ };
                 int genStart = ibags[b].GenIndex;
-                var genEnd = b + 1 < ibags.Length ? ibags[b + 1].GenIndex : igens.Length;
-                for (var g = genStart; g < genEnd; g++)
+                int genEnd = b + 1 < ibags.Length ? ibags[b + 1].GenIndex : igens.Length;
+                for (int g = genStart; g < genEnd; g++)
                     zone.Generators.Add(igens[g]);
                 int modStart = ibags[b].ModIndex;
-                var modEnd = b + 1 < ibags.Length ? ibags[b + 1].ModIndex : imods.Length;
-                for (var m = modStart; m < modEnd; m++)
+                int modEnd = b + 1 < ibags.Length ? ibags[b + 1].ModIndex : imods.Length;
+                for (int m = modStart; m < modEnd; m++)
                     zone.Modulators.Add(imods[m]);
 
                 // Trailing 'sampleID' generator resolves to a SampleHeader.
                 if (zone.Generators.Count > 0 && zone.Generators[^1].Operator == SFGenerator.SampleID)
                 {
-                    var idx = zone.Generators[^1].Amount.Word;
+                    ushort idx = zone.Generators[^1].Amount.Word;
                     if (idx < shdrs.Length)
                     {
                         zone.Sample = shdrs[idx];
@@ -293,9 +293,9 @@ public sealed class SoundFont
     /// <summary>Returns the instrument referenced by a particular preset zone, or null.</summary>
     public Instrument? GetZoneInstrument(int bank, int preset, int zoneIndex)
     {
-        var p = FindPreset(bank, preset);
+        Preset? p = FindPreset(bank, preset);
         if (p is null || zoneIndex >= p.Zones.Count) return null;
-        var instIdx = p.Zones[zoneIndex].InstrumentIndex;
+        int instIdx = p.Zones[zoneIndex].InstrumentIndex;
         return instIdx >= 0 && instIdx < Instruments.Count ? Instruments[instIdx] : null;
     }
 
@@ -306,7 +306,7 @@ public sealed class SoundFont
     /// <summary>True if the zone path resolves to a sample.</summary>
     public bool HasSample(int bank, int preset, int presetZone, int instrumentZone)
     {
-        var inst = GetZoneInstrument(bank, preset, presetZone);
+        Instrument? inst = GetZoneInstrument(bank, preset, presetZone);
         if (inst is null || instrumentZone >= inst.Zones.Count) return false;
         return inst.Zones[instrumentZone].Sample is not null;
     }
@@ -314,9 +314,9 @@ public sealed class SoundFont
     /// <summary>Returns a sample-info view (offsets rebased to zero) for a zone path.</summary>
     public SampleInfo? GetSampleInfo(int bank, int preset, int presetZone, int instrumentZone)
     {
-        var inst = GetZoneInstrument(bank, preset, presetZone);
+        Instrument? inst = GetZoneInstrument(bank, preset, presetZone);
         if (inst is null || instrumentZone >= inst.Zones.Count) return null;
-        var s = inst.Zones[instrumentZone].Sample;
+        SampleHeader? s = inst.Zones[instrumentZone].Sample;
         if (s is null) return null;
         return new SampleInfo
         {
@@ -336,9 +336,9 @@ public sealed class SoundFont
     /// <summary>Returns decoded sample frames (promoted to 24-bit if sm24 is present).</summary>
     public int[] GetSampleData(int bank, int preset, int presetZone, int instrumentZone)
     {
-        var inst = GetZoneInstrument(bank, preset, presetZone);
+        Instrument? inst = GetZoneInstrument(bank, preset, presetZone);
         if (inst is null || instrumentZone >= inst.Zones.Count) return [];
-        var s = inst.Zones[instrumentZone].Sample;
+        SampleHeader? s = inst.Zones[instrumentZone].Sample;
         if (s is null) return [];
         return _sdta.GetSamples(s.Start, s.End);
     }
@@ -346,7 +346,7 @@ public sealed class SoundFont
     /// <summary>Returns the generator list for each zone of the named preset (keyed by zone index).</summary>
     public IReadOnlyDictionary<int, IReadOnlyList<Generator>> GetPresetGenerators(int bank, int preset)
     {
-        var p = FindPreset(bank, preset);
+        Preset? p = FindPreset(bank, preset);
         if (p is null) return new Dictionary<int, IReadOnlyList<Generator>>();
         return p.Zones.ToDictionary(z => z.Index, z => (IReadOnlyList<Generator>)z.Generators);
     }
@@ -354,7 +354,7 @@ public sealed class SoundFont
     /// <summary>Returns the modulator list for each zone of the named preset (keyed by zone index).</summary>
     public IReadOnlyDictionary<int, IReadOnlyList<Modulator>> GetPresetModulators(int bank, int preset)
     {
-        var p = FindPreset(bank, preset);
+        Preset? p = FindPreset(bank, preset);
         if (p is null) return new Dictionary<int, IReadOnlyList<Modulator>>();
         return p.Zones.ToDictionary(z => z.Index, z => (IReadOnlyList<Modulator>)z.Modulators);
     }
@@ -362,7 +362,7 @@ public sealed class SoundFont
     /// <summary>Returns generators per instrument zone for the instrument linked from a preset zone.</summary>
     public IReadOnlyDictionary<int, IReadOnlyList<Generator>> GetInstrumentGenerators(int bank, int preset, int presetZone)
     {
-        var inst = GetZoneInstrument(bank, preset, presetZone);
+        Instrument? inst = GetZoneInstrument(bank, preset, presetZone);
         if (inst is null) return new Dictionary<int, IReadOnlyList<Generator>>();
         return inst.Zones.ToDictionary(z => z.Index, z => (IReadOnlyList<Generator>)z.Generators);
     }
@@ -370,7 +370,7 @@ public sealed class SoundFont
     /// <summary>Returns modulators per instrument zone for the instrument linked from a preset zone.</summary>
     public IReadOnlyDictionary<int, IReadOnlyList<Modulator>> GetInstrumentModulators(int bank, int preset, int presetZone)
     {
-        var inst = GetZoneInstrument(bank, preset, presetZone);
+        Instrument? inst = GetZoneInstrument(bank, preset, presetZone);
         if (inst is null) return new Dictionary<int, IReadOnlyList<Modulator>>();
         return inst.Zones.ToDictionary(z => z.Index, z => (IReadOnlyList<Modulator>)z.Modulators);
     }
@@ -384,7 +384,7 @@ public sealed class SoundFont
     /// </summary>
     public byte[] ExtractPreset(int bank, int preset)
     {
-        var p = FindPreset(bank, preset);
+        Preset? p = FindPreset(bank, preset);
         if (p is null) return [];
         try
         {
@@ -406,11 +406,11 @@ public sealed class SoundFont
     public IReadOnlyList<SampleValidationIssue> ValidateSamples()
     {
         var issues = new List<SampleValidationIssue>();
-        var frameCount = _sdta.FrameCount;
+        int frameCount = _sdta.FrameCount;
 
         for (var i = 0; i < _allSampleHeaders.Length; i++)
         {
-            var s = _allSampleHeaders[i];
+            SampleHeader s = _allSampleHeaders[i];
 
             void Add(SampleValidationCode code, string msg) =>
                 issues.Add(new SampleValidationIssue(i, s.Name, code, msg));
@@ -425,7 +425,7 @@ public sealed class SoundFont
                     Add(SampleValidationCode.SampleExceedsSmpl,
                         $"End={s.End} > smpl frame count {frameCount}");
 
-                var length = s.End - s.Start;
+                uint length = s.End - s.Start;
                 if (length < 48)
                     Add(SampleValidationCode.SampleTooShort,
                         $"length={length} frames (spec minimum is 48)");
@@ -464,7 +464,7 @@ public sealed class SoundFont
                     $"OriginalPitch={s.OriginalPitch} (spec allows 0..127 or 255)");
 
             // --- Stereo linkage ---
-            var isStereo = s.SampleType is SFSampleLink.LeftSample or SFSampleLink.RightSample
+            bool isStereo = s.SampleType is SFSampleLink.LeftSample or SFSampleLink.RightSample
                               or SFSampleLink.RomLeftSample or SFSampleLink.RomRightSample;
             if (isStereo)
             {
@@ -475,8 +475,8 @@ public sealed class SoundFont
                 }
                 else
                 {
-                    var partner = _allSampleHeaders[s.SampleLink];
-                    var expectedPartnerType = s.SampleType switch
+                    SampleHeader partner = _allSampleHeaders[s.SampleLink];
+                    SFSampleLink expectedPartnerType = s.SampleType switch
                     {
                         SFSampleLink.LeftSample => SFSampleLink.RightSample,
                         SFSampleLink.RightSample => SFSampleLink.LeftSample,

@@ -10,7 +10,7 @@ public sealed class ProcessorChainTests
     public void Empty_chain_is_passthrough()
     {
         var chain = new ProcessorChain();
-        var buf = new[] { 0.1f, -0.2f, 0.3f, -0.4f };
+        float[] buf = new[] { 0.1f, -0.2f, 0.3f, -0.4f };
         var copy = (float[])buf.Clone();
         chain.Process(buf);
         Assert.Equal(copy, buf);
@@ -52,7 +52,7 @@ public sealed class ProcessorChainTests
         Assert.All(buf, v => Assert.True(Math.Abs(v - 0.4f) < 1e-4f, $"expected ×4 → ~0.4, got {v}"));
 
         chain.SetAll([]);   // empty → passthrough
-        var b2 = new[] { 0.2f, -0.2f };
+        float[] b2 = new[] { 0.2f, -0.2f };
         var copy = (float[])b2.Clone();
         chain.Process(b2);
         Assert.Equal(copy, b2);

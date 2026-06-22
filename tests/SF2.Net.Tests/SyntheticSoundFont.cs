@@ -78,7 +78,7 @@ internal static class SyntheticSoundFont
         WritePhdr(phdr.AsSpan(38, 38), terminalName, 0, 0, 1, 0, 0, 0);
 
         // ----- Wrap chunks ----
-        var pdta = BuildList("pdta", [
+        byte[] pdta = BuildList("pdta", [
             ("phdr", phdr),
             ("pbag", pbag),
             ("pmod", pmod),
@@ -91,15 +91,15 @@ internal static class SyntheticSoundFont
         ]);
 
         // Optional 24-bit extension (one LS byte per frame), aligned 1:1 with the smpl frames.
-        var sdta = sm24 is { Length: SampleFrames }
+        byte[] sdta = sm24 is { Length: SampleFrames }
             ? BuildList("sdta", [("smpl", smpl), ("sm24", sm24)])
             : BuildList("sdta", [("smpl", smpl)]);
 
         // ----- INFO LIST ----
-        var info = BuildInfoList(bankName);
+        byte[] info = BuildInfoList(bankName);
 
         // ----- RIFF ----
-        var riffBodyLen = 4 + info.Length + sdta.Length + pdta.Length;
+        int riffBodyLen = 4 + info.Length + sdta.Length + pdta.Length;
         var riff = new MemoryStream();
         riff.Write(Encoding.ASCII.GetBytes("RIFF"), 0, 4);
         WriteU32(riff, (uint)riffBodyLen);
@@ -123,7 +123,7 @@ internal static class SyntheticSoundFont
         // INAM
         WriteStringChunk(body, "INAM", bankName);
 
-        var inner = body.ToArray();
+        byte[] inner = body.ToArray();
         var list = new MemoryStream();
         list.Write(Encoding.ASCII.GetBytes("LIST"), 0, 4);
         WriteU32(list, (uint)inner.Length);
@@ -135,8 +135,8 @@ internal static class SyntheticSoundFont
     private static void WriteStringChunk(MemoryStream ms, string tag, string value)
     {
         ms.Write(Encoding.ASCII.GetBytes(tag), 0, 4);
-        var str = Encoding.ASCII.GetBytes(value);
-        var len = str.Length + 1;
+        byte[] str = Encoding.ASCII.GetBytes(value);
+        int len = str.Length + 1;
         if ((len & 1) != 0) len++;
         WriteU32(ms, (uint)len);
         ms.Write(str, 0, str.Length);
@@ -148,14 +148,14 @@ internal static class SyntheticSoundFont
     {
         var body = new MemoryStream();
         body.Write(Encoding.ASCII.GetBytes(formType), 0, 4);
-        foreach (var (tag, data) in children)
+        foreach ((string tag, byte[] data) in children)
         {
             body.Write(Encoding.ASCII.GetBytes(tag), 0, 4);
             WriteU32(body, (uint)data.Length);
             body.Write(data, 0, data.Length);
             if ((data.Length & 1) != 0) body.WriteByte(0);
         }
-        var inner = body.ToArray();
+        byte[] inner = body.ToArray();
         var list = new MemoryStream();
         list.Write(Encoding.ASCII.GetBytes("LIST"), 0, 4);
         WriteU32(list, (uint)inner.Length);
@@ -181,7 +181,7 @@ internal static class SyntheticSoundFont
     private static void WriteFixedAscii(Span<byte> dest, string value)
     {
         dest.Clear();
-        var n = Math.Min(value.Length, dest.Length);
+        int n = Math.Min(value.Length, dest.Length);
         for (var i = 0; i < n; i++) dest[i] = (byte)value[i];
         if (value.Length >= dest.Length) dest[^1] = 0;
     }

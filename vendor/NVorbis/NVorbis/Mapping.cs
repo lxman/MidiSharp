@@ -29,7 +29,7 @@ namespace MidiSharp.Audio.Vorbis
                 couplingSteps = (int)packet.ReadBits(8) + 1;
             }
 
-            var couplingBits = Utils.ilog(channels - 1);
+            int couplingBits = Utils.ilog(channels - 1);
             _couplingAngle = new int[couplingSteps];
             _couplingMangitude = new int[couplingSteps];
             for (var j = 0; j < couplingSteps; j++)
@@ -95,7 +95,7 @@ namespace MidiSharp.Audio.Vorbis
 
         public void DecodePacket(IPacket packet, int blockSize, int channels, float[][] buffer)
         {
-            var halfBlockSize = blockSize >> 1;
+            int halfBlockSize = blockSize >> 1;
 
             // read the noise floor data
             var floorData = new IFloorData[_channelFloor.Length];
@@ -135,20 +135,20 @@ namespace MidiSharp.Audio.Vorbis
             }
 
             // inverse coupling
-            for (var i = _couplingAngle.Length - 1; i >= 0; i--)
+            for (int i = _couplingAngle.Length - 1; i >= 0; i--)
             {
                 if (floorData[_couplingAngle[i]].ExecuteChannel || floorData[_couplingMangitude[i]].ExecuteChannel)
                 {
-                    var magnitude = buffer[_couplingMangitude[i]];
-                    var angle = buffer[_couplingAngle[i]];
+                    float[] magnitude = buffer[_couplingMangitude[i]];
+                    float[] angle = buffer[_couplingAngle[i]];
 
                     // we only have to do the first half; MDCT ignores the last half
                     for (var j = 0; j < halfBlockSize; j++)
                     {
                         float newM, newA;
 
-                        var oldM = magnitude[j];
-                        var oldA = angle[j];
+                        float oldM = magnitude[j];
+                        float oldA = angle[j];
                         if (oldM > 0)
                         {
                             if (oldA > 0)

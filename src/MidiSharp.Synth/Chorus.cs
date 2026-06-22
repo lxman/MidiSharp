@@ -75,7 +75,7 @@ public sealed class Chorus
     {
         for (var i = 0; i < sendMono.Length; i++)
         {
-            var input = sendMono[i];
+            float input = sendMono[i];
 
             // Write input to the delay line.
             _delayBuf[_writeIdx] = input;
@@ -86,22 +86,22 @@ public sealed class Chorus
             for (var v = 0; v < _voiceCount; v++)
             {
                 // Triangle wave from saw via abs() — cheaper than sin() and indistinguishable here.
-                var saw = _voicePhase[v] * 2f - 1f;
-                var tri = 1f - Math.Abs(saw) * 2f;          // -1..+1 triangle
-                var delay = _baseDelaySamples + tri * _depthSamples;
-                var tapPos = _writeIdx - delay;
+                float saw = _voicePhase[v] * 2f - 1f;
+                float tri = 1f - Math.Abs(saw) * 2f;          // -1..+1 triangle
+                float delay = _baseDelaySamples + tri * _depthSamples;
+                float tapPos = _writeIdx - delay;
                 while (tapPos < 0) tapPos += _bufSize;
 
                 var idx0 = (int)tapPos;
-                var frac = tapPos - idx0;
+                float frac = tapPos - idx0;
                 // Defensive: clamp index after the cast. tapPos can equal _bufSize when
                 // the value is a hair above _bufSize-1 due to fp; (int) truncates that
                 // to _bufSize, which is out of bounds. Belt + suspenders.
                 if (idx0 >= _bufSize) idx0 = _bufSize - 1;
                 else if (idx0 < 0) idx0 = 0;
-                var idx1 = idx0 + 1;
+                int idx1 = idx0 + 1;
                 if (idx1 >= _bufSize) idx1 = 0;
-                var s = _delayBuf[idx0] + frac * (_delayBuf[idx1] - _delayBuf[idx0]);
+                float s = _delayBuf[idx0] + frac * (_delayBuf[idx1] - _delayBuf[idx0]);
 
                 // Even voices → L, odd voices → R. (Voices 0 and 2 go L, 1 goes R for 3-voice.)
                 if ((v & 1) == 0) sumL += s;
@@ -112,8 +112,8 @@ public sealed class Chorus
             }
 
             // Compensate so equal-voice distribution doesn't shift the apparent loudness.
-            var scaleL = 2f / _voiceCount;
-            var scaleR = 2f / _voiceCount;
+            float scaleL = 2f / _voiceCount;
+            float scaleR = 2f / _voiceCount;
 
             outL[i] += sumL * scaleL * _level;
             outR[i] += sumR * scaleR * _level;

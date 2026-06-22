@@ -32,7 +32,7 @@ public static class AudioCodecs
     {
         if (data == null) throw new ArgumentNullException(nameof(data));
         var header = new ReadOnlySpan<byte>(data, 0, Math.Min(16, data.Length));
-        foreach (var decoder in Decoders)
+        foreach (IAudioDecoder decoder in Decoders)
             if (decoder.CanDecode(header, pathHint))
                 return decoder.Decode(data);
 
@@ -45,7 +45,7 @@ public static class AudioCodecs
     /// <summary>True if any registered decoder recognizes the file (cheap header sniff).</summary>
     public static bool CanDecode(ReadOnlySpan<byte> header, string? pathHint)
     {
-        foreach (var decoder in Decoders)
+        foreach (IAudioDecoder decoder in Decoders)
             if (decoder.CanDecode(header, pathHint))
                 return true;
         return false;
@@ -62,19 +62,19 @@ public static class AudioCodecs
         if (string.IsNullOrEmpty(path)) throw new ArgumentException("Path must be non-empty", nameof(path));
 
         const int PrefixBytes = 256 * 1024;
-        using var fs = File.OpenRead(path);
-        var fileLen = fs.Length;
+        using FileStream fs = File.OpenRead(path);
+        long fileLen = fs.Length;
         var prefixLen = (int)Math.Min(fileLen, PrefixBytes);
         var prefix = new byte[prefixLen];
         ReadFully(fs, prefix, prefixLen);
 
         var header = new ReadOnlySpan<byte>(prefix, 0, Math.Min(16, prefixLen));
         IAudioDecoder? match = null;
-        foreach (var d in Decoders)
+        foreach (IAudioDecoder d in Decoders)
             if (d.CanDecode(header, path)) { match = d; break; }
         if (match == null) return AudioInfo.None;
 
-        var info = match.Peek(prefix);
+        AudioInfo info = match.Peek(prefix);
         if (info.FrameCount > 0 || prefixLen >= fileLen) return info;   // got it, or already had everything
 
         // Prefix didn't carry the length (e.g. Vorbis) — read the whole file and retry.
@@ -89,7 +89,7 @@ public static class AudioCodecs
         var read = 0;
         while (read < count)
         {
-            var n = s.Read(buf, read, count - read);
+            int n = s.Read(buf, read, count - read);
             if (n <= 0) break;
             read += n;
         }

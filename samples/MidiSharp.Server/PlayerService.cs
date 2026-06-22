@@ -3,6 +3,7 @@ using MidiSharp.Hosting.EditorHost;
 using MidiSharp.Hosting.Sandbox;
 using MidiSharp.IO;
 using MidiSharp.Loader;
+using MidiSharp.Model;
 using MidiSharp.Model.Events;
 using MidiSharp.PatchMap;
 using MidiSharp.Synth;
@@ -71,7 +72,7 @@ public sealed class PlayerService : IDisposable
 
     private readonly IHostApplicationLifetime _lifetime;
     private readonly PluginHost _pluginHost;
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
 
     public PlayerService(IHostApplicationLifetime lifetime)
     {
@@ -131,9 +132,9 @@ public sealed class PlayerService : IDisposable
     /// </summary>
     public IReadOnlyList<UsedPatchDto> GetSongPatches(string midiPath, string soundfontPath)
     {
-        var repair = SmfRepairFilter.Scan(File.ReadAllBytes(midiPath));
-        var midi = MidiFileReader.Read(repair.Data);
-        using var bank = SoundBankLoader.Load(soundfontPath);
+        SmfRepairResult repair = SmfRepairFilter.Scan(File.ReadAllBytes(midiPath));
+        MidiFile midi = MidiFileReader.Read(repair.Data);
+        using IRBank bank = SoundBankLoader.Load(soundfontPath);
         return PatchUsageAnalyzer.Analyze(midi, bank)
             .Select(u => new UsedPatchDto(u.Bank, u.Program, u.BaseName, u.IsDrum, u.Channels.ToArray()))
             .ToList();
@@ -146,9 +147,9 @@ public sealed class PlayerService : IDisposable
     /// </summary>
     public IReadOnlyList<TrackInfoDto> GetSongTracks(string midiPath, string soundfontPath)
     {
-        var repair = SmfRepairFilter.Scan(File.ReadAllBytes(midiPath));
-        var midi = MidiFileReader.Read(repair.Data);
-        using var bank = SoundBankLoader.Load(soundfontPath);
+        SmfRepairResult repair = SmfRepairFilter.Scan(File.ReadAllBytes(midiPath));
+        MidiFile midi = MidiFileReader.Read(repair.Data);
+        using IRBank bank = SoundBankLoader.Load(soundfontPath);
         return TrackUsageAnalyzer.Analyze(midi, bank)
             .Select(t => new TrackInfoDto(t.TrackIndex, t.Name, t.Channels.ToArray(), t.Programs.ToArray(), t.BaseName))
             .ToList();
@@ -163,16 +164,16 @@ public sealed class PlayerService : IDisposable
     /// </summary>
     public IReadOnlyList<PartDto> GetSongParts(string midiPath, string soundfontPath)
     {
-        var repair = SmfRepairFilter.Scan(File.ReadAllBytes(midiPath));
-        var midi = MidiFileReader.Read(repair.Data);
-        using var bank = SoundBankLoader.Load(soundfontPath);
+        SmfRepairResult repair = SmfRepairFilter.Scan(File.ReadAllBytes(midiPath));
+        MidiFile midi = MidiFileReader.Read(repair.Data);
+        using IRBank bank = SoundBankLoader.Load(soundfontPath);
         return PartUsageAnalyzer.Analyze(midi, bank).Select(p =>
         {
-            var nameFromTrack = p.TrackChannelCount == 1 && !string.IsNullOrWhiteSpace(p.TrackName);
-            var name = nameFromTrack ? p.TrackName! : (p.BaseName ?? $"Ch {p.Channel + 1}");
-            var progStr = p.IsDrum ? "kit" : "prog " + string.Join(",", p.Programs);
+            bool nameFromTrack = p.TrackChannelCount == 1 && !string.IsNullOrWhiteSpace(p.TrackName);
+            string name = nameFromTrack ? p.TrackName! : (p.BaseName ?? $"Ch {p.Channel + 1}");
+            string progStr = p.IsDrum ? "kit" : "prog " + string.Join(",", p.Programs);
             // Sub-line: the program info, plus the GM name only when it isn't already the headline.
-            var sound = p.BaseName != null && !string.Equals(p.BaseName, name, StringComparison.Ordinal)
+            string sound = p.BaseName != null && !string.Equals(p.BaseName, name, StringComparison.Ordinal)
                 ? $"{progStr} · {p.BaseName}" : progStr;
             // Every part is independently substitutable now (per-part overrides route one (track,
             // channel) on its own), so the strip's `src` is always available.
@@ -186,8 +187,8 @@ public sealed class PlayerService : IDisposable
     /// </summary>
     public SoundfontCatalogDto GetSoundfontPatches(string path)
     {
-        using var bank = SoundBankLoader.Load(path);
-        var patches = bank.Patches
+        using IRBank bank = SoundBankLoader.Load(path);
+        SoundfontPatchDto[] patches = bank.Patches
             .OrderBy(p => p.Bank).ThenBy(p => p.Program)
             .Select(p => new SoundfontPatchDto(p.Bank, p.Program, p.Name))
             .ToArray();
@@ -207,8 +208,8 @@ public sealed class PlayerService : IDisposable
                     return new PlayResponse(false, 0, [], $"SoundFont not found: {req.SoundfontPath}");
 
                 // Repair → strict read → load base font + override sources → compose → wire up.
-                var repair = SmfRepairFilter.Scan(File.ReadAllBytes(req.MidiPath));
-                var midi = MidiFileReader.Read(repair.Data);
+                SmfRepairResult repair = SmfRepairFilter.Scan(File.ReadAllBytes(req.MidiPath));
+                MidiFile midi = MidiFileReader.Read(repair.Data);
 
                 // The session owns the base font and every override source font for this play.
                 // Assigned to _session immediately so StopLocked disposes it even if a later
@@ -221,7 +222,7 @@ public sealed class PlayerService : IDisposable
                 ApplyPartOverrides(session, req.PartOverrides, sources);
 
                 var synth = new Synthesizer(SampleRate);
-                var composite = session.BuildResolved();
+                CompositeResult composite = session.BuildResolved();
                 synth.LoadSoundFont(composite.Bank);
                 synth.SetTrackPatchMap(composite.TrackPatchMap);
                 synth.SetPartPatchMap(composite.PartPatchMap);
@@ -241,23 +242,23 @@ public sealed class PlayerService : IDisposable
                 // summed mix caller-side before output.
                 output.SetCallback((buffer, frames) =>
                 {
-                    var span = buffer.AsSpan(0, frames * 2);
+                    Span<float> span = buffer.AsSpan(0, frames * 2);
                     player.ProcessBlockInterleaved(span);
                     if (_hostedInstruments.Count > 0)
                     {
-                        var nn = frames * 2;
+                        int nn = frames * 2;
                         if (_instScratch.Length < nn) _instScratch = new float[nn];
-                        var sc = _instScratch.AsSpan(0, nn);
-                        var anySolo = synth.AnySolo;
-                        foreach (var hv in _hostedInstruments)
+                        Span<float> sc = _instScratch.AsSpan(0, nn);
+                        bool anySolo = synth.AnySolo;
+                        foreach (HostedVoice hv in _hostedInstruments)
                         {
                             // Always render (keeps the plugin's clock and event queue advancing) even when
                             // gated to silence, so resuming a mute/solo doesn't skip the plugin's timeline.
                             hv.Inst.Render(sc);
-                            var mix = hv.Mix;
+                            InstrumentMix mix = hv.Mix;
                             // mute/solo gate the whole part; gain/pan trim the summed stereo output.
                             if (mix.Mute || (anySolo && !mix.Solo)) continue;
-                            var insert = hv.Insert;
+                            EffectRack? insert = hv.Insert;
                             if (insert == null)
                             {
                                 StereoTrim.Add(span, sc, mix.GainDb, mix.Pan);   // no insert → trim straight into the mix
@@ -283,7 +284,7 @@ public sealed class PlayerService : IDisposable
                 _midiName = Path.GetFileName(req.MidiPath);
                 _soundfontName = Path.GetFileName(req.SoundfontPath);
 
-                var gen = ++_generation;
+                int gen = ++_generation;
                 _ = Task.Run(() => MonitorCompletionAsync(gen, player));
 
                 return new PlayResponse(true, player.Duration.TotalSeconds,
@@ -305,9 +306,9 @@ public sealed class PlayerService : IDisposable
     {
         if (overrides == null || overrides.Length == 0) return;
 
-        foreach (var o in overrides)
+        foreach (PatchOverrideDto o in overrides)
         {
-            var src = LoadSource(session, byPath, o.SourcePath);
+            IRBank src = LoadSource(session, byPath, o.SourcePath);
             session.SetOverride(o.LogicalBank, o.LogicalProgram, new PatchRef(src, o.SourceBank, o.SourceProgram));
         }
     }
@@ -319,9 +320,9 @@ public sealed class PlayerService : IDisposable
     {
         if (overrides == null || overrides.Length == 0) return;
 
-        foreach (var o in overrides)
+        foreach (TrackOverrideDto o in overrides)
         {
-            var src = LoadSource(session, byPath, o.SourcePath);
+            IRBank src = LoadSource(session, byPath, o.SourcePath);
             session.SetTrackOverride(o.TrackIndex, new PatchRef(src, o.SourceBank, o.SourceProgram));
         }
     }
@@ -334,9 +335,9 @@ public sealed class PlayerService : IDisposable
     {
         if (overrides == null || overrides.Length == 0) return;
 
-        foreach (var o in overrides)
+        foreach (PartOverrideDto o in overrides)
         {
-            var src = LoadSource(session, byPath, o.SourcePath);
+            IRBank src = LoadSource(session, byPath, o.SourcePath);
             session.SetPartOverride(o.TrackIndex, o.Channel, new PatchRef(src, o.SourceBank, o.SourceProgram));
         }
     }
@@ -351,21 +352,21 @@ public sealed class PlayerService : IDisposable
         TrackOverrideDto[]? trackOverrides, PartOverrideDto[]? partOverrides, CompositeResult composite)
     {
         if (overrides != null)
-            foreach (var o in overrides)
+            foreach (PatchOverrideDto o in overrides)
                 if (o.GainDb != 0)
                     synth.GetInstrumentMix(o.LogicalBank, o.LogicalProgram).GainDb = o.GainDb;
 
         if (trackOverrides != null)
-            foreach (var o in trackOverrides)
-                if (o.GainDb != 0 && composite.TrackPatchMap.TryGetValue(o.TrackIndex, out var addr))
+            foreach (TrackOverrideDto o in trackOverrides)
+                if (o.GainDb != 0 && composite.TrackPatchMap.TryGetValue(o.TrackIndex, out (int Bank, int Program) addr))
                     synth.GetInstrumentMix(addr.Bank, addr.Program).GainDb = o.GainDb;
 
         // A part override's gain seeds the part's mixer bucket — the (TrackMixBank, TrackPart) id the
         // voice is actually tagged with — so it lands on the same strip the user sees.
-        if (partOverrides != null)
-            foreach (var o in partOverrides)
-                if (o.GainDb != 0)
-                    synth.GetInstrumentMix(Synthesizer.TrackMixBank, Synthesizer.TrackPart(o.TrackIndex, o.Channel)).GainDb = o.GainDb;
+        if (partOverrides == null) return;
+        foreach (PartOverrideDto o in partOverrides)
+            if (o.GainDb != 0)
+                synth.GetInstrumentMix(Synthesizer.TrackMixBank, Synthesizer.TrackPart(o.TrackIndex, o.Channel)).GainDb = o.GainDb;
     }
 
     // Bind hosted plugin instruments to channels: load each, mute its channel on the synth, and route
@@ -375,26 +376,26 @@ public sealed class PlayerService : IDisposable
         Synthesizer synth, RealtimePlayer player)
     {
         if (bindings == null) return;
-        foreach (var b in bindings)
+        foreach (InstrumentBindingDto b in bindings)
         {
             HostedInstrument inst;
             try { inst = new HostedInstrument(_pluginHost.Load(b.Format, b.Id), _pluginHost.Config); }
             catch { continue; }   // missing/incompatible plugin → leave the channel on the synth
 
-            var channel = b.Channel;
+            int channel = b.Channel;
             // The bind is per-channel (the synth mutes the whole channel); the mixer is per-(track,channel)
             // part. Pair the instrument with the mix strip for its channel — the SAME InstrumentMix
             // instance the synth holds, so a live fader move updates both. No strip → a no-op identity
             // mix, leaving the summed output at unity (bit-identical to before per-part trim existed).
-            var strip = mix?.FirstOrDefault(m => m.Channel == channel);
-            var part = strip != null ? Synthesizer.TrackPart(strip.TrackIndex, channel) : -1;
-            var partMix = strip != null
+            InstrumentMixDto? strip = mix?.FirstOrDefault(m => m.Channel == channel);
+            int part = strip != null ? Synthesizer.TrackPart(strip.TrackIndex, channel) : -1;
+            InstrumentMix partMix = strip != null
                 ? synth.GetInstrumentMix(Synthesizer.TrackMixBank, part)
                 : new InstrumentMix();
             // The part's insert rack (built by ApplyInstrumentInserts, which ran before this) is run on the
             // plugin output in the callback — the synth's copy of this channel is muted, so its bus never
             // would. An empty/absent rack means no insert.
-            var insert = strip != null && _instrumentRacks.TryGetValue(part, out var r) && !r.IsEmpty ? r : null;
+            EffectRack? insert = strip != null && _instrumentRacks.TryGetValue(part, out EffectRack? r) && !r.IsEmpty ? r : null;
             synth.MuteChannel(channel, true);
             player.EventDispatched += (se, offset) =>
             {
@@ -421,12 +422,12 @@ public sealed class PlayerService : IDisposable
     private static void ApplyInstrumentMix(Synthesizer synth, InstrumentMixDto[]? mix)
     {
         if (mix == null) return;
-        foreach (var m in mix) ApplyOneMix(synth, m);
+        foreach (InstrumentMixDto m in mix) ApplyOneMix(synth, m);
     }
 
     private static void ApplyOneMix(Synthesizer synth, InstrumentMixDto m)
     {
-        var im = synth.GetInstrumentMix(Synthesizer.TrackMixBank, Synthesizer.TrackPart(m.TrackIndex, m.Channel));
+        InstrumentMix im = synth.GetInstrumentMix(Synthesizer.TrackMixBank, Synthesizer.TrackPart(m.TrackIndex, m.Channel));
         im.GainDb = m.GainDb;
         im.Pan = m.Pan;
         im.Mute = m.Mute;
@@ -459,14 +460,14 @@ public sealed class PlayerService : IDisposable
     {
         lock (_lock)
         {
-            var master = setup.Master is { Effects: { } eff }
+            MasterDto? master = setup.Master is { Effects: { } eff }
                 ? setup.Master with { Effects = EnrichEffects(eff, _masterRack) }
                 : setup.Master;
-            var mix = setup.Mix?.Select(m =>
+            InstrumentMixDto[]? mix = setup.Mix?.Select(m =>
             {
                 if (m.Inserts == null) return m;
-                var part = Synthesizer.TrackPart(m.TrackIndex, m.Channel);
-                return _instrumentRacks.TryGetValue(part, out var rack)
+                int part = Synthesizer.TrackPart(m.TrackIndex, m.Channel);
+                return _instrumentRacks.TryGetValue(part, out EffectRack? rack)
                     ? m with { Inserts = EnrichEffects(m.Inserts, rack) }
                     : m;
             }).ToArray();
@@ -488,12 +489,12 @@ public sealed class PlayerService : IDisposable
         // torn down on Play. EffectRack.Configure already reuses plugin instances by InstanceId. Only racks
         // for parts no longer present are disposed.
         var keep = new HashSet<int>();
-        foreach (var m in mix ?? [])
+        foreach (InstrumentMixDto m in mix ?? [])
         {
             if (m.Inserts == null || m.Inserts.Length == 0) continue;
-            var part = Synthesizer.TrackPart(m.TrackIndex, m.Channel);
+            int part = Synthesizer.TrackPart(m.TrackIndex, m.Channel);
             keep.Add(part);
-            if (!_instrumentRacks.TryGetValue(part, out var rack))
+            if (!_instrumentRacks.TryGetValue(part, out EffectRack? rack))
             {
                 rack = new EffectRack(SampleRate, _pluginHost);
                 _instrumentRacks[part] = rack;
@@ -501,7 +502,7 @@ public sealed class PlayerService : IDisposable
             rack.Configure(m.Inserts);
             synth.SetInstrumentInsert(Synthesizer.TrackMixBank, part, rack.IsEmpty ? null : rack);
         }
-        foreach (var part in _instrumentRacks.Keys.Where(p => !keep.Contains(p)).ToList())
+        foreach (int part in _instrumentRacks.Keys.Where(p => !keep.Contains(p)).ToList())
         {
             _instrumentRacks[part].Dispose();
             _instrumentRacks.Remove(part);
@@ -517,8 +518,8 @@ public sealed class PlayerService : IDisposable
     {
         lock (_lock)
         {
-            var part = Synthesizer.TrackPart(dto.TrackIndex, dto.Channel);
-            if (!_instrumentRacks.TryGetValue(part, out var rack))
+            int part = Synthesizer.TrackPart(dto.TrackIndex, dto.Channel);
+            if (!_instrumentRacks.TryGetValue(part, out EffectRack? rack))
             {
                 rack = new EffectRack(SampleRate, _pluginHost);
                 _instrumentRacks[part] = rack;
@@ -527,7 +528,7 @@ public sealed class PlayerService : IDisposable
             _synth?.SetInstrumentInsert(Synthesizer.TrackMixBank, part, rack.IsEmpty ? null : rack);
             // A hosted instrument on this part runs its insert in the audio callback (its synth channel is
             // muted), so reach it here too — keeps live insert add/remove in parity with synth voices.
-            foreach (var hv in _hostedInstruments)
+            foreach (HostedVoice hv in _hostedInstruments)
                 if (hv.Part == part) hv.Insert = rack.IsEmpty ? null : rack;
         }
     }
@@ -541,17 +542,14 @@ public sealed class PlayerService : IDisposable
     {
         lock (_lock)
         {
-            var plugin = FindLoadedPlugin(instanceId);
+            IHostedPlugin? plugin = FindLoadedPlugin(instanceId);
             if (plugin is SandboxedPlugin sp) return sp.OpenEditor(title);
-            if (plugin?.Gui is { HasEditor: true } gui)
-            {
-                if (_inProcEditors.TryGetValue(instanceId, out var existing)) { existing.Close(); _inProcEditors.Remove(instanceId); }
-                var win = EditorWindow.Open(gui, title);
-                if (win == null) return false;
-                _inProcEditors[instanceId] = win;
-                return true;
-            }
-            return false;
+            if (plugin?.Gui is not { HasEditor: true } gui) return false;
+            if (_inProcEditors.TryGetValue(instanceId, out EditorWindow? existing)) { existing.Close(); _inProcEditors.Remove(instanceId); }
+            EditorWindow? win = EditorWindow.Open(gui, title);
+            if (win == null) return false;
+            _inProcEditors[instanceId] = win;
+            return true;
         }
     }
 
@@ -561,16 +559,16 @@ public sealed class PlayerService : IDisposable
         lock (_lock)
         {
             if (FindLoadedPlugin(instanceId) is SandboxedPlugin sp) sp.CloseEditor();
-            if (_inProcEditors.Remove(instanceId, out var win)) win.Close();
+            if (_inProcEditors.Remove(instanceId, out EditorWindow? win)) win.Close();
         }
     }
 
     // Search the master rack and every per-instrument rack for a loaded plugin by InstanceId.
     private IHostedPlugin? FindLoadedPlugin(string instanceId)
     {
-        var p = _masterRack.FindPlugin(instanceId);
+        IHostedPlugin? p = _masterRack.FindPlugin(instanceId);
         if (p != null) return p;
-        foreach (var rack in _instrumentRacks.Values)
+        foreach (EffectRack rack in _instrumentRacks.Values)
             if (rack.FindPlugin(instanceId) is { } hit) return hit;
         return null;
     }
@@ -593,7 +591,7 @@ public sealed class PlayerService : IDisposable
 
     private static IRBank LoadSource(PatchMapSession session, Dictionary<string, IRBank> byPath, string path)
     {
-        if (byPath.TryGetValue(path, out var src)) return src;
+        if (byPath.TryGetValue(path, out IRBank? src)) return src;
         src = SoundBankLoader.Load(path);
         session.AddSource(src);
         byPath[path] = src;
@@ -642,10 +640,10 @@ public sealed class PlayerService : IDisposable
         _player = null;
         _synth = null;
         // Hosted instruments outlived the audio callback (now stopped); dispose their native plugins.
-        foreach (var hv in _hostedInstruments) { try { hv.Inst.Dispose(); } catch { } }
+        foreach (HostedVoice hv in _hostedInstruments) { try { hv.Inst.Dispose(); } catch { } }
         _hostedInstruments.Clear();
         // Close any in-process editor windows before their plugins go away with the racks.
-        foreach (var w in _inProcEditors.Values) { try { w.Close(); } catch { } }
+        foreach (EditorWindow w in _inProcEditors.Values) { try { w.Close(); } catch { } }
         _inProcEditors.Clear();
         // Dispose after the audio output is stopped: the composite the synth held borrowed
         // these fonts' samples, so they must outlive the audio callback.
@@ -679,7 +677,7 @@ public sealed class PlayerService : IDisposable
         lock (_lock)
         {
             _masterRack.Dispose();
-            foreach (var r in _instrumentRacks.Values) r.Dispose();
+            foreach (EffectRack r in _instrumentRacks.Values) r.Dispose();
             _instrumentRacks.Clear();
         }
     }

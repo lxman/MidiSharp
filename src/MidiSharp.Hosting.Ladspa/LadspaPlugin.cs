@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
-using MidiSharp.Hosting;
 using static MidiSharp.Hosting.Ladspa.LadspaInterop;
 
 namespace MidiSharp.Hosting.Ladspa;
@@ -65,7 +64,7 @@ public sealed unsafe class LadspaPlugin : IHostedPlugin
     {
         if (_active) return;
         _sampleRate = config.SampleRate;
-        var channels = config.ChannelCount;
+        int channels = config.ChannelCount;
 
         // Pick a run mode for a stereo bus from the plugin's audio-port shape.
         if (_audioIn.Count == channels && _audioOut.Count == channels) _dualMono = false;
@@ -76,7 +75,7 @@ public sealed unsafe class LadspaPlugin : IHostedPlugin
 
         // One float cell per control port; seed input controls to their hinted defaults.
         _controlCells = new UnmanagedFloatBuffer(_controls.Count);
-        var cells = _controlCells.Span;
+        Span<float> cells = _controlCells.Span;
         for (var i = 0; i < _controls.Count; i++)
             cells[i] = _controls[i].IsInput ? ResolveDefault(_controls[i].Hint, _sampleRate) : 0f;
 
@@ -91,11 +90,11 @@ public sealed unsafe class LadspaPlugin : IHostedPlugin
         }
 
         // Instantiate one handle (stereo) or one per channel (dual mono), and wire control ports.
-        var voices = _dualMono ? channels : 1;
+        int voices = _dualMono ? channels : 1;
         _handles = new IntPtr[voices];
         for (var v = 0; v < voices; v++)
         {
-            var handle = _instantiate(_descriptorPtr, (nuint)_sampleRate);
+            IntPtr handle = _instantiate(_descriptorPtr, (nuint)_sampleRate);
             if (handle == IntPtr.Zero) throw new InvalidOperationException($"LADSPA instantiate failed for '{Descriptor.Name}'.");
             _handles[v] = handle;
             for (var i = 0; i < _controls.Count; i++)
@@ -108,7 +107,7 @@ public sealed unsafe class LadspaPlugin : IHostedPlugin
     public void Deactivate()
     {
         if (!_active) return;
-        foreach (var h in _handles)
+        foreach (IntPtr h in _handles)
         {
             if (h == IntPtr.Zero) continue;
             _deactivate?.Invoke(h);
@@ -136,7 +135,7 @@ public sealed unsafe class LadspaPlugin : IHostedPlugin
         }
         else
         {
-            var h = _handles[0];
+            IntPtr h = _handles[0];
             for (var c = 0; c < _audioIn.Count; c++) _connect(h, (nuint)_audioIn[c], input.Channel(c));
             for (var c = 0; c < _audioOut.Count; c++) _connect(h, (nuint)_audioOut[c], output.Channel(c));
             _run(h, frames);
@@ -146,7 +145,7 @@ public sealed unsafe class LadspaPlugin : IHostedPlugin
     public double GetParameter(int index)
     {
         if (_controlCells == null || (uint)index >= _parameters.Count) return 0;
-        var value = _controlCells.Span[_paramToControl[index]];
+        float value = _controlCells.Span[_paramToControl[index]];
         return _parameters[index].Normalize(value);
     }
 
@@ -171,11 +170,11 @@ public sealed unsafe class LadspaPlugin : IHostedPlugin
     private void ParsePorts(LADSPA_Descriptor raw)
     {
         var count = (int)raw.PortCount;
-        var hintSize = Marshal.SizeOf<LADSPA_PortRangeHint>();
+        int hintSize = Marshal.SizeOf<LADSPA_PortRangeHint>();
         for (var p = 0; p < count; p++)
         {
-            var pd = Marshal.ReadInt32(raw.PortDescriptors, p * sizeof(int));
-            var name = Str(Marshal.ReadIntPtr(raw.PortNames, p * IntPtr.Size));
+            int pd = Marshal.ReadInt32(raw.PortDescriptors, p * sizeof(int));
+            string name = Str(Marshal.ReadIntPtr(raw.PortNames, p * IntPtr.Size));
             if (IsAudio(pd))
             {
                 if (IsInput(pd)) _audioIn.Add(p);
@@ -191,12 +190,12 @@ public sealed unsafe class LadspaPlugin : IHostedPlugin
 
     private PluginParameter BuildParameter(int index, LADSPA_PortRangeHint hint, string name)
     {
-        var h = hint.HintDescriptor;
-        var scale = (h & HintSampleRate) != 0 ? _sampleRate : 1;
-        var toggled = (h & HintToggled) != 0;
-        var min = toggled ? 0f : (h & HintBoundedBelow) != 0 ? hint.LowerBound * scale : 0f;
-        var max = toggled ? 1f : (h & HintBoundedAbove) != 0 ? hint.UpperBound * scale : 1f;
-        var def = ResolveDefault(hint, _sampleRate);
+        int h = hint.HintDescriptor;
+        int scale = (h & HintSampleRate) != 0 ? _sampleRate : 1;
+        bool toggled = (h & HintToggled) != 0;
+        float min = toggled ? 0f : (h & HintBoundedBelow) != 0 ? hint.LowerBound * scale : 0f;
+        float max = toggled ? 1f : (h & HintBoundedAbove) != 0 ? hint.UpperBound * scale : 1f;
+        float def = ResolveDefault(hint, _sampleRate);
         return new PluginParameter(index, name, label: "", min, max, def,
             isStepped: toggled || (h & HintInteger) != 0,
             isLogarithmic: (h & HintLogarithmic) != 0);

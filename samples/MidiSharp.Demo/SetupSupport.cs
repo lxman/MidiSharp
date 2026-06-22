@@ -47,15 +47,15 @@ internal static class SetupSupport
     {
         if (File.Exists(spec)) return Read(spec, out error);
 
-        var root = DefaultRoot;
+        string root = DefaultRoot;
         if (Directory.Exists(root))
         {
-            var byId = Path.Combine(root, spec.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? spec : spec + ".json");
+            string byId = Path.Combine(root, spec.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? spec : spec + ".json");
             if (File.Exists(byId)) return Read(byId, out error);
 
-            foreach (var file in Directory.EnumerateFiles(root, "*.json"))
+            foreach (string file in Directory.EnumerateFiles(root, "*.json"))
             {
-                var s = Read(file, out _);
+                SetupFile? s = Read(file, out _);
                 if (s != null && string.Equals(s.Name, spec, StringComparison.OrdinalIgnoreCase))
                 {
                     error = null;
@@ -95,22 +95,22 @@ internal static class SetupSupport
 
         IRBank Source(string path)
         {
-            if (byPath.TryGetValue(path, out var cached)) return cached;
-            var src = SoundBankLoader.Load(path, loadOptions);
+            if (byPath.TryGetValue(path, out IRBank? cached)) return cached;
+            SoundBank src = SoundBankLoader.Load(path, loadOptions);
             session.AddSource(src);
             byPath[path] = src;
             return src;
         }
 
-        foreach (var o in setup.Overrides ?? [])
+        foreach (SetupPatchOverride o in setup.Overrides ?? [])
             session.SetOverride(o.LogicalBank, o.LogicalProgram,
                 new PatchRef(Source(o.SourcePath), o.SourceBank, o.SourceProgram));
 
-        foreach (var o in setup.TrackOverrides ?? [])
+        foreach (SetupTrackOverride o in setup.TrackOverrides ?? [])
             session.SetTrackOverride(o.TrackIndex,
                 new PatchRef(Source(o.SourcePath), o.SourceBank, o.SourceProgram));
 
-        foreach (var o in setup.PartOverrides ?? [])
+        foreach (SetupPartOverride o in setup.PartOverrides ?? [])
             session.SetPartOverride(o.TrackIndex, o.Channel,
                 new PatchRef(Source(o.SourcePath), o.SourceBank, o.SourceProgram));
 

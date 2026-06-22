@@ -34,13 +34,13 @@ namespace MidiSharp.Audio.Vorbis
 
             Array.Sort(list, 0, list.Length, this);
 
-            var tableBits = maxLen > MAX_TABLE_BITS ? MAX_TABLE_BITS : maxLen;
+            int tableBits = maxLen > MAX_TABLE_BITS ? MAX_TABLE_BITS : maxLen;
 
             var prefixList = new List<HuffmanListNode>(1 << tableBits);
             List<HuffmanListNode> overflowList = null;
             for (var i = 0; i < list.Length && list[i].Length < 99999; i++)
             {
-                var itemBits = list[i].Length;
+                int itemBits = list[i].Length;
                 if (itemBits > tableBits)
                 {
                     overflowList = new List<HuffmanListNode>(list.Length - i);
@@ -51,11 +51,11 @@ namespace MidiSharp.Audio.Vorbis
                 }
                 else
                 {
-                    var maxVal = 1 << (tableBits - itemBits);
-                    var item = list[i];
+                    int maxVal = 1 << (tableBits - itemBits);
+                    HuffmanListNode item = list[i];
                     for (var j = 0; j < maxVal; j++)
                     {
-                        var idx = (j << itemBits) | item.Bits;
+                        int idx = (j << itemBits) | item.Bits;
                         while (prefixList.Count <= idx)
                         {
                             prefixList.Add(null);
@@ -77,7 +77,7 @@ namespace MidiSharp.Audio.Vorbis
 
         int IComparer<HuffmanListNode>.Compare(HuffmanListNode x, HuffmanListNode y)
         {
-            var len = x.Length - y.Length;
+            int len = x.Length - y.Length;
             if (len == 0)
             {
                 return x.Bits - y.Bits;

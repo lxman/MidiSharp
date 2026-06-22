@@ -60,7 +60,7 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
         _maxFrames = config.MaxBlockFrames;
         _mmfPath = Path.Combine(Path.GetTempPath(), "midisharp-sbx-" + Guid.NewGuid().ToString("N") + ".bin");
 
-        var size = SharedSize(_maxFrames);
+        long size = SharedSize(_maxFrames);
         using (var fs = new FileStream(_mmfPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.ReadWrite))
             fs.SetLength(size);
         _mmf = MemoryMappedFile.CreateFromFile(_mmfPath, FileMode.Open, null, size, MemoryMappedFileAccess.ReadWrite);
@@ -99,19 +99,19 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
         Arm(LoadTimeoutMs);
         try
         {
-            var tag = _reader.ReadByte();
+            byte tag = _reader.ReadByte();
             if (tag == RespError) throw new InvalidOperationException("Sandbox worker failed to load plugin: " + _reader.ReadString());
             if (tag != RespReady) throw new InvalidOperationException($"Unexpected sandbox handshake byte 0x{tag:X2}.");
-            var name = _reader.ReadString();
+            string name = _reader.ReadString();
             IsInstrument = _reader.ReadBoolean();
-            var count = _reader.ReadInt32();
+            int count = _reader.ReadInt32();
             for (var i = 0; i < count; i++)
             {
-                var idx = _reader.ReadInt32();
-                var pname = _reader.ReadString();
-                var min = _reader.ReadDouble();
-                var max = _reader.ReadDouble();
-                var def = _reader.ReadDouble();
+                int idx = _reader.ReadInt32();
+                string pname = _reader.ReadString();
+                double min = _reader.ReadDouble();
+                double max = _reader.ReadDouble();
+                double def = _reader.ReadDouble();
                 _parameters.Add(new PluginParameter(idx, pname, "", min, max, def));
             }
             HasEditor = _reader.ReadBoolean();
@@ -125,7 +125,7 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
     {
         while (!_watchdogStop)
         {
-            var d = Volatile.Read(ref _deadline);
+            long d = Volatile.Read(ref _deadline);
             if (d != 0 && Environment.TickCount64 > d) Die();   // request overran its deadline → kill the hung worker
             System.Threading.Thread.Sleep(25);
         }
@@ -139,7 +139,7 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
 
     public void Process(PlanarBuffers input, PlanarBuffers output, ReadOnlySpan<HostEvent> events)
     {
-        var frames = Math.Min(output.Frames, _maxFrames);
+        int frames = Math.Min(output.Frames, _maxFrames);
         if (_dead || _disposed) { Silence(output, frames); return; }
 
         lock (_lock)
@@ -151,7 +151,7 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
                 _writer.Write(CmdProcess);
                 _writer.Write(frames);
                 _writer.Write(events.Length);
-                foreach (var e in events)
+                foreach (HostEvent e in events)
                 {
                     _writer.Write(e.SampleOffset);
                     _writer.Write((byte)e.Kind);
@@ -160,7 +160,7 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
                 }
                 _writer.Flush();
                 Arm(ProcessTimeoutMs);
-                var ok = _reader.ReadByte() == RespProcessed;   // watchdog kills a hung worker → this throws
+                bool ok = _reader.ReadByte() == RespProcessed;   // watchdog kills a hung worker → this throws
                 Disarm();
                 if (!ok) { Die(); Silence(output, frames); return; }
                 CopyOut(output, 0, frames);
@@ -183,7 +183,7 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
             {
                 _writer.Write(CmdGetParam); _writer.Write(index); _writer.Flush();
                 Arm(ControlTimeoutMs);
-                var v = _reader.ReadByte() == RespParamValue ? _reader.ReadDouble() : 0;
+                double v = _reader.ReadByte() == RespParamValue ? _reader.ReadDouble() : 0;
                 Disarm();
                 return v;
             }
@@ -200,7 +200,7 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
             {
                 _writer.Write(CmdSetParam); _writer.Write(index); _writer.Write(normalized); _writer.Flush();
                 Arm(ControlTimeoutMs);
-                var ack = _reader.ReadByte() == RespAck;
+                bool ack = _reader.ReadByte() == RespAck;
                 Disarm();
                 if (!ack) Die();
             }
@@ -220,8 +220,8 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
                 _writer.Write(CmdSaveState); _writer.Flush();
                 Arm(StateTimeoutMs);
                 if (_reader.ReadByte() != RespState) { Disarm(); return []; }
-                var len = _reader.ReadInt32();
-                var blob = len > 0 ? _reader.ReadBytes(len) : [];
+                int len = _reader.ReadInt32();
+                byte[] blob = len > 0 ? _reader.ReadBytes(len) : [];
                 Disarm();
                 return blob;
             }
@@ -238,7 +238,7 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
             {
                 _writer.Write(CmdLoadState); _writer.Write(state.Length); _writer.Write(state); _writer.Flush();
                 Arm(StateTimeoutMs);
-                var ack = _reader.ReadByte() == RespAck;
+                bool ack = _reader.ReadByte() == RespAck;
                 Disarm();
                 if (!ack) Die();
             }
@@ -261,7 +261,7 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
                 _writer.Write(CmdOpenEditor); _writer.Write(title ?? ""); _writer.Flush();
                 Arm(EditorTimeoutMs);
                 if (_reader.ReadByte() != RespAck) { Disarm(); Die(); return false; }
-                var ok = _reader.ReadBoolean();
+                bool ok = _reader.ReadBoolean();
                 Disarm();
                 return ok;
             }
@@ -279,7 +279,7 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
             {
                 _writer.Write(CmdCloseEditor); _writer.Flush();
                 Arm(EditorTimeoutMs);
-                var ack = _reader.ReadByte() == RespAck;
+                bool ack = _reader.ReadByte() == RespAck;
                 Disarm();
                 if (!ack) Die();
             }

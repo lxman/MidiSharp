@@ -16,8 +16,8 @@ public sealed class FilterTypeRenderTests
     [Fact]
     public void Highpass_blocks_dc_while_lowpass_passes_it()
     {
-        var lp = SteadyPeak(FilterType.LowPass);
-        var hp = SteadyPeak(FilterType.HighPass);
+        float lp = SteadyPeak(FilterType.LowPass);
+        float hp = SteadyPeak(FilterType.HighPass);
         Assert.True(lp > 0.1f, $"low-pass should pass the DC sample (got {lp})");
         Assert.True(hp < lp * 0.2f, $"high-pass should block DC (hp {hp} vs lp {lp})");
     }
@@ -51,7 +51,7 @@ public sealed class FilterTypeRenderTests
 
     private static IRBank MakeBank(PatchZone zone)
     {
-        var data = new[] { Constant(0.5f, 8000) };
+        float[][] data = new[] { Constant(0.5f, 8000) };
         var meta = new[] { new SampleMetadata { SampleRate = Rate, Channels = 1, LengthFrames = 8000, RootKey = 60 } };
         return new IRBank
         {

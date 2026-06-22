@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using MidiSharp.IO;
+using MidiSharp.Model;
 using MidiSharp.Model.Events;
 using Xunit;
 
@@ -13,7 +14,7 @@ public class SmfRepairFilterTests
     private static byte[] Concat(params byte[][] parts)
     {
         var list = new List<byte>();
-        foreach (var p in parts) list.AddRange(p);
+        foreach (byte[] p in parts) list.AddRange(p);
         return list.ToArray();
     }
 
@@ -40,9 +41,9 @@ public class SmfRepairFilterTests
     [Fact]
     public void Scan_CleanFile_IsByteIdenticalNoOp()
     {
-        var input = Concat(Mthd(0, 1, 96), MtrkHeader(NoteTrack.Length), NoteTrack);
+        byte[] input = Concat(Mthd(0, 1, 96), MtrkHeader(NoteTrack.Length), NoteTrack);
 
-        var result = SmfRepairFilter.Scan(input);
+        SmfRepairResult result = SmfRepairFilter.Scan(input);
 
         Assert.False(result.Modified);
         Assert.Empty(result.Defects);
@@ -61,19 +62,19 @@ public class SmfRepairFilterTests
             0x00, 0xFF, 0x2F, 0x00,                   // EoT  (11 bytes total)
         };
         // Track 0 claims 16 bytes but is really 11 — overruns track 1's marker.
-        var input = Concat(
+        byte[] input = Concat(
             Mthd(1, 2, 96),
             MtrkHeader(16), tempoTrack,
             MtrkHeader(NoteTrack.Length), NoteTrack);
 
-        var result = SmfRepairFilter.Scan(input);
+        SmfRepairResult result = SmfRepairFilter.Scan(input);
 
         Assert.True(result.Modified);
-        var d = Assert.Single(result.Defects);
+        SmfDefect d = Assert.Single(result.Defects);
         Assert.Equal(SmfDefectKind.ChunkLengthCorrupted, d.Kind);
         Assert.Equal(SmfDefectAction.Corrected, d.Action);
 
-        var file = MidiFileReader.Read(result.Data);
+        MidiFile file = MidiFileReader.Read(result.Data);
         Assert.Equal(2, file.Tracks.Count);
         Assert.Contains(file.Tracks[0].Events, e => e is MetaEvent { Type: MetaEventType.SetTempo });
         Assert.Contains(file.Tracks[1].Events, e => e is NoteOnEvent);
@@ -90,20 +91,20 @@ public class SmfRepairFilterTests
             "ABCDEFGHIJ"u8.ToArray(),
             NoteTrack);
 
-        var corrupted = Track(0x0D);
-        var input = Concat(Mthd(0, 1, 96), MtrkHeader(corrupted.Length), corrupted);
+        byte[] corrupted = Track(0x0D);
+        byte[] input = Concat(Mthd(0, 1, 96), MtrkHeader(corrupted.Length), corrupted);
 
         // sanity: a strict read of the corrupted bytes throws
         Assert.ThrowsAny<Exception>(() => MidiFileReader.Read(input));
 
-        var result = SmfRepairFilter.Scan(input);
+        SmfRepairResult result = SmfRepairFilter.Scan(input);
 
         Assert.True(result.Modified);
-        var d = Assert.Single(result.Defects);
+        SmfDefect d = Assert.Single(result.Defects);
         Assert.Equal(SmfDefectKind.MetaLengthOvershoot, d.Kind);
         Assert.Equal(SmfDefectAction.Corrected, d.Action);
 
-        var track = MidiFileReader.Read(result.Data).Tracks.Single();
+        MidiTrack track = MidiFileReader.Read(result.Data).Tracks.Single();
         Assert.Contains(track.Events, e => e is NoteOnEvent { Note: 0x3C, Velocity: 0x64 });
         Assert.Contains(track.Events, e => e is MetaEvent { Type: MetaEventType.EndOfTrack });
     }
@@ -118,16 +119,16 @@ public class SmfRepairFilterTests
             0xFF, 0x04, 0x04, 0x42, 0x61, 0x63, 0x68, 0x00, 0xFF, 0x2F, 0x00, // 11 bytes
         };
         // length field still says 12 (correct for the intended content).
-        var input = Concat(Mthd(0, 1, 96), MtrkHeader(12), dropped);
+        byte[] input = Concat(Mthd(0, 1, 96), MtrkHeader(12), dropped);
 
-        var result = SmfRepairFilter.Scan(input);
+        SmfRepairResult result = SmfRepairFilter.Scan(input);
 
         Assert.True(result.Modified);
-        var d = Assert.Single(result.Defects);
+        SmfDefect d = Assert.Single(result.Defects);
         Assert.Equal(SmfDefectKind.DroppedLeadingDelta, d.Kind);
         Assert.Equal(SmfDefectAction.Corrected, d.Action);
 
-        var track = MidiFileReader.Read(result.Data).Tracks.Single();
+        MidiTrack track = MidiFileReader.Read(result.Data).Tracks.Single();
         var name = Assert.IsType<MetaEvent>(track.Events[0]);
         Assert.Equal(MetaEventType.InstrumentName, name.Type);
         Assert.Equal("Bach", name.Text);
@@ -142,17 +143,17 @@ public class SmfRepairFilterTests
         {
             0x00, 0x90, 0x3C, 0x0D, 0x60, 0x80, 0x3C, 0x40, 0x00, 0xFF, 0x2F, 0x00,
         };
-        var input = Concat(Mthd(0, 1, 96), MtrkHeader(track.Length), track);
+        byte[] input = Concat(Mthd(0, 1, 96), MtrkHeader(track.Length), track);
         Assert.DoesNotContain((byte)0x0A, input);
 
-        var result = SmfRepairFilter.Scan(input);
+        SmfRepairResult result = SmfRepairFilter.Scan(input);
 
         // nothing corrected — bytes are left exactly as they are…
         Assert.False(result.Modified);
         Assert.Equal(input, result.Data);
         Assert.Equal(0, result.CorrectedCount);
         // …but the ambiguity is on the record.
-        var d = Assert.Single(result.Defects);
+        SmfDefect d = Assert.Single(result.Defects);
         Assert.Equal(SmfDefectKind.AmbiguousMusicalBytes, d.Kind);
         Assert.Equal(SmfDefectAction.Flagged, d.Action);
     }
@@ -160,12 +161,12 @@ public class SmfRepairFilterTests
     [Fact]
     public void Scan_NotAMidiFile_ReportedAndUnchanged()
     {
-        var input = "not a midi file at all"u8.ToArray();
+        byte[] input = "not a midi file at all"u8.ToArray();
 
-        var result = SmfRepairFilter.Scan(input);
+        SmfRepairResult result = SmfRepairFilter.Scan(input);
 
         Assert.False(result.Modified);
-        var d = Assert.Single(result.Defects);
+        SmfDefect d = Assert.Single(result.Defects);
         Assert.Equal(SmfDefectKind.NotAMidiFile, d.Kind);
     }
 }

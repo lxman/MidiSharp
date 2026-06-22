@@ -1,7 +1,6 @@
 using System;
 using System.Linq;
 using System.Threading;
-using MidiSharp.Hosting;
 using MidiSharp.Hosting.Clap;
 using MidiSharp.Hosting.EditorHost;
 using Xunit;
@@ -23,11 +22,11 @@ public sealed class ClapEditorWindowTests
     {
         Assert.SkipWhen(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")), "no X display.");
         var fmt = new ClapFormat();
-        var d = fmt.Scan(fmt.DefaultSearchPaths).FirstOrDefault(p => p.Id == "midisharp.test.gui");
+        PluginDescriptor? d = fmt.Scan(fmt.DefaultSearchPaths).FirstOrDefault(p => p.Id == "midisharp.test.gui");
         Assert.SkipWhen(d == null, "CLAP gui fixture not installed.");
 
-        using var plugin = fmt.Load(d!, Config);
-        using var window = EditorWindow.Open(plugin.Gui, "MidiSharp editor test");
+        using IHostedPlugin plugin = fmt.Load(d!, Config);
+        using EditorWindow? window = EditorWindow.Open(plugin.Gui, "MidiSharp editor test");
         Assert.NotNull(window);                       // open failed → null (error in window?.Error)
         Assert.True(window!.IsOpen, $"editor window should be open (error: {window.Error}).");
         Assert.NotEqual(0UL, window.WindowHandle);
@@ -46,18 +45,18 @@ public sealed class ClapEditorWindowTests
     {
         Assert.SkipWhen(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")), "no X display.");
         var fmt = new ClapFormat();
-        var d = fmt.Scan(fmt.DefaultSearchPaths).FirstOrDefault(p => p.Id == "midisharp.test.gui");
+        PluginDescriptor? d = fmt.Scan(fmt.DefaultSearchPaths).FirstOrDefault(p => p.Id == "midisharp.test.gui");
         Assert.SkipWhen(d == null, "CLAP gui fixture not installed.");
 
-        using var plugin = fmt.Load(d!, Config);
+        using IHostedPlugin plugin = fmt.Load(d!, Config);
         // The fixture registers a 20 ms timer via clap.timer-support on set_parent and counts on_timer calls,
         // exposed as the first 8 bytes of clap.state. If the host pumps the plugin's timer, it climbs.
-        using var window = MidiSharp.Hosting.EditorHost.EditorWindow.Open(plugin.Gui, "CLAP run-loop test");
+        using EditorWindow? window = MidiSharp.Hosting.EditorHost.EditorWindow.Open(plugin.Gui, "CLAP run-loop test");
         Assert.NotNull(window);
         Assert.True(window!.IsOpen, $"editor should open (error: {window.Error}).");
 
         Thread.Sleep(400);
-        var state = plugin.SaveState();
+        byte[] state = plugin.SaveState();
         window.Close();
 
         Assert.True(state.Length >= 8, "fixture state should carry the tick count.");

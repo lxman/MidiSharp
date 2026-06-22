@@ -81,7 +81,7 @@ public static class PartUsageAnalyzer
         var parts = new Dictionary<(int Track, int Channel), PartAccumulator>();
         var trackChannels = new Dictionary<int, HashSet<int>>();
 
-        foreach (var scheduled in new MidiSequencer(file).Events)
+        foreach (ScheduledEvent scheduled in new MidiSequencer(file).Events)
         {
             switch (scheduled.Event)
             {
@@ -96,10 +96,10 @@ public static class PartUsageAnalyzer
                     break;
                 case NoteOnEvent { Velocity: > 0 } on:
                 {
-                    var s = state[on.Channel];
-                    var bank = BankResolution.Resolve(s.BankMsb, s.BankLsb, s.IsDrum, s.DrumBank);
-                    var key = (scheduled.TrackIndex, on.Channel);
-                    if (!parts.TryGetValue(key, out var acc))
+                    ChannelBankState s = state[on.Channel];
+                    int bank = BankResolution.Resolve(s.BankMsb, s.BankLsb, s.IsDrum, s.DrumBank);
+                    (int TrackIndex, byte Channel) key = (scheduled.TrackIndex, on.Channel);
+                    if (!parts.TryGetValue(key, out PartAccumulator? acc))
                     {
                         acc = new PartAccumulator();
                         parts[key] = acc;
@@ -107,7 +107,7 @@ public static class PartUsageAnalyzer
                     acc.Programs.Add(s.Program);
                     acc.FirstPatch ??= (bank, s.Program);
                     acc.IsDrum = s.IsDrum;
-                    if (!trackChannels.TryGetValue(scheduled.TrackIndex, out var chans))
+                    if (!trackChannels.TryGetValue(scheduled.TrackIndex, out HashSet<int>? chans))
                         trackChannels[scheduled.TrackIndex] = chans = [];
                     chans.Add(on.Channel);
                     break;
@@ -116,12 +116,12 @@ public static class PartUsageAnalyzer
         }
 
         var result = new List<PartUsage>(parts.Count);
-        foreach (var (key, acc) in parts.OrderBy(p => p.Key.Track).ThenBy(p => p.Key.Channel))
+        foreach (((int Track, int Channel) key, PartAccumulator? acc) in parts.OrderBy(p => p.Key.Track).ThenBy(p => p.Key.Channel))
         {
             string? baseName = null;
             if (baseBank != null && acc.FirstPatch is { } fp)
             {
-                var patch = baseBank.FindPatch(fp.Bank, fp.Program) ?? baseBank.FindPatch(0, fp.Program);
+                Patch? patch = baseBank.FindPatch(fp.Bank, fp.Program) ?? baseBank.FindPatch(0, fp.Program);
                 baseName = patch?.Name;
             }
 

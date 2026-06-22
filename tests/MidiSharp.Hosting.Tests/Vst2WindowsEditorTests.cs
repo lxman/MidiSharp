@@ -1,7 +1,6 @@
 using System;
 using System.Linq;
 using System.Threading;
-using MidiSharp.Hosting;
 using MidiSharp.Hosting.EditorHost;
 using MidiSharp.Hosting.Vst2;
 using Xunit;
@@ -22,7 +21,7 @@ public sealed class Vst2WindowsEditorTests
     private IHostedPlugin? LoadFixture()
     {
         if (!WinFixtures.Available) return null;
-        var d = _format.Scan([WinFixtures.Dir]).FirstOrDefault(p => p.Name == "MidiSharp VST2 Gain");
+        PluginDescriptor? d = _format.Scan([WinFixtures.Dir]).FirstOrDefault(p => p.Name == "MidiSharp VST2 Gain");
         return d == null ? null : _format.Load(d, Config);
     }
 
@@ -31,19 +30,19 @@ public sealed class Vst2WindowsEditorTests
     {
         Assert.SkipWhen(!OperatingSystem.IsWindows(), "Win32 backend is Windows-only.");
         Assert.SkipWhen(!EditorPlatform.Current.IsAvailable, "no interactive desktop.");
-        var plugin = LoadFixture();
+        IHostedPlugin? plugin = LoadFixture();
         Assert.SkipWhen(plugin == null, "VST2 win32 fixture not built.");
-        using var _ = plugin;
+        using IHostedPlugin _ = plugin;
 
-        var gui = plugin!.Gui;
+        IPluginGui? gui = plugin!.Gui;
         Assert.NotNull(gui);
         Assert.True(gui!.HasEditor);
         Assert.True(gui.IsApiSupported("win32", floating: false), "the fixture editor should support win32.");
-        Assert.True(gui.TryGetSize(out var w, out var h));
+        Assert.True(gui.TryGetSize(out int w, out int h));
         Assert.Equal(300, w);
         Assert.Equal(200, h);
 
-        using var window = EditorWindow.Open(gui, "VST2 win32 editor test");
+        using EditorWindow? window = EditorWindow.Open(gui, "VST2 win32 editor test");
         Assert.NotNull(window);
         Assert.True(window!.IsOpen, $"editor window should open (error: {window.Error}).");
 

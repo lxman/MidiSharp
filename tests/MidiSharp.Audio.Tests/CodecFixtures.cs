@@ -30,8 +30,8 @@ internal static class CodecFixtures
         var s = new float[frames * channels];
         for (var i = 0; i < frames; i++)
         {
-            var t = i / (double)SampleRate;
-            var env = 0.6 * (0.5 - 0.5 * Math.Cos(2 * Math.PI * i / frames)); // hann-ish, peaks ~0.6
+            double t = i / (double)SampleRate;
+            double env = 0.6 * (0.5 - 0.5 * Math.Cos(2 * Math.PI * i / frames)); // hann-ish, peaks ~0.6
             var l = (float)(env * Math.Sin(2 * Math.PI * 440.0 * t));
             var r = (float)(env * Math.Sin(2 * Math.PI * 660.0 * t));
             s[i * channels] = l;
@@ -42,10 +42,10 @@ internal static class CodecFixtures
 
     public static void WriteWav16(string path, float[] interleaved, int channels)
     {
-        using var fs = File.Create(path);
+        using FileStream fs = File.Create(path);
         using var w = new BinaryWriter(fs);
-        var frames = interleaved.Length / channels;
-        var dataBytes = interleaved.Length * 2;
+        int frames = interleaved.Length / channels;
+        int dataBytes = interleaved.Length * 2;
 
         w.Write(Encoding.ASCII.GetBytes("RIFF"));
         w.Write(36 + dataBytes);
@@ -60,7 +60,7 @@ internal static class CodecFixtures
         w.Write((short)16);
         w.Write(Encoding.ASCII.GetBytes("data"));
         w.Write(dataBytes);
-        foreach (var v in interleaved)
+        foreach (float v in interleaved)
         {
             var s = (int)Math.Round(Math.Clamp(v, -1f, 1f) * 32767f);
             w.Write((short)Math.Clamp(s, short.MinValue, short.MaxValue));
@@ -79,7 +79,7 @@ internal static class CodecFixtures
             RedirectStandardError = true,
             UseShellExecute = false,
         };
-        using var p = Process.Start(psi);
+        using Process? p = Process.Start(psi);
         if (p == null) return false;
         p.StandardOutput.ReadToEnd();
         p.StandardError.ReadToEnd();

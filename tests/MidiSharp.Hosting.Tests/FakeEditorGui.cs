@@ -1,6 +1,5 @@
 using System;
 using System.Runtime.InteropServices;
-using MidiSharp.Hosting;
 
 namespace MidiSharp.Hosting.Tests;
 

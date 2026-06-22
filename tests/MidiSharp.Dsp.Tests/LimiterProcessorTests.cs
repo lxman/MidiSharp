@@ -15,10 +15,10 @@ public sealed class LimiterProcessorTests
     public void Output_never_exceeds_the_ceiling()
     {
         var lim = new LimiterProcessor(Rate) { CeilingDb = -1.0 };   // ceiling ≈ 0.891
-        var ceiling = Math.Pow(10, -1.0 / 20.0);
-        var buf = Tone(220, amp: 0.95f, frames: 8192);               // hot, above ceiling
+        double ceiling = Math.Pow(10, -1.0 / 20.0);
+        float[] buf = Tone(220, amp: 0.95f, frames: 8192);               // hot, above ceiling
         lim.Process(buf);
-        var peak = Peak(buf);
+        float peak = Peak(buf);
         Assert.True(peak <= ceiling + 1e-4f, $"peak {peak:F4} must not exceed ceiling {ceiling:F4}");
     }
 
@@ -26,7 +26,7 @@ public sealed class LimiterProcessorTests
     public void Disabled_limiter_is_a_passthrough_even_over_the_ceiling()
     {
         var lim = new LimiterProcessor(Rate) { CeilingDb = -6.0, Enabled = false };
-        var buf = Tone(220, amp: 0.99f, frames: 2048);   // way over the ceiling
+        float[] buf = Tone(220, amp: 0.99f, frames: 2048);   // way over the ceiling
         var copy = (float[])buf.Clone();
         lim.Process(buf);
         Assert.Equal(copy, buf);   // disabled → untouched
@@ -36,7 +36,7 @@ public sealed class LimiterProcessorTests
     public void Signal_under_the_ceiling_passes_untouched()
     {
         var lim = new LimiterProcessor(Rate) { CeilingDb = -1.0 };
-        var buf = Tone(220, amp: 0.3f, frames: 4096);               // well under the ceiling
+        float[] buf = Tone(220, amp: 0.3f, frames: 4096);               // well under the ceiling
         var copy = (float[])buf.Clone();
         lim.Process(buf);
         Assert.Equal(copy, buf);   // unity gain, bit-identical
@@ -75,7 +75,7 @@ public sealed class LimiterProcessorTests
     private static float[] Tone(double freqHz, float amp, int frames)
     {
         var buf = new float[frames * 2];
-        var step = 2.0 * Math.PI * freqHz / Rate;
+        double step = 2.0 * Math.PI * freqHz / Rate;
         for (var f = 0; f < frames; f++)
         {
             var s = (float)(amp * Math.Sin(step * f));
@@ -87,7 +87,7 @@ public sealed class LimiterProcessorTests
     private static float Peak(float[] x)
     {
         float p = 0;
-        foreach (var v in x) p = Math.Max(p, Math.Abs(v));
+        foreach (float v in x) p = Math.Max(p, Math.Abs(v));
         return p;
     }
 }

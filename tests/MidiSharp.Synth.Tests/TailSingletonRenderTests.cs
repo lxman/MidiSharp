@@ -19,9 +19,9 @@ public sealed class TailSingletonRenderTests
     public void Sustain_cc_reassignment_makes_cc90_hold_notes()
     {
         // Reassigned bank: CC90 is the pedal. Hold it, release the key → the note keeps sounding.
-        var held = LevelAfterPedalledNoteOff(sustainCc: 90, pedalCc: 90);
+        float held = LevelAfterPedalledNoteOff(sustainCc: 90, pedalCc: 90);
         // Default bank: CC90 is not the pedal, so the same sequence releases the note → it decays away.
-        var notHeld = LevelAfterPedalledNoteOff(sustainCc: 64, pedalCc: 90);
+        float notHeld = LevelAfterPedalledNoteOff(sustainCc: 64, pedalCc: 90);
         Assert.True(held > notHeld * 5.0,
             $"CC90 should hold only when reassigned as sustain (held {held}, notHeld {notHeld})");
     }
@@ -45,8 +45,8 @@ public sealed class TailSingletonRenderTests
     {
         // Mid-release, a concave shape (+6 → exponent 0.5) holds a higher level than a convex one
         // (−6 → exponent 2), proving the shape exponent is applied to the release ramp.
-        var concave = ReleaseLevelMidway(shape: 6);
-        var convex = ReleaseLevelMidway(shape: -6);
+        float concave = ReleaseLevelMidway(shape: 6);
+        float convex = ReleaseLevelMidway(shape: -6);
         Assert.True(concave > convex * 1.3,
             $"concave (+6) should sit above convex (−6) mid-release (concave {concave}, convex {convex})");
     }
@@ -134,7 +134,7 @@ public sealed class TailSingletonRenderTests
 
     private static IRBank BankFrom(PatchZone[] zones, int sustainCc)
     {
-        var data = new[] { Constant(0.5f, 44100) };  // 1 s of looping-length constant tone
+        float[][] data = new[] { Constant(0.5f, 44100) };  // 1 s of looping-length constant tone
         var meta = new[] { new SampleMetadata { SampleRate = Rate, Channels = 1, LengthFrames = 44100, RootKey = 60 } };
         return new IRBank
         {

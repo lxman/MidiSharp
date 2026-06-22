@@ -47,8 +47,8 @@ public class DomainTypedSetParametersTests
         // Render through attack+decay+sustain.
         for (var i = 0; i < SampleRate; i++)
         {
-            var a = sf2.Process();
-            var b = domain.Process();
+            double a = sf2.Process();
+            double b = domain.Process();
             Assert.Equal(a, b, precision: 12);
         }
 
@@ -57,8 +57,8 @@ public class DomainTypedSetParametersTests
         domain.Release();
         for (var i = 0; i < SampleRate; i++)
         {
-            var a = sf2.Process();
-            var b = domain.Process();
+            double a = sf2.Process();
+            double b = domain.Process();
             Assert.Equal(a, b, precision: 12);
         }
     }
@@ -112,8 +112,8 @@ public class DomainTypedSetParametersTests
         var samples = (int)(SampleRate / 4.0); // ~250 ms at 44.1 kHz
         for (var i = 0; i < samples; i++)
         {
-            var a = sf2.Process();
-            var b = domain.Process();
+            double a = sf2.Process();
+            double b = domain.Process();
             Assert.Equal(a, b, precision: 12);
         }
     }
@@ -133,8 +133,8 @@ public class DomainTypedSetParametersTests
         // Period at 8.176 Hz at 44.1 kHz ≈ 5394 samples; check a chunk that crosses zero.
         for (var i = 0; i < 6000; i++)
         {
-            var a = sf2.Process();
-            var b = domain.Process();
+            double a = sf2.Process();
+            double b = domain.Process();
             Assert.Equal(a, b, precision: 12);
         }
     }
@@ -160,9 +160,9 @@ public class DomainTypedSetParametersTests
         var rng = new Random(0xC0FFEE);
         for (var i = 0; i < 10_000; i++)
         {
-            var sample = rng.NextDouble() * 2.0 - 1.0;
-            var a = sf2.Process(sample);
-            var b = domain.Process(sample);
+            double sample = rng.NextDouble() * 2.0 - 1.0;
+            double a = sf2.Process(sample);
+            double b = domain.Process(sample);
             Assert.Equal(a, b, precision: 12);
         }
     }

@@ -61,8 +61,8 @@ internal sealed unsafe class Vst3BStream : IDisposable
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static int Read(void* self, void* buffer, int numBytes, int* numRead)
     {
-        var s = Self(self);
-        var n = Math.Max(0, Math.Min(numBytes, s._length - s._pos));
+        Vst3BStream s = Self(self);
+        int n = Math.Max(0, Math.Min(numBytes, s._length - s._pos));
         if (n > 0) new ReadOnlySpan<byte>(s._data, s._pos, n).CopyTo(new Span<byte>(buffer, n));
         s._pos += n;
         if (numRead != null) *numRead = n;
@@ -72,12 +72,12 @@ internal sealed unsafe class Vst3BStream : IDisposable
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static int Write(void* self, void* buffer, int numBytes, int* numWritten)
     {
-        var s = Self(self);
+        Vst3BStream s = Self(self);
         if (numBytes < 0) numBytes = 0;
-        var end = s._pos + numBytes;
+        int end = s._pos + numBytes;
         if (end > s._data.Length)
         {
-            var cap = s._data.Length == 0 ? 256 : s._data.Length;
+            int cap = s._data.Length == 0 ? 256 : s._data.Length;
             while (cap < end) cap *= 2;
             Array.Resize(ref s._data, cap);
         }
@@ -91,8 +91,8 @@ internal sealed unsafe class Vst3BStream : IDisposable
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static int Seek(void* self, long pos, int mode, long* result)
     {
-        var s = Self(self);
-        var target = mode switch { 1 => s._pos + pos, 2 => s._length + pos, _ => pos };   // cur / end / set
+        Vst3BStream s = Self(self);
+        long target = mode switch { 1 => s._pos + pos, 2 => s._length + pos, _ => pos };   // cur / end / set
         if (target < 0) target = 0;
         s._pos = (int)target;
         if (result != null) *result = s._pos;

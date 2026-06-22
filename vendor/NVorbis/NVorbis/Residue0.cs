@@ -64,8 +64,8 @@ namespace MidiSharp.Audio.Vorbis
                 if (codebooks[bookNums[i]].MapType == 0) throw new InvalidDataException();
             }
 
-            var entries = _classBook.Entries;
-            var dim = _classBook.Dimensions;
+            int entries = _classBook.Entries;
+            int dim = _classBook.Dimensions;
             var partvals = 1;
             while (dim > 0)
             {
@@ -101,12 +101,12 @@ namespace MidiSharp.Audio.Vorbis
             _decodeMap = new int[partvals][];
             for (var j = 0; j < partvals; j++)
             {
-                var val = j;
-                var mult = partvals / _classifications;
+                int val = j;
+                int mult = partvals / _classifications;
                 _decodeMap[j] = new int[_classBook.Dimensions];
                 for (var k = 0; k < _classBook.Dimensions; k++)
                 {
-                    var deco = val / mult;
+                    int deco = val / mult;
                     val -= deco * mult;
                     mult /= _classifications;
                     _decodeMap[j][k] = deco;
@@ -119,14 +119,14 @@ namespace MidiSharp.Audio.Vorbis
         virtual public void Decode(IPacket packet, bool[] doNotDecodeChannel, int blockSize, float[][] buffer)
         {
             // this is pretty well stolen directly from libvorbis...  BSD license
-            var end = _end < blockSize / 2 ? _end : blockSize / 2;
-            var n = end - _begin;
+            int end = _end < blockSize / 2 ? _end : blockSize / 2;
+            int n = end - _begin;
 
             if (n > 0 && Array.IndexOf(doNotDecodeChannel, false) != -1)
             {
-                var partitionCount = n / _partitionSize;
+                int partitionCount = n / _partitionSize;
 
-                var partitionWords = (partitionCount + _classBook.Dimensions - 1) / _classBook.Dimensions;
+                int partitionWords = (partitionCount + _classBook.Dimensions - 1) / _classBook.Dimensions;
                 var partWordCache = new int[_channels, partitionWords][];
 
                 for (var stage = 0; stage < _maxStages; stage++)
@@ -137,7 +137,7 @@ namespace MidiSharp.Audio.Vorbis
                         {
                             for (var ch = 0; ch < _channels; ch++)
                             {
-                                var idx = _classBook.DecodeScalar(packet);
+                                int idx = _classBook.DecodeScalar(packet);
                                 if (idx >= 0 && idx < _decodeMap.Length)
                                 {
                                     partWordCache[ch, entryIdx] = _decodeMap[idx];
@@ -152,13 +152,13 @@ namespace MidiSharp.Audio.Vorbis
                         }
                         for (var dimensionIdx = 0; partitionIdx < partitionCount && dimensionIdx < _classBook.Dimensions; dimensionIdx++, partitionIdx++)
                         {
-                            var offset = _begin + partitionIdx * _partitionSize;
+                            int offset = _begin + partitionIdx * _partitionSize;
                             for (var ch = 0; ch < _channels; ch++)
                             {
-                                var idx = partWordCache[ch, entryIdx][dimensionIdx];
+                                int idx = partWordCache[ch, entryIdx][dimensionIdx];
                                 if ((_cascade[idx] & (1 << stage)) != 0)
                                 {
-                                    var book = _books[idx][stage];
+                                    ICodebook book = _books[idx][stage];
                                     if (book != null)
                                     {
                                         if (WriteVectors(book, packet, buffer, ch, offset, _partitionSize))
@@ -179,8 +179,8 @@ namespace MidiSharp.Audio.Vorbis
 
         virtual protected bool WriteVectors(ICodebook codebook, IPacket packet, float[][] residue, int channel, int offset, int partitionSize)
         {
-            var res = residue[channel];
-            var steps = partitionSize / codebook.Dimensions;
+            float[] res = residue[channel];
+            int steps = partitionSize / codebook.Dimensions;
             var entryCache = new int[steps];
 
             for (var i = 0; i < steps; i++)

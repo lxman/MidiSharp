@@ -42,7 +42,7 @@ public sealed class MetaEvent : MidiEvent
         {
             if (Type != MetaEventType.SetTempo || Data.Length < 3)
                 return null;
-            var span = Data.Span;
+            ReadOnlySpan<byte> span = Data.Span;
             return (span[0] << 16) | (span[1] << 8) | span[2];
         }
     }

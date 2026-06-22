@@ -74,12 +74,12 @@ public sealed unsafe class HostedInstrument : IDisposable
     {
         if (_disposed || _channels != 2) return;
 
-        var total = interleavedStereo.Length / 2;
-        var hasEvents = _events.Count > 0;
+        int total = interleavedStereo.Length / 2;
+        bool hasEvents = _events.Count > 0;
         var done = 0;
         while (done < total)
         {
-            var n = Math.Min(_maxFrames, total - done);
+            int n = Math.Min(_maxFrames, total - done);
             var input = new PlanarBuffers(_inPtrs, _channels, n);     // silent
             var output = new PlanarBuffers(_outPtrs, _channels, n);
             _plugin.Process(input, output, hasEvents ? ChunkEvents(done, done + n) : ReadOnlySpan<HostEvent>.Empty);
@@ -91,11 +91,11 @@ public sealed unsafe class HostedInstrument : IDisposable
 
     private ReadOnlySpan<HostEvent> ChunkEvents(int start, int end)
     {
-        var src = CollectionsMarshal.AsSpan(_events);
+        Span<HostEvent> src = CollectionsMarshal.AsSpan(_events);
         var m = 0;
         for (var i = 0; i < src.Length && m < _evScratch.Length; i++)
         {
-            var off = src[i].SampleOffset;
+            int off = src[i].SampleOffset;
             if (off >= start && off < end) _evScratch[m++] = src[i] with { SampleOffset = off - start };
         }
         return _evScratch.AsSpan(0, m);

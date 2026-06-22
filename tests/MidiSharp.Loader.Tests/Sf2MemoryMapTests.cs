@@ -17,8 +17,8 @@ public class Sf2MemoryMapTests
     // Smallest real SF2 (≥200 KB so it has actual sample data) under the usual soundfont roots.
     private static string? FindSf2()
     {
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var roots = new[]
+        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        string[] roots = new[]
         {
             Path.Combine(home, "soundfonts", "deduped", "sf2"),
             Path.Combine(home, "soundfonts"),
@@ -35,11 +35,11 @@ public class Sf2MemoryMapTests
     [Fact]
     public void MmapAndManaged_ProduceIdenticalSampleData()
     {
-        var path = FindSf2();
+        string? path = FindSf2();
         if (path == null) return;   // no real SF2 available — skip
 
-        using var managed = SoundBankLoader.Load(path, new SoundBankLoadOptions { MemoryMapSamples = false });
-        using var mapped = SoundBankLoader.Load(path, new SoundBankLoadOptions { MemoryMapSamples = true });
+        using SoundBank.SoundBank managed = SoundBankLoader.Load(path, new SoundBankLoadOptions { MemoryMapSamples = false });
+        using SoundBank.SoundBank mapped = SoundBankLoader.Load(path, new SoundBankLoadOptions { MemoryMapSamples = true });
 
         Assert.Equal(managed.Samples.Count, mapped.Samples.Count);
 
@@ -47,11 +47,11 @@ public class Sf2MemoryMapTests
         var b = new float[4096];
         for (var id = 0; id < managed.Samples.Count; id++)
         {
-            var len = managed.Samples.Metadata(id).LengthFrames;
+            long len = managed.Samples.Metadata(id).LengthFrames;
             for (long off = 0; off < len; off += a.Length)
             {
-                var na = managed.Samples.ReadFrames(id, off, a);
-                var nb = mapped.Samples.ReadFrames(id, off, b);
+                int na = managed.Samples.ReadFrames(id, off, a);
+                int nb = mapped.Samples.ReadFrames(id, off, b);
                 Assert.Equal(na, nb);
                 Assert.True(a.AsSpan(0, na).SequenceEqual(b.AsSpan(0, nb)),
                     $"sample {id} mismatch at frame {off}");
@@ -62,13 +62,13 @@ public class Sf2MemoryMapTests
     [Fact]
     public void Mmap_LoadReadDispose_StressNoCrash()
     {
-        var path = FindSf2();
+        string? path = FindSf2();
         if (path == null) return;   // skip
 
         var buf = new float[2048];
         for (var iter = 0; iter < 40; iter++)
         {
-            using var bank = SoundBankLoader.Load(path, new SoundBankLoadOptions { MemoryMapSamples = true });
+            using SoundBank.SoundBank bank = SoundBankLoader.Load(path, new SoundBankLoadOptions { MemoryMapSamples = true });
             // Touch several samples so pages actually fault in and the mapped view is read...
             for (var id = 0; id < Math.Min(bank.Samples.Count, 8); id++)
                 bank.Samples.ReadFrames(id, 0, buf);

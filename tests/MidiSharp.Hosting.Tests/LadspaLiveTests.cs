@@ -1,6 +1,5 @@
 using System;
 using System.Linq;
-using MidiSharp.Hosting;
 using MidiSharp.Hosting.Ladspa;
 using Xunit;
 
@@ -29,11 +28,11 @@ public sealed class LadspaLiveTests
     [Fact]
     public void Scans_real_plugins_from_the_ladspa_path()
     {
-        var found = ScanAll();
+        PluginDescriptor[] found = ScanAll();
         Assert.SkipWhen(found.Length == 0, "No LADSPA plugins on the search path — install some to run this.");
 
         _out.WriteLine($"Discovered {found.Length} LADSPA plugin(s):");
-        foreach (var p in found.Take(25))
+        foreach (PluginDescriptor p in found.Take(25))
             _out.WriteLine($"  [{p.Id}] {p.Name}  ({p.Vendor})");
 
         Assert.All(found, p => Assert.False(string.IsNullOrWhiteSpace(p.Name)));
@@ -42,14 +41,14 @@ public sealed class LadspaLiveTests
     [Fact]
     public void Loads_a_real_plugin_and_processes_audio_through_the_bridge()
     {
-        var found = ScanAll();
+        PluginDescriptor[] found = ScanAll();
         Assert.SkipWhen(found.Length == 0, "No LADSPA plugins on the search path — install some to run this.");
 
         // Prefer a tremolo (a clean, obviously-measurable amplitude effect); else the first plugin
         // whose port shape we support for a stereo bus.
-        var ordered = found.OrderByDescending(p => p.Name.Contains("tremolo", StringComparison.OrdinalIgnoreCase));
+        IOrderedEnumerable<PluginDescriptor> ordered = found.OrderByDescending(p => p.Name.Contains("tremolo", StringComparison.OrdinalIgnoreCase));
         IHostedPlugin? plugin = null;
-        foreach (var desc in ordered)
+        foreach (PluginDescriptor desc in ordered)
         {
             try { plugin = _format.Load(desc, Config); break; }
             catch (NotSupportedException) { /* odd port count for a stereo bus — try the next */ }
@@ -59,11 +58,11 @@ public sealed class LadspaLiveTests
         using var effect = new HostedEffect(plugin!, Config);
         _out.WriteLine($"Loaded: {plugin!.Descriptor.Name}");
         _out.WriteLine($"Parameters ({plugin.Parameters.Count}):");
-        foreach (var par in plugin.Parameters)
+        foreach (PluginParameter par in plugin.Parameters)
             _out.WriteLine($"  [{par.Index}] {par.Name}  [{par.MinValue:0.###}..{par.MaxValue:0.###}] def {par.DefaultValue:0.###}");
 
         const double amp = 0.4;
-        var inputRms = amp / Math.Sqrt(2);   // RMS of a full-scale-amp sine
+        double inputRms = amp / Math.Sqrt(2);   // RMS of a full-scale-amp sine
 
         PluginParameter? Find(params string[] names) => plugin.Parameters.FirstOrDefault(p =>
             names.Any(n => p.Name.Contains(n, StringComparison.OrdinalIgnoreCase)));
@@ -87,7 +86,7 @@ public sealed class LadspaLiveTests
                     buf[2 * i + 1] = s;
                 }
                 effect.Process(buf);
-                foreach (var v in buf)
+                foreach (float v in buf)
                 {
                     Assert.True(float.IsFinite(v), "Plugin produced a non-finite sample.");
                     sumSq += (double)v * v;
@@ -97,13 +96,13 @@ public sealed class LadspaLiveTests
             return Math.Sqrt(sumSq / n);
         }
 
-        var depth = Find("depth", "amount", "width");
-        var rate = Find("freq", "rate", "speed");
+        PluginParameter? depth = Find("depth", "amount", "width");
+        PluginParameter? rate = Find("freq", "rate", "speed");
 
         // Transparent baseline: every param at its default (for tremolo: depth 0 / freq 0 → bypass).
-        var rmsFlat = RenderRms(() =>
+        double rmsFlat = RenderRms(() =>
         {
-            foreach (var p in plugin.Parameters) plugin.SetParameter(p.Index, p.Normalize(p.DefaultValue));
+            foreach (PluginParameter p in plugin.Parameters) plugin.SetParameter(p.Index, p.Normalize(p.DefaultValue));
         });
 
         _out.WriteLine($"output RMS: flat={rmsFlat:F5} ({Db(rmsFlat):F2} dBFS), input={inputRms:F5}");
@@ -114,7 +113,7 @@ public sealed class LadspaLiveTests
         // proof the parameter path and the native run loop are live, end to end.
         if (depth != null && rate != null)
         {
-            var rmsMod = RenderRms(() =>
+            double rmsMod = RenderRms(() =>
             {
                 plugin.SetParameter(depth.Index, 1.0);    // full depth
                 plugin.SetParameter(rate.Index, 0.4);     // a moderate LFO rate

@@ -79,7 +79,7 @@ public sealed class Reverb
     public Reverb(int sampleRate = 44100)
     {
         _sampleRate = sampleRate;
-        var rateScale = sampleRate / 44100f;
+        float rateScale = sampleRate / 44100f;
         _delays = new float[N][];
         _delaySize = new int[N];
         _writeIdx = new int[N];
@@ -88,7 +88,7 @@ public sealed class Reverb
         _tmp = new float[N];
         for (var i = 0; i < N; i++)
         {
-            var size = Math.Max(1, (int)(DelayLensRef[i] * rateScale));
+            int size = Math.Max(1, (int)(DelayLensRef[i] * rateScale));
             _delaySize[i] = size;
             _delays[i] = new float[size];
         }
@@ -115,17 +115,17 @@ public sealed class Reverb
 
         // Pre-compute width-based output mixing. width=0 → both channels read identical
         // mixture (mono); width=1 → channels read independent linear combinations.
-        var widthMix = 0.5f * (1f - _width);   // amount of "other" channel bled in
-        var mainMix  = 1f - widthMix;
+        float widthMix = 0.5f * (1f - _width);   // amount of "other" channel bled in
+        float mainMix  = 1f - widthMix;
 
         // One-pole LPF coefficient. damp=0 → a=0 (pass-through); damp=1 → a≈0.6 (heavy LP).
         // Lerp instead of hard cutoff math so the parameter feels smooth.
-        var lpfA = _damp * 0.6f;
-        var lpfB = 1f - lpfA;
+        float lpfA = _damp * 0.6f;
+        float lpfB = 1f - lpfA;
 
         // Wet scale: split wet between "main" and "cross" channels for the stereo image.
-        var wetMain = _wet * mainMix;
-        var wetCross = _wet * widthMix;
+        float wetMain = _wet * mainMix;
+        float wetCross = _wet * widthMix;
 
         // Input scale: divide by N so summed input doesn't explode the loop gain.
         // (Energy preservation expects the input split N ways.)
@@ -133,17 +133,17 @@ public sealed class Reverb
 
         for (var s = 0; s < sendMono.Length; s++)
         {
-            var input = sendMono[s] * inputScale;
+            float input = sendMono[s] * inputScale;
 
             // Read tap from each delay line, apply LPF, apply loop gain.
             // Result lives in _tmp[] = the 8 "delay outputs" feeding back through the matrix.
             for (var i = 0; i < N; i++)
             {
-                var readPos = _writeIdx[i] + 1;          // oldest sample = just past write
+                int readPos = _writeIdx[i] + 1;          // oldest sample = just past write
                 if (readPos >= _delaySize[i]) readPos = 0;
-                var raw = _delays[i][readPos];
+                float raw = _delays[i][readPos];
                 // One-pole LPF on the feedback path (the "damp" control).
-                var filt = lpfB * raw + lpfA * _lpfState[i];
+                float filt = lpfB * raw + lpfA * _lpfState[i];
                 _lpfState[i] = filt;
                 _tmp[i] = filt * _loopGain[i];
             }
@@ -213,10 +213,10 @@ public sealed class Reverb
     private void UpdateLoopGains()
     {
         // Exponential mapping: T60 = 0.5 * 16^roomsize gives 0.5 .. 8 s
-        var t60 = 0.5f * MathF.Pow(16f, _roomSize);
+        float t60 = 0.5f * MathF.Pow(16f, _roomSize);
         for (var i = 0; i < N; i++)
         {
-            var delaySeconds = (float)_delaySize[i] / _sampleRate;
+            float delaySeconds = (float)_delaySize[i] / _sampleRate;
             // g such that g^(t60 / delaySeconds) = 10^-3  (= -60 dB)
             // → g = 10^(-3 * delaySeconds / t60)
             _loopGain[i] = MathF.Pow(10f, -3f * delaySeconds / t60);

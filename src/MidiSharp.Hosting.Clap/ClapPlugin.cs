@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using MidiSharp.Hosting;
 using static MidiSharp.Hosting.Clap.ClapAbi;
 
 namespace MidiSharp.Hosting.Clap;
@@ -153,7 +152,7 @@ public sealed unsafe class ClapPlugin : IHostedPlugin, IPluginGui
         var n = 0;
         for (var i = 0; i < _liveCount && n < _evCapacity; i++, n++)
             WriteParamSlot(n, _liveParams[i].ParamId, _liveParams[i].Value, 0);
-        foreach (var e in events)
+        foreach (HostEvent e in events)
         {
             if (n >= _evCapacity) break;
             if (e.Kind == HostEventKind.Param && (uint)e.ParamIndex < (uint)_paramIds.Count)
@@ -175,7 +174,7 @@ public sealed unsafe class ClapPlugin : IHostedPlugin, IPluginGui
 
     private void WriteParamSlot(int slot, uint paramId, double value, uint time)
     {
-        var stride = sizeof(ClapEventParamValue);
+        int stride = sizeof(ClapEventParamValue);
         var e = (ClapEventParamValue*)(_evBuffer + slot * stride);
         e->Header.Size = (uint)sizeof(ClapEventParamValue);
         e->Header.Time = time; e->Header.SpaceId = CoreEventSpaceId; e->Header.Type = EventParamValue; e->Header.Flags = 0;
@@ -185,7 +184,7 @@ public sealed unsafe class ClapPlugin : IHostedPlugin, IPluginGui
 
     private void WriteMidiSlot(int slot, byte d0, byte d1, byte d2, uint time)
     {
-        var stride = sizeof(ClapEventParamValue);
+        int stride = sizeof(ClapEventParamValue);
         var e = (ClapEventMidi*)(_evBuffer + slot * stride);
         e->Header.Size = (uint)sizeof(ClapEventMidi);
         e->Header.Time = time; e->Header.SpaceId = CoreEventSpaceId; e->Header.Type = EventMidi; e->Header.Flags = 0;
@@ -204,15 +203,15 @@ public sealed unsafe class ClapPlugin : IHostedPlugin, IPluginGui
     public void SetParameter(int index, double normalized)
     {
         if (!_active || (uint)index >= _parameters.Count) return;
-        var id = _paramIds[index];
-        var value = _parameters[index].Denormalize(normalized);
+        uint id = _paramIds[index];
+        double value = _parameters[index].Denormalize(normalized);
 
         // Coalesce live (UI) sets: one pending param-value per id, delivered at time 0 next block.
         for (var i = 0; i < _liveCount; i++)
             if (_liveParams[i].ParamId == id) { _liveParams[i].Value = value; return; }
         if (_liveCount >= _parameters.Count) return;
 
-        ref var e = ref _liveParams[_liveCount++];
+        ref ClapEventParamValue e = ref _liveParams[_liveCount++];
         e.Header.Size = (uint)sizeof(ClapEventParamValue);
         e.Header.Time = 0;
         e.Header.SpaceId = CoreEventSpaceId;
@@ -229,7 +228,7 @@ public sealed unsafe class ClapPlugin : IHostedPlugin, IPluginGui
         var ext = (ClapPluginState*)_plugin->GetExtension(_plugin, FixedConst(ExtState));
         if (ext == null) return [];
         using var ms = new System.IO.MemoryStream();
-        var handle = GCHandle.Alloc(ms);
+        GCHandle handle = GCHandle.Alloc(ms);
         try
         {
             var os = new ClapOStream { Ctx = (void*)GCHandle.ToIntPtr(handle), Write = &OStreamWrite };
@@ -244,7 +243,7 @@ public sealed unsafe class ClapPlugin : IHostedPlugin, IPluginGui
         var ext = (ClapPluginState*)_plugin->GetExtension(_plugin, FixedConst(ExtState));
         if (ext == null) return;
         var reader = new StateReader(state.ToArray());
-        var handle = GCHandle.Alloc(reader);
+        GCHandle handle = GCHandle.Alloc(reader);
         try
         {
             var ins = new ClapIStream { Ctx = (void*)GCHandle.ToIntPtr(handle), Read = &IStreamRead };
@@ -271,7 +270,7 @@ public sealed unsafe class ClapPlugin : IHostedPlugin, IPluginGui
     private static long IStreamRead(ClapIStream* stream, void* buffer, ulong size)
     {
         var r = (StateReader)GCHandle.FromIntPtr((IntPtr)stream->Ctx).Target!;
-        var n = Math.Min((int)size, r.Data.Length - r.Pos);
+        int n = Math.Min((int)size, r.Data.Length - r.Pos);
         if (n <= 0) return 0;
         r.Data.AsSpan(r.Pos, n).CopyTo(new Span<byte>(buffer, n));
         r.Pos += n;
@@ -361,13 +360,13 @@ public sealed unsafe class ClapPlugin : IHostedPlugin, IPluginGui
         _paramIds.Clear();
         if (_params == null) return;
 
-        var count = _params->Count(_plugin);
+        uint count = _params->Count(_plugin);
         var info = default(ClapParamInfo);
         for (uint i = 0; i < count; i++)
         {
             if (_params->GetInfo(_plugin, i, &info) == 0) continue;
             const uint stepped = 1u << 0;   // CLAP_PARAM_IS_STEPPED
-            var name = FixedStr(info.Name, 256);
+            string name = FixedStr(info.Name, 256);
             _parameters.Add(new PluginParameter((int)_paramIds.Count, name, label: "",
                 info.MinValue, info.MaxValue, info.DefaultValue, isStepped: (info.Flags & stepped) != 0));
             _paramIds.Add(info.Id);
@@ -397,9 +396,9 @@ public sealed unsafe class ClapPlugin : IHostedPlugin, IPluginGui
     {
         lock (Const)
         {
-            if (!Const.TryGetValue(s, out var p))
+            if (!Const.TryGetValue(s, out IntPtr p))
             {
-                var bytes = System.Text.Encoding.UTF8.GetBytes(s);
+                byte[] bytes = System.Text.Encoding.UTF8.GetBytes(s);
                 p = Marshal.AllocHGlobal(bytes.Length + 1);
                 Marshal.Copy(bytes, 0, p, bytes.Length);
                 ((byte*)p)[bytes.Length] = 0;

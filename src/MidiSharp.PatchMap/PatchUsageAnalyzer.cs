@@ -49,7 +49,7 @@ public static class PatchUsageAnalyzer
         var order = new List<(int Bank, int Program)>();
         var channelsByKey = new Dictionary<(int, int), SortedSet<int>>();
 
-        foreach (var scheduled in new MidiSequencer(file).Events)
+        foreach (ScheduledEvent scheduled in new MidiSequencer(file).Events)
         {
             switch (scheduled.Event)
             {
@@ -64,10 +64,10 @@ public static class PatchUsageAnalyzer
                     break;
                 case NoteOnEvent { Velocity: > 0 } on:
                 {
-                    var s = state[on.Channel];
-                    var bank = BankResolution.Resolve(s.BankMsb, s.BankLsb, s.IsDrum, s.DrumBank);
-                    var key = (bank, (int)s.Program);
-                    if (!channelsByKey.TryGetValue(key, out var chans))
+                    ChannelBankState s = state[on.Channel];
+                    int bank = BankResolution.Resolve(s.BankMsb, s.BankLsb, s.IsDrum, s.DrumBank);
+                    (int bank, int) key = (bank, (int)s.Program);
+                    if (!channelsByKey.TryGetValue(key, out SortedSet<int>? chans))
                     {
                         chans = [];
                         channelsByKey[key] = chans;
@@ -80,12 +80,12 @@ public static class PatchUsageAnalyzer
         }
 
         var result = new List<UsedPatch>(order.Count);
-        foreach (var (bank, program) in order)
+        foreach ((int bank, int program) in order)
         {
             string? baseName = null;
             if (baseBank != null)
             {
-                var patch = baseBank.FindPatch(bank, program) ?? baseBank.FindPatch(0, program);
+                Patch? patch = baseBank.FindPatch(bank, program) ?? baseBank.FindPatch(0, program);
                 baseName = patch?.Name;
             }
 

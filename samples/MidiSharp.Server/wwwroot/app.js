@@ -103,6 +103,7 @@ function renderBrowse() {
   const d = bwData;
 
   // breadcrumb
+  const DRIVES = '::drives';
   const crumbs = $('bwCrumbs');
   crumbs.innerHTML = '';
   const addCrumb = (label, full) => {
@@ -111,13 +112,25 @@ function renderBrowse() {
     a.onclick = () => browseTo(full);
     crumbs.appendChild(a);
   };
-  addCrumb('/', '/');
-  let acc = '';
-  for (const seg of d.path.split('/').filter(Boolean)) {
-    acc += '/' + seg;
+  const addSep = () => {
     const sep = document.createElement('span'); sep.className = 'sep'; sep.textContent = '›';
     crumbs.appendChild(sep);
-    addCrumb(seg, acc);
+  };
+  if (d.path === DRIVES) {
+    addCrumb('Drives', DRIVES);
+  } else {
+    // Windows paths use backslashes and a drive-letter root (C:\); POSIX paths use '/'.
+    const win = /^[A-Za-z]:/.test(d.path) || d.path.includes('\\');
+    const sepCh = win ? '\\' : '/';
+    addCrumb(win ? 'Drives' : '/', win ? DRIVES : '/');
+    let acc = '';
+    const segs = d.path.split(/[\\/]+/).filter(Boolean);
+    segs.forEach((seg, i) => {
+      // First Windows segment is the drive ("C:" → "C:\"); thereafter join with the separator.
+      acc = i === 0 ? (win ? seg + '\\' : '/' + seg) : acc.replace(/[\\/]+$/, '') + sepCh + seg;
+      addSep();
+      addCrumb(seg, acc);
+    });
   }
 
   // list (folders then files), filtered by the current folder filter

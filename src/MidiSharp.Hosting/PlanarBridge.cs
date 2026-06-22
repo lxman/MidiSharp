@@ -21,7 +21,7 @@ public static class PlanarBridge
     /// </summary>
     public static void DeinterleaveStereo(ReadOnlySpan<float> interleaved, Span<float> left, Span<float> right)
     {
-        var frames = interleaved.Length / 2;
+        int frames = interleaved.Length / 2;
         if (left.Length < frames || right.Length < frames)
             throw new ArgumentException("Channel buffers are smaller than the block's frame count.");
 
@@ -39,7 +39,7 @@ public static class PlanarBridge
     /// </summary>
     public static void InterleaveStereo(ReadOnlySpan<float> left, ReadOnlySpan<float> right, Span<float> interleaved)
     {
-        var frames = interleaved.Length / 2;
+        int frames = interleaved.Length / 2;
         if (left.Length < frames || right.Length < frames)
             throw new ArgumentException("Channel buffers are smaller than the block's frame count.");
 

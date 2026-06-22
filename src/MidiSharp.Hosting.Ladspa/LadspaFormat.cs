@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using MidiSharp.Hosting;
 
 namespace MidiSharp.Hosting.Ladspa;
 
@@ -24,14 +23,14 @@ public sealed class LadspaFormat : IPluginFormat
     {
         get
         {
-            var env = Environment.GetEnvironmentVariable("LADSPA_PATH");
+            string? env = Environment.GetEnvironmentVariable("LADSPA_PATH");
             if (!string.IsNullOrEmpty(env))
             {
-                foreach (var p in env.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+                foreach (string p in env.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
                     yield return p;
                 yield break;
             }
-            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             yield return "/usr/lib/ladspa";
             yield return "/usr/local/lib/ladspa";
             yield return Path.Combine(home, ".ladspa");
@@ -40,10 +39,10 @@ public sealed class LadspaFormat : IPluginFormat
 
     public IEnumerable<string> EnumerateFiles(IEnumerable<string> searchPaths)
     {
-        foreach (var dir in searchPaths)
+        foreach (string dir in searchPaths)
         {
             if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) continue;
-            foreach (var file in Directory.EnumerateFiles(dir, "*.so").OrderBy(f => f, StringComparer.Ordinal))
+            foreach (string file in Directory.EnumerateFiles(dir, "*.so").OrderBy(f => f, StringComparer.Ordinal))
                 yield return file;
         }
     }
@@ -54,10 +53,10 @@ public sealed class LadspaFormat : IPluginFormat
 
     public IEnumerable<PluginDescriptor> ScanFile(string file)
     {
-        if (!NativeLibrary.TryLoad(file, out var lib)) yield break;
+        if (!NativeLibrary.TryLoad(file, out IntPtr lib)) yield break;
         try
         {
-            foreach (var d in EnumerateDescriptors(lib, file))
+            foreach (PluginDescriptor d in EnumerateDescriptors(lib, file))
                 yield return d;
         }
         finally { NativeLibrary.Free(lib); }
@@ -68,7 +67,7 @@ public sealed class LadspaFormat : IPluginFormat
         if (descriptor.Format != Name)
             throw new ArgumentException($"Not a LADSPA descriptor: {descriptor.Format}", nameof(descriptor));
 
-        var lib = NativeLibrary.Load(descriptor.Path);
+        IntPtr lib = NativeLibrary.Load(descriptor.Path);
         try
         {
             var descFn = Marshal.GetDelegateForFunctionPointer<LadspaInterop.DescriptorFn>(
@@ -76,7 +75,7 @@ public sealed class LadspaFormat : IPluginFormat
 
             for (nuint i = 0; ; i++)
             {
-                var ptr = descFn(i);
+                IntPtr ptr = descFn(i);
                 if (ptr == IntPtr.Zero) break;
                 var raw = Marshal.PtrToStructure<LadspaInterop.LADSPA_Descriptor>(ptr);
                 if (raw.UniqueID.ToString() == descriptor.Id)
@@ -94,7 +93,7 @@ public sealed class LadspaFormat : IPluginFormat
     // Enumerate ladspa_descriptor(0,1,2,…) until null, projecting each to a PluginDescriptor.
     private static IEnumerable<PluginDescriptor> EnumerateDescriptors(IntPtr lib, string file)
     {
-        if (!NativeLibrary.TryGetExport(lib, LadspaInterop.DescriptorExport, out var export))
+        if (!NativeLibrary.TryGetExport(lib, LadspaInterop.DescriptorExport, out IntPtr export))
             yield break;
 
         var descFn = Marshal.GetDelegateForFunctionPointer<LadspaInterop.DescriptorFn>(export);

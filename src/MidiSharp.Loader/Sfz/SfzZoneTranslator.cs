@@ -20,52 +20,52 @@ internal static class SfzZoneTranslator
     public static PatchZone Build(SfzRegion r, SfzControl control, int sampleId, AudioInfo wav)
     {
         // ── Key / velocity activation ────────────────────────────────
-        var keyAll = r.GetKey("key", control);
-        var lokey = r.GetKey("lokey", control) ?? keyAll ?? 0;
-        var hikey = r.GetKey("hikey", control) ?? keyAll ?? 127;
-        var rootKey = r.GetKey("pitch_keycenter", control) ?? keyAll
+        int? keyAll = r.GetKey("key", control);
+        int lokey = r.GetKey("lokey", control) ?? keyAll ?? 0;
+        int hikey = r.GetKey("hikey", control) ?? keyAll ?? 127;
+        int rootKey = r.GetKey("pitch_keycenter", control) ?? keyAll
                       ?? Math.Clamp(DefaultKeyCenter + control.KeyOffset, 0, 127);
 
-        var lovel = r.GetInt("lovel", 0);
-        var hivel = r.GetInt("hivel", 127);
+        int lovel = r.GetInt("lovel", 0);
+        int hivel = r.GetInt("hivel", 127);
 
         // ── CC gates (locc/hicc, on_locc/on_hicc) ────────────────────
-        var ccGates = BuildCcGates(r);
+        IReadOnlyList<CCGate> ccGates = BuildCcGates(r);
 
         // ── Tuning ───────────────────────────────────────────────────
         // tune (a.k.a. pitch) is cents; transpose is semitones. group_tune adds a group-level cents
         // offset on top (the region inherits it through the header hierarchy).
-        var tuneCents = r.GetDouble("tune", r.GetDouble("pitch", 0)) + r.GetDouble("group_tune", 0);
-        var transpose = r.GetDouble("transpose", 0);
+        double tuneCents = r.GetDouble("tune", r.GetDouble("pitch", 0)) + r.GetDouble("group_tune", 0);
+        double transpose = r.GetDouble("transpose", 0);
 
         // ── Level / pan ──────────────────────────────────────────────
         // SFZ volume is signed dB, positive = louder; the *_volume variants at
         // each hierarchy level sum with it. IR AttenuationDb is the negation.
-        var totalVolumeDb = r.GetDouble("volume", 0)
-                            + r.GetDouble("global_volume", 0)
-                            + r.GetDouble("master_volume", 0)
-                            + r.GetDouble("group_volume", 0);
+        double totalVolumeDb = r.GetDouble("volume", 0)
+                               + r.GetDouble("global_volume", 0)
+                               + r.GetDouble("master_volume", 0)
+                               + r.GetDouble("group_volume", 0);
 
         // amplitude is a linear-% gain (100 = unchanged) that multiplies on top of volume — so it
         // adds as dB here, and combines correctly with the amplitude_oncc route (also dB). 0 → silence
         // (floored so the log is finite). 100 is the default and a no-op, keeping non-amplitude zones
         // byte-identical.
-        var amplitude = r.GetDouble("amplitude", 100.0);
+        double amplitude = r.GetDouble("amplitude", 100.0);
         if (amplitude != 100.0)
             totalVolumeDb += 20.0 * Math.Log10(Math.Max(amplitude, 1e-4) / 100.0);
 
-        var pan = Math.Clamp(r.GetDouble("pan", 0) / 100.0, -1.0, 1.0);
+        double pan = Math.Clamp(r.GetDouble("pan", 0) / 100.0, -1.0, 1.0);
 
         // ── Amp envelope (DAHDSR; sustain is percent) ────────────────
         // ampeg_{stage}_oncc{N}: a CC shifts the stage (seconds, or percent for sustain), shaped by the
         // curve and evaluated at the seeded initial CC — baked in here like amp_veltrack_oncc. This is
         // what gives Salamander its ~1 s damper release (ampeg_release_oncc72=2, cc72 seeded to 0.5).
-        var ic = control.InitialControllers;
+        Dictionary<int, int> ic = control.InitialControllers;
         // ampeg_dynamic=1 re-reads the CC-modulated envelope stages from the LIVE controller (the voice
         // evaluates CcMods at note-on). Without it, we keep the current behaviour: bake the CC offset at
         // the static seeded CC here — which is correct for the static-seed case and keeps every existing
         // font byte-identical (the dynamic path is opt-in, gated on this flag).
-        var dynamic = r.GetInt("ampeg_dynamic", 0) != 0;
+        bool dynamic = r.GetInt("ampeg_dynamic", 0) != 0;
         double CcBake(string stage) => dynamic ? 0.0 : EnvCcOffset(r, ic, stage, control.Curves);
         var ampEnv = new EnvelopeSettings
         {
@@ -91,23 +91,23 @@ internal static class SfzZoneTranslator
         };
 
         // ── Filter ───────────────────────────────────────────────────
-        var filter = BuildFilter(r, out var fileDepthCents);
-        var filter2 = BuildSecondFilter(r, out var filter2CutoffCc);
+        FilterSettings? filter = BuildFilter(r, out double fileDepthCents);
+        FilterSettings? filter2 = BuildSecondFilter(r, out LfoCcDepth[]? filter2CutoffCc);
         // Generic LFOs are built first so EQ bands they target (lfoN_eqNgain/freq) get instantiated
         // even when their static gain is 0 (the LFO oscillates around it).
-        var lfos = BuildGenericLfos(r);
-        var lfoEqBands = CollectLfoEqBands(lfos);
-        var eqBands = BuildEqBands(r, lfoEqBands, control.Curves);
+        GenericLfo[]? lfos = BuildGenericLfos(r);
+        HashSet<int>? lfoEqBands = CollectLfoEqBands(lfos);
+        IReadOnlyList<EqBand> eqBands = BuildEqBands(r, lfoEqBands, control.Curves);
 
         // ── Modulation envelope (filter and/or pitch EG) ─────────────
-        var pitchEgDepth = r.GetDouble("pitcheg_depth", 0);
+        double pitchEgDepth = r.GetDouble("pitcheg_depth", 0);
         EnvelopeSettings? modEnv = null;
         double pitchModEnvCents = 0;
         if (fileDepthCents != 0 || pitchEgDepth != 0)
         {
             // One IR mod-envelope serves both filter and pitch EG. Prefer the
             // filter EG's timing when present (it's the more common SFZ use).
-            var p = fileDepthCents != 0 ? "fileg_" : "pitcheg_";
+            string p = fileDepthCents != 0 ? "fileg_" : "pitcheg_";
             modEnv = new EnvelopeSettings
             {
                 DelaySeconds = r.GetDouble(p + "delay", 0),
@@ -121,11 +121,11 @@ internal static class SfzZoneTranslator
         }
 
         // ── LFOs ─────────────────────────────────────────────────────
-        var vibratoLfo = BuildPitchLfo(r);
-        var modLfo = BuildModLfo(r);
+        LFOSettings? vibratoLfo = BuildPitchLfo(r);
+        LFOSettings? modLfo = BuildModLfo(r);
 
         // ── Looping + sample addressing ──────────────────────────────
-        var (loopMode, loopStart, loopEnd) = ResolveLoop(r, wav);
+        (LoopMode loopMode, long? loopStart, long? loopEnd) = ResolveLoop(r, wav);
         long? startOffset = r.Has("offset") ? r.GetInt("offset", 0) : null;
         long? endOffset = r.Has("end") ? r.GetInt("end", 0) : null;
 
@@ -148,21 +148,21 @@ internal static class SfzZoneTranslator
         // from the effective amp_veltrack using sfizz's law (gain = 1 - |vt|·(1 - vel²)), so SFZ
         // dynamics match the reference instead of our older dB-attenuation route. Either way velocity
         // is a per-note linear factor applied in Voice — no separate velocity modulation route.
-        var ampVelCurve = BuildVelocityCurve(r)
-                          ?? BuildVeltrackCurve(ComputeEffectiveVeltrack(r, control.InitialControllers, control.Curves));
+        double[] ampVelCurve = BuildVelocityCurve(r)
+                               ?? BuildVeltrackCurve(ComputeEffectiveVeltrack(r, control.InitialControllers, control.Curves));
         // Velocity crossfade (xfin/xfout) folds in as an extra velocity→gain factor, so layers fade
         // across their boundaries instead of switching abruptly.
         ApplyVelocityCrossfade(r, ampVelCurve);
 
         // ── Routes: _oncc modulations + suppressed default-CC routes ──
-        var routes = BuildRoutes(r, control.InitialControllers, control.Curves);
+        List<ModulationRoute> routes = BuildRoutes(r, control.InitialControllers, control.Curves);
 
         // ── Round-robin (seq_length / seq_position) ──────────────────
         RoundRobin? roundRobin = null;
         if (r.Has("seq_length") || r.Has("seq_position"))
         {
-            var len = Math.Max(1, r.GetInt("seq_length", 1));
-            var pos = Math.Clamp(r.GetInt("seq_position", 1), 1, len);
+            int len = Math.Max(1, r.GetInt("seq_length", 1));
+            int pos = Math.Clamp(r.GetInt("seq_position", 1), 1, len);
             roundRobin = new RoundRobin(pos - 1, len);
         }
 
@@ -173,12 +173,12 @@ internal static class SfzZoneTranslator
 
         // ── Keyswitch (sw_last / sw_lokey / sw_hikey / sw_default) ────
         KeySwitch? keySwitch = null;
-        var swSelecting = r.GetKey("sw_last", control) ?? r.GetKey("sw_down", control);
+        int? swSelecting = r.GetKey("sw_last", control) ?? r.GetKey("sw_down", control);
         if (swSelecting.HasValue)
         {
-            var swLo = r.GetKey("sw_lokey", control) ?? swSelecting.Value;
-            var swHi = r.GetKey("sw_hikey", control) ?? swSelecting.Value;
-            var swDefault = r.GetKey("sw_default", control) ?? swLo;
+            int swLo = r.GetKey("sw_lokey", control) ?? swSelecting.Value;
+            int swHi = r.GetKey("sw_hikey", control) ?? swSelecting.Value;
+            int swDefault = r.GetKey("sw_default", control) ?? swLo;
             keySwitch = new KeySwitch((byte)swLo, (byte)swHi, (byte)swSelecting.Value, (byte)swDefault);
         }
 
@@ -193,23 +193,23 @@ internal static class SfzZoneTranslator
         // trigger= decides whether a zone fires on NoteOn (attack, the default) or NoteOff (release —
         // damper/string-release samples). rt_decay attenuates a release sample by N dB per second the
         // note was held (a string that already decayed under the key).
-        var trigger = ParseTrigger(r.Get("trigger"));
-        var rtDecay = r.GetDouble("rt_decay", 0);
+        ZoneTrigger trigger = ParseTrigger(r.Get("trigger"));
+        double rtDecay = r.GetDouble("rt_decay", 0);
 
         // ── Voice-off (note_polyphony / off_mode / off_time) ─────────
         // Any of these opts the zone into smooth voice-off (fade on retrigger / group-kill). off_time
         // implies off_mode=time when off_mode isn't given (sfizz's rule); off_time defaults to 6 ms.
-        var smoothOff = r.Has("note_polyphony") || r.Has("off_mode") || r.Has("off_time");
-        var offMode = ParseOffMode(r.Get("off_mode"), r.Has("off_time"));
-        var offTime = r.GetDouble("off_time", 0.006);
+        bool smoothOff = r.Has("note_polyphony") || r.Has("off_mode") || r.Has("off_time");
+        ZoneOffMode offMode = ParseOffMode(r.Get("off_mode"), r.Has("off_time"));
+        double offTime = r.GetDouble("off_time", 0.006);
 
         // ── Humanization (amp/pitch/delay/offset random + fixed delay) ─
-        var ampRandomDb = r.GetDouble("amp_random", 0);
-        var pitchRandomCents = r.GetDouble("pitch_random", 0);
+        double ampRandomDb = r.GetDouble("amp_random", 0);
+        double pitchRandomCents = r.GetDouble("pitch_random", 0);
         // delay_cc{N} / delay_oncc{N} shift the start delay by a CC, evaluated once at the seeded CC
         // (the delay is fixed at note onset). Negative offsets can cancel a base delay → clamp at 0.
-        var delaySeconds = Math.Max(0, r.GetDouble("delay", 0) + EnvCcOffset(r, ic, "delay", control.Curves));
-        var delayRandomSeconds = r.GetDouble("delay_random", 0);
+        double delaySeconds = Math.Max(0, r.GetDouble("delay", 0) + EnvCcOffset(r, ic, "delay", control.Curves));
+        double delayRandomSeconds = r.GetDouble("delay_random", 0);
         long offsetRandomFrames = r.Has("offset_random") ? r.GetInt("offset_random", 0) : 0;
 
         return new PatchZone
@@ -299,22 +299,22 @@ internal static class SfzZoneTranslator
         IReadOnlyDictionary<int, double[]> curves)
     {
         double sum = 0;
-        foreach (var (param, cc, value) in r.EnumerateModulations())
+        foreach ((string param, int cc, double value) in r.EnumerateModulations())
         {
-            if (param != stageParam || !initialCc.TryGetValue(cc, out var ccVal)) continue;
-            var curveIdx = r.GetInt(stageParam + "_curvecc" + cc, 0);
+            if (param != stageParam || !initialCc.TryGetValue(cc, out int ccVal)) continue;
+            int curveIdx = r.GetInt(stageParam + "_curvecc" + cc, 0);
             sum += value * EvalCurve(curveIdx, ccVal / 127.0, curves);
         }
 
         // v1/ARIA short form ampeg_{stage}cc{N} (no underscore) — an alias of ampeg_{stage}_oncc{N}
         // that EnumerateModulations doesn't surface (it only matches the _oncc/_cc spellings). The
         // "{stage}cc" prefix can't collide with "{stage}_oncc" or "{stage}_curvecc", so fold it in here.
-        foreach (var (cc, raw) in r.EnumerateCc(stageParam + "cc"))
+        foreach ((int cc, string raw) in r.EnumerateCc(stageParam + "cc"))
         {
-            if (!initialCc.TryGetValue(cc, out var ccVal)) continue;
+            if (!initialCc.TryGetValue(cc, out int ccVal)) continue;
             if (!double.TryParse(raw.Trim(), NumberStyles.Float,
-                    CultureInfo.InvariantCulture, out var value)) continue;
-            var curveIdx = r.GetInt(stageParam + "_curvecc" + cc, 0);
+                    CultureInfo.InvariantCulture, out double value)) continue;
+            int curveIdx = r.GetInt(stageParam + "_curvecc" + cc, 0);
             sum += value * EvalCurve(curveIdx, ccVal / 127.0, curves);
         }
         return sum;
@@ -331,17 +331,17 @@ internal static class SfzZoneTranslator
         List<EnvCcMod>? list = null;
         void Collect(string stageParam, EnvStage stage)
         {
-            foreach (var (param, cc, value) in r.EnumerateModulations())
+            foreach ((string param, int cc, double value) in r.EnumerateModulations())
             {
                 if (param != stageParam) continue;
-                var curve = r.GetInt(stageParam + "_curvecc" + cc, 0);
+                int curve = r.GetInt(stageParam + "_curvecc" + cc, 0);
                 (list ??= []).Add(new EnvCcMod(stage, cc, value, curve));
             }
-            foreach (var (cc, raw) in r.EnumerateCc(stageParam + "cc"))
+            foreach ((int cc, string raw) in r.EnumerateCc(stageParam + "cc"))
             {
                 if (!double.TryParse(raw.Trim(), NumberStyles.Float,
-                        CultureInfo.InvariantCulture, out var value)) continue;
-                var curve = r.GetInt(stageParam + "_curvecc" + cc, 0);
+                        CultureInfo.InvariantCulture, out double value)) continue;
+                int curve = r.GetInt(stageParam + "_curvecc" + cc, 0);
                 (list ??= []).Add(new EnvCcMod(stage, cc, value, curve));
             }
         }
@@ -383,11 +383,11 @@ internal static class SfzZoneTranslator
     {
         // amp_velcurve_{N} = gain — reuse the prefix enumerator (parses the trailing N).
         var points = new SortedDictionary<int, double>();
-        foreach (var (vel, value) in r.EnumerateCc("amp_velcurve_"))
+        foreach ((int vel, string value) in r.EnumerateCc("amp_velcurve_"))
         {
             if (vel is < 0 or > 127) continue;
             if (double.TryParse(value.Trim(), NumberStyles.Float,
-                    CultureInfo.InvariantCulture, out var g))
+                    CultureInfo.InvariantCulture, out double g))
                 points[vel] = Math.Max(0.0, g);
         }
         if (points.Count == 0) return null;
@@ -401,15 +401,15 @@ internal static class SfzZoneTranslator
         {
             int v0 = keys[i], v1 = keys[i + 1];
             double g0 = points[v0], g1 = points[v1];
-            for (var v = v0; v <= v1; v++)
+            for (int v = v0; v <= v1; v++)
             {
-                var t = v1 == v0 ? 0.0 : (double)(v - v0) / (v1 - v0);
+                double t = v1 == v0 ? 0.0 : (double)(v - v0) / (v1 - v0);
                 curve[v] = g0 + (g1 - g0) * t;
             }
         }
         // Flat-fill anything below the lowest / above the highest defined point.
         for (var v = 0; v < keys[0]; v++) curve[v] = points[keys[0]];
-        for (var v = keys[keys.Count - 1] + 1; v < 128; v++) curve[v] = points[keys[keys.Count - 1]];
+        for (int v = keys[keys.Count - 1] + 1; v < 128; v++) curve[v] = points[keys[keys.Count - 1]];
         return curve;
     }
 
@@ -419,20 +419,20 @@ internal static class SfzZoneTranslator
         // build one gate per CC from its lo/hi (defaulting to the full range).
         var los = new Dictionary<int, int>();
         var his = new Dictionary<int, int>();
-        foreach (var (cc, v) in r.EnumerateCc("locc")) los[cc] = ParseByte(v, 0);
-        foreach (var (cc, v) in r.EnumerateCc("on_locc")) los[cc] = ParseByte(v, 0);
-        foreach (var (cc, v) in r.EnumerateCc("hicc")) his[cc] = ParseByte(v, 127);
-        foreach (var (cc, v) in r.EnumerateCc("on_hicc")) his[cc] = ParseByte(v, 127);
+        foreach ((int cc, string v) in r.EnumerateCc("locc")) los[cc] = ParseByte(v, 0);
+        foreach ((int cc, string v) in r.EnumerateCc("on_locc")) los[cc] = ParseByte(v, 0);
+        foreach ((int cc, string v) in r.EnumerateCc("hicc")) his[cc] = ParseByte(v, 127);
+        foreach ((int cc, string v) in r.EnumerateCc("on_hicc")) his[cc] = ParseByte(v, 127);
 
         if (los.Count == 0 && his.Count == 0) return [];
 
         var ccs = new HashSet<int>(los.Keys);
         ccs.UnionWith(his.Keys);
         var gates = new List<CCGate>(ccs.Count);
-        foreach (var cc in ccs)
+        foreach (int cc in ccs)
         {
-            var lo = los.TryGetValue(cc, out var l) ? l : 0;
-            var hi = his.TryGetValue(cc, out var h) ? h : 127;
+            int lo = los.TryGetValue(cc, out int l) ? l : 0;
+            int hi = his.TryGetValue(cc, out int h) ? h : 127;
             gates.Add(new CCGate((byte)cc, (byte)Math.Clamp(lo, 0, 127), (byte)Math.Clamp(hi, 0, 127)));
         }
         return gates;
@@ -447,8 +447,8 @@ internal static class SfzZoneTranslator
     {
         if (lfos == null) return null;
         HashSet<int>? set = null;
-        foreach (var lfo in lfos)
-            foreach (var t in lfo.Targets)
+        foreach (GenericLfo lfo in lfos)
+            foreach (LfoTarget t in lfo.Targets)
                 if (t.Destination is LfoDestination.EqGain or LfoDestination.EqFreq)
                     (set ??= []).Add(t.EqBand);
         return set;
@@ -460,26 +460,26 @@ internal static class SfzZoneTranslator
         List<EqBand>? bands = null;
         for (var n = 1; n <= 8; n++)
         {
-            var gain = r.GetDouble("eq" + n + "_gain", 0);
-            var freq = r.GetDouble("eq" + n + "_freq", 0);
-            var velGain = r.GetDouble("eq" + n + "_vel2gain", 0);
+            double gain = r.GetDouble("eq" + n + "_gain", 0);
+            double freq = r.GetDouble("eq" + n + "_freq", 0);
+            double velGain = r.GetDouble("eq" + n + "_vel2gain", 0);
             // Live CC modulation of this band (eqN_gain/freq/bw_oncc{X}) — the direct-CC analogue of the
             // LFO→EQ path. A band can exist purely to be CC-driven (gain 0 base, swung by the controller).
-            var gainCc = CollectCcAmounts(r, "eq" + n + "_gain_oncc", "eq" + n + "_gain_cc");
-            var freqCc = CollectCcAmounts(r, "eq" + n + "_freq_oncc", "eq" + n + "_freq_cc");
-            var bwCc = CollectCcAmounts(r, "eq" + n + "_bw_oncc", "eq" + n + "_bw_cc");
-            var ccDriven = gainCc != null || freqCc != null || bwCc != null;
+            LfoCcDepth[]? gainCc = CollectCcAmounts(r, "eq" + n + "_gain_oncc", "eq" + n + "_gain_cc");
+            LfoCcDepth[]? freqCc = CollectCcAmounts(r, "eq" + n + "_freq_oncc", "eq" + n + "_freq_cc");
+            LfoCcDepth[]? bwCc = CollectCcAmounts(r, "eq" + n + "_bw_oncc", "eq" + n + "_bw_cc");
+            bool ccDriven = gainCc != null || freqCc != null || bwCc != null;
             // Keep a band if it has audible static gain, an LFO/CC/velocity drives it (then a 0-gain band
             // is the centre that's modulated). Either way it needs a defined frequency.
-            var lfoDriven = lfoBands?.Contains(n) == true;
+            bool lfoDriven = lfoBands?.Contains(n) == true;
             if ((gain == 0 && !lfoDriven && velGain == 0 && !ccDriven) || freq <= 0) continue;
-            var bw = r.GetDouble("eq" + n + "_bw", 1.0);
+            double bw = r.GetDouble("eq" + n + "_bw", 1.0);
             // eqN_gain_curvecc{X}: a custom curve shaping the gain-CC response (first one wins).
             double[]? gainCurve = null;
-            foreach (var (_, raw) in r.EnumerateCc("eq" + n + "_gain_curvecc"))
+            foreach ((int _, string raw) in r.EnumerateCc("eq" + n + "_gain_curvecc"))
             {
                 if (int.TryParse(raw.Trim(), NumberStyles.Integer,
-                        CultureInfo.InvariantCulture, out var idx))
+                        CultureInfo.InvariantCulture, out int idx))
                     gainCurve = ResolveCurveTable(idx, curves);
                 break;
             }
@@ -502,11 +502,11 @@ internal static class SfzZoneTranslator
     private static FilterSettings? BuildFilter(SfzRegion r, out double envDepthCents)
     {
         envDepthCents = r.GetDouble("fileg_depth", 0);
-        var hasCutoff = r.Has("cutoff");
+        bool hasCutoff = r.Has("cutoff");
         // fil_gain (shelf/peak gain) also brings a filter into existence on its own.
         if (!hasCutoff && envDepthCents == 0 && !r.Has("fil_gain")) return null;
 
-        var cutoff = r.GetDouble("cutoff", 20000.0);
+        double cutoff = r.GetDouble("cutoff", 20000.0);
         return new FilterSettings
         {
             Type = ParseFilterType(r.Get("fil_type")),
@@ -525,10 +525,10 @@ internal static class SfzZoneTranslator
     private static LfoCcDepth[]? CollectCcAmounts(SfzRegion r, params string[] prefixes)
     {
         List<LfoCcDepth>? list = null;
-        foreach (var prefix in prefixes)
-            foreach (var (n, raw) in r.EnumerateCc(prefix))
+        foreach (string prefix in prefixes)
+            foreach ((int n, string raw) in r.EnumerateCc(prefix))
                 if (double.TryParse(raw.Trim(), NumberStyles.Float,
-                        CultureInfo.InvariantCulture, out var amt))
+                        CultureInfo.InvariantCulture, out double amt))
                     (list ??= []).Add(new LfoCcDepth(n, amt));
         return list?.ToArray();
     }
@@ -556,10 +556,10 @@ internal static class SfzZoneTranslator
         if (!r.Has("cutoff2") && !r.Has("fil2_type") && !r.Has("fil2_gain")) return null;
 
         List<LfoCcDepth>? cc = null;
-        foreach (var prefix in new[] { "cutoff2_oncc", "cutoff2_cc" })
-            foreach (var (n, raw) in r.EnumerateCc(prefix))
+        foreach (string prefix in new[] { "cutoff2_oncc", "cutoff2_cc" })
+            foreach ((int n, string raw) in r.EnumerateCc(prefix))
                 if (double.TryParse(raw.Trim(), NumberStyles.Float,
-                        CultureInfo.InvariantCulture, out var cents))
+                        CultureInfo.InvariantCulture, out double cents))
                     (cc ??= []).Add(new LfoCcDepth(n, cents));
         cutoffCc = cc?.ToArray();
 
@@ -586,15 +586,15 @@ internal static class SfzZoneTranslator
 
     private static LFOSettings? BuildModLfo(SfzRegion r)
     {
-        var hasAmp = r.Has("amplfo_freq") || r.Has("amplfo_depth");
-        var hasFil = r.Has("fillfo_freq") || r.Has("fillfo_depth");
+        bool hasAmp = r.Has("amplfo_freq") || r.Has("amplfo_depth");
+        bool hasFil = r.Has("fillfo_freq") || r.Has("fillfo_depth");
         if (!hasAmp && !hasFil) return null;
 
         // One IR mod-LFO carries both tremolo and filter sweep; take whichever
         // frequency/delay is specified (amp first).
-        var freq = hasAmp ? r.GetDouble("amplfo_freq", 0) : r.GetDouble("fillfo_freq", 0);
-        var delay = hasAmp ? r.GetDouble("amplfo_delay", 0) : r.GetDouble("fillfo_delay", 0);
-        var fade = hasAmp ? r.GetDouble("amplfo_fade", 0) : r.GetDouble("fillfo_fade", 0);
+        double freq = hasAmp ? r.GetDouble("amplfo_freq", 0) : r.GetDouble("fillfo_freq", 0);
+        double delay = hasAmp ? r.GetDouble("amplfo_delay", 0) : r.GetDouble("fillfo_delay", 0);
+        double fade = hasAmp ? r.GetDouble("amplfo_fade", 0) : r.GetDouble("fillfo_fade", 0);
         return new LFOSettings
         {
             DelaySeconds = delay,
@@ -617,44 +617,44 @@ internal static class SfzZoneTranslator
     {
         // Group lfo{index}_{suffix} opcodes by index (sorted so the result is deterministic).
         SortedDictionary<int, Dictionary<string, string>>? byIndex = null;
-        foreach (var kv in r.Opcodes)
+        foreach (KeyValuePair<string, string> kv in r.Opcodes)
         {
-            var k = kv.Key;
+            string? k = kv.Key;
             if (!k.StartsWith("lfo", StringComparison.Ordinal)) continue;
             int s = 3, p = 3;
             while (p < k.Length && char.IsDigit(k[p])) p++;
             if (p == s || p >= k.Length || k[p] != '_') continue;          // need digits then '_'
-            if (!int.TryParse(k.Substring(s, p - s), out var idx)) continue;
-            var suffix = k.Substring(p + 1);
+            if (!int.TryParse(k.Substring(s, p - s), out int idx)) continue;
+            string suffix = k.Substring(p + 1);
             byIndex ??= new SortedDictionary<int, Dictionary<string, string>>();
-            if (!byIndex.TryGetValue(idx, out var map))
+            if (!byIndex.TryGetValue(idx, out Dictionary<string, string>? map))
                 byIndex[idx] = map = new Dictionary<string, string>(StringComparer.Ordinal);
             map[suffix] = kv.Value;
         }
         if (byIndex == null) return null;
 
         var lfos = new List<GenericLfo>();
-        foreach (var pair in byIndex)
+        foreach (KeyValuePair<int, Dictionary<string, string>> pair in byIndex)
         {
-            var map = pair.Value;
+            Dictionary<string, string>? map = pair.Value;
 
             double Get(string key, double def) =>
-                map.TryGetValue(key, out var v) && double.TryParse(v.Trim(),
+                map.TryGetValue(key, out string? v) && double.TryParse(v.Trim(),
                     NumberStyles.Float, CultureInfo.InvariantCulture,
-                    out var d) ? d : def;
+                    out double d) ? d : def;
             int GetI(string key, int def) =>
-                map.TryGetValue(key, out var v) && int.TryParse(v.Trim(), out var d) ? d : def;
+                map.TryGetValue(key, out string? v) && int.TryParse(v.Trim(), out int d) ? d : def;
 
             // Collect lfoN_{prefix}{cc} CC modulations (e.g. freq_oncc117, pitch_oncc1).
             LfoCcDepth[]? CcMods(string prefix)
             {
                 List<LfoCcDepth>? list = null;
-                foreach (var kv in map)
+                foreach (KeyValuePair<string, string> kv in map)
                 {
                     if (!kv.Key.StartsWith(prefix, StringComparison.Ordinal)) continue;
-                    if (!int.TryParse(kv.Key.Substring(prefix.Length), out var cc)) continue;
+                    if (!int.TryParse(kv.Key.Substring(prefix.Length), out int cc)) continue;
                     if (!double.TryParse(kv.Value.Trim(), NumberStyles.Float,
-                            CultureInfo.InvariantCulture, out var amt)) continue;
+                            CultureInfo.InvariantCulture, out double amt)) continue;
                     (list ??= []).Add(new LfoCcDepth(cc, amt));
                 }
                 return list?.ToArray();
@@ -663,7 +663,7 @@ internal static class SfzZoneTranslator
             var targets = new List<LfoTarget>();
             void AddTarget(string key, LfoDestination dest)
             {
-                var depthCc = CcMods(key + "_oncc");
+                LfoCcDepth[]? depthCc = CcMods(key + "_oncc");
                 // A target exists if it has a base depth OR a CC-driven depth (mod-wheel vibrato:
                 // lfoN_pitch_onccN with no base lfoN_pitch).
                 if (map.ContainsKey(key) || depthCc != null)
@@ -676,7 +676,7 @@ internal static class SfzZoneTranslator
             // EQ targets: lfoN_eq{band}gain / lfoN_eq{band}freq (+ their _onccN depth).
             void AddEqTarget(string key, LfoDestination dest, int band)
             {
-                var depthCc = CcMods(key + "_oncc");
+                LfoCcDepth[]? depthCc = CcMods(key + "_oncc");
                 if (map.ContainsKey(key) || depthCc != null)
                     targets.Add(new LfoTarget { Destination = dest, Depth = Get(key, 0), EqBand = band, DepthCc = depthCc });
             }
@@ -686,19 +686,19 @@ internal static class SfzZoneTranslator
                 AddEqTarget("eq" + b + "freq", LfoDestination.EqFreq, b);
             }
 
-            var freqCc = CcMods("freq_oncc");
-            var hasFreq = map.ContainsKey("freq");
+            LfoCcDepth[]? freqCc = CcMods("freq_oncc");
+            bool hasFreq = map.ContainsKey("freq");
             if (!hasFreq && freqCc == null && targets.Count == 0) continue;
 
             // Stage 0 = the main waveform (v2 default sine); stages 2..8 are additive sub-waveforms
             // (lfoN_waveX/ratioX/scaleX/offsetX), each at a frequency ratio, amplitude scale and DC offset.
-            var mainWave = GetI("wave", 1);
+            int mainWave = GetI("wave", 1);
             // Stepped LFO (wave 13): lfoN_steps gives the count, lfoN_step{X} each step's value in percent
             // (-100..100 → -1..1), walked evenly across the period.
             double[]? steps = null;
             if (mainWave == 13)
             {
-                var stepCount = Math.Clamp(GetI("steps", 0), 0, 128);
+                int stepCount = Math.Clamp(GetI("steps", 0), 0, 128);
                 if (stepCount > 0)
                 {
                     steps = new double[stepCount];
@@ -739,41 +739,41 @@ internal static class SfzZoneTranslator
     private static GenericEg[]? BuildGenericEgs(SfzRegion r)
     {
         SortedDictionary<int, Dictionary<string, string>>? byIndex = null;
-        foreach (var kv in r.Opcodes)
+        foreach (KeyValuePair<string, string> kv in r.Opcodes)
         {
-            var k = kv.Key;
+            string? k = kv.Key;
             if (!k.StartsWith("eg", StringComparison.Ordinal)) continue;
             int s = 2, p = 2;
             while (p < k.Length && char.IsDigit(k[p])) p++;
             if (p == s || p >= k.Length || k[p] != '_') continue;
-            if (!int.TryParse(k.Substring(s, p - s), out var idx)) continue;
-            var suffix = k.Substring(p + 1);
+            if (!int.TryParse(k.Substring(s, p - s), out int idx)) continue;
+            string suffix = k.Substring(p + 1);
             byIndex ??= new SortedDictionary<int, Dictionary<string, string>>();
-            if (!byIndex.TryGetValue(idx, out var map))
+            if (!byIndex.TryGetValue(idx, out Dictionary<string, string>? map))
                 byIndex[idx] = map = new Dictionary<string, string>(StringComparer.Ordinal);
             map[suffix] = kv.Value;
         }
         if (byIndex == null) return null;
 
         var egs = new List<GenericEg>();
-        foreach (var pair in byIndex)
+        foreach (KeyValuePair<int, Dictionary<string, string>> pair in byIndex)
         {
-            var map = pair.Value;
+            Dictionary<string, string>? map = pair.Value;
             double Get(string key, double def) =>
-                map.TryGetValue(key, out var v) && double.TryParse(v.Trim(),
+                map.TryGetValue(key, out string? v) && double.TryParse(v.Trim(),
                     NumberStyles.Float, CultureInfo.InvariantCulture,
-                    out var d) ? d : def;
+                    out double d) ? d : def;
 
             // Segments: time{X}/level{X}, indexed from 0.
             var stageIdx = new SortedSet<int>();
-            foreach (var key in map.Keys)
+            foreach (string? key in map.Keys)
             {
-                if (key.StartsWith("time", StringComparison.Ordinal) && int.TryParse(key.AsSpan(4), out var ti)) stageIdx.Add(ti);
-                else if (key.StartsWith("level", StringComparison.Ordinal) && int.TryParse(key.AsSpan(5), out var li)) stageIdx.Add(li);
+                if (key.StartsWith("time", StringComparison.Ordinal) && int.TryParse(key.AsSpan(4), out int ti)) stageIdx.Add(ti);
+                else if (key.StartsWith("level", StringComparison.Ordinal) && int.TryParse(key.AsSpan(5), out int li)) stageIdx.Add(li);
             }
             if (stageIdx.Count == 0) continue;
             var maxStage = 0;
-            foreach (var i in stageIdx) maxStage = Math.Max(maxStage, i);
+            foreach (int i in stageIdx) maxStage = Math.Max(maxStage, i);
             var stages = new EgStage[maxStage + 1];
             for (var i = 0; i <= maxStage; i++)
                 stages[i] = new EgStage(Get("time" + i, 0), Get("level" + i, 0));
@@ -781,12 +781,12 @@ internal static class SfzZoneTranslator
             LfoCcDepth[]? CcMods(string prefix)
             {
                 List<LfoCcDepth>? list = null;
-                foreach (var kv in map)
+                foreach (KeyValuePair<string, string> kv in map)
                 {
                     if (!kv.Key.StartsWith(prefix, StringComparison.Ordinal)) continue;
-                    if (!int.TryParse(kv.Key.Substring(prefix.Length), out var cc)) continue;
+                    if (!int.TryParse(kv.Key.Substring(prefix.Length), out int cc)) continue;
                     if (!double.TryParse(kv.Value.Trim(), NumberStyles.Float,
-                            CultureInfo.InvariantCulture, out var amt)) continue;
+                            CultureInfo.InvariantCulture, out double amt)) continue;
                     (list ??= []).Add(new LfoCcDepth(cc, amt));
                 }
                 return list?.ToArray();
@@ -795,7 +795,7 @@ internal static class SfzZoneTranslator
             var targets = new List<EgTarget>();
             void AddTarget(string key, LfoDestination dest)
             {
-                var depthCc = CcMods(key + "_oncc");
+                LfoCcDepth[]? depthCc = CcMods(key + "_oncc");
                 if (map.ContainsKey(key) || depthCc != null)
                     targets.Add(new EgTarget { Destination = dest, Depth = Get(key, 0), DepthCc = depthCc });
             }
@@ -804,7 +804,7 @@ internal static class SfzZoneTranslator
             AddTarget("volume", LfoDestination.Volume);
             if (targets.Count == 0) continue;
 
-            var sustain = map.TryGetValue("sustain", out var sv) && int.TryParse(sv.Trim(), out var ss) ? ss : -1;
+            int sustain = map.TryGetValue("sustain", out string? sv) && int.TryParse(sv.Trim(), out int ss) ? ss : -1;
             egs.Add(new GenericEg { Stages = stages, SustainStage = sustain, Targets = targets.ToArray() });
         }
         return egs.Count > 0 ? egs.ToArray() : null;
@@ -812,8 +812,8 @@ internal static class SfzZoneTranslator
 
     private static (LoopMode Mode, long? Start, long? End) ResolveLoop(SfzRegion r, AudioInfo wav)
     {
-        var mode = r.Get("loop_mode") ?? r.Get("loopmode");
-        var loopMode = mode?.ToLowerInvariant() switch
+        string? mode = r.Get("loop_mode") ?? r.Get("loopmode");
+        LoopMode loopMode = mode?.ToLowerInvariant() switch
         {
             "no_loop" => LoopMode.None,
             "one_shot" => LoopMode.None,        // plays whole sample; ignores NoteOff
@@ -825,9 +825,9 @@ internal static class SfzZoneTranslator
 
         if (loopMode == LoopMode.None) return (LoopMode.None, null, null);
 
-        var start = r.Has("loop_start") ? r.GetInt("loop_start", 0)
+        long start = r.Has("loop_start") ? r.GetInt("loop_start", 0)
                    : wav.HasLoop ? wav.LoopStartFrame : 0;
-        var end = r.Has("loop_end") ? r.GetInt("loop_end", 0)
+        long end = r.Has("loop_end") ? r.GetInt("loop_end", 0)
                  : wav.HasLoop ? wav.LoopEndFrame : wav.FrameCount;
         return (loopMode, start, end);
     }
@@ -845,16 +845,16 @@ internal static class SfzZoneTranslator
     private static double ComputeEffectiveVeltrack(SfzRegion r, IReadOnlyDictionary<int, int> initialCc,
         IReadOnlyDictionary<int, double[]> curves)
     {
-        var veltrack = r.GetDouble("amp_veltrack", 100.0);
-        foreach (var (param, cc, value) in r.EnumerateModulations())
+        double veltrack = r.GetDouble("amp_veltrack", 100.0);
+        foreach ((string param, int cc, double value) in r.EnumerateModulations())
         {
-            if (param != "amp_veltrack" || !initialCc.TryGetValue(cc, out var ccVal)) continue;
-            var curveIdx = r.GetInt("amp_veltrack_curvecc" + cc, 0);
+            if (param != "amp_veltrack" || !initialCc.TryGetValue(cc, out int ccVal)) continue;
+            int curveIdx = r.GetInt("amp_veltrack_curvecc" + cc, 0);
             veltrack += EvalCurve(curveIdx, ccVal / 127.0, curves) * value;
         }
         if (veltrack == 0)
         {
-            foreach (var (param, cc, value) in r.EnumerateModulations())
+            foreach ((string param, int cc, double value) in r.EnumerateModulations())
                 if (param == "amp_veltrack" && !initialCc.ContainsKey(cc)) return value;
         }
         return veltrack;
@@ -867,12 +867,12 @@ internal static class SfzZoneTranslator
     /// </summary>
     private static double[] BuildVeltrackCurve(double veltrackPercent)
     {
-        var vt = Math.Clamp(veltrackPercent / 100.0, -1.0, 1.0);
+        double vt = Math.Clamp(veltrackPercent / 100.0, -1.0, 1.0);
         var table = new double[128];
         for (var v = 0; v < 128; v++)
         {
-            var vn = v / 127.0;
-            var g = Math.Abs(vt) * (1.0 - vn * vn);
+            double vn = v / 127.0;
+            double g = Math.Abs(vt) * (1.0 - vn * vn);
             table[v] = Math.Clamp(vt < 0 ? g : 1.0 - g, 0.0, 1.0);
         }
         return table;
@@ -889,15 +889,15 @@ internal static class SfzZoneTranslator
         if (!r.Has("xfin_lovel") && !r.Has("xfin_hivel") && !r.Has("xfout_lovel") && !r.Has("xfout_hivel"))
             return;
 
-        var inLo = r.GetInt("xfin_lovel", 0) / 127.0;
-        var inHi = r.GetInt("xfin_hivel", 0) / 127.0;
-        var outLo = r.GetInt("xfout_lovel", 127) / 127.0;
-        var outHi = r.GetInt("xfout_hivel", 127) / 127.0;
-        var power = !string.Equals(r.Get("xf_velcurve")?.Trim(), "gain", StringComparison.OrdinalIgnoreCase);
+        double inLo = r.GetInt("xfin_lovel", 0) / 127.0;
+        double inHi = r.GetInt("xfin_hivel", 0) / 127.0;
+        double outLo = r.GetInt("xfout_lovel", 127) / 127.0;
+        double outHi = r.GetInt("xfout_hivel", 127) / 127.0;
+        bool power = !string.Equals(r.Get("xf_velcurve")?.Trim(), "gain", StringComparison.OrdinalIgnoreCase);
 
         for (var v = 0; v < 128; v++)
         {
-            var x = v / 127.0;
+            double x = v / 127.0;
             velGain[v] *= CrossfadeIn(inLo, inHi, x, power) * CrossfadeOut(outLo, outHi, x, power);
         }
     }
@@ -914,16 +914,16 @@ internal static class SfzZoneTranslator
         if (!r.Has("xfin_lokey") && !r.Has("xfin_hikey") && !r.Has("xfout_lokey") && !r.Has("xfout_hikey"))
             return null;
 
-        var inLo = (r.GetKey("xfin_lokey", control) ?? 0) / 127.0;
-        var inHi = (r.GetKey("xfin_hikey", control) ?? 0) / 127.0;
-        var outLo = (r.GetKey("xfout_lokey", control) ?? 127) / 127.0;
-        var outHi = (r.GetKey("xfout_hikey", control) ?? 127) / 127.0;
-        var power = !string.Equals(r.Get("xf_keycurve")?.Trim(), "gain", StringComparison.OrdinalIgnoreCase);
+        double inLo = (r.GetKey("xfin_lokey", control) ?? 0) / 127.0;
+        double inHi = (r.GetKey("xfin_hikey", control) ?? 0) / 127.0;
+        double outLo = (r.GetKey("xfout_lokey", control) ?? 127) / 127.0;
+        double outHi = (r.GetKey("xfout_hikey", control) ?? 127) / 127.0;
+        bool power = !string.Equals(r.Get("xf_keycurve")?.Trim(), "gain", StringComparison.OrdinalIgnoreCase);
 
         var keyGain = new double[128];
         for (var k = 0; k < 128; k++)
         {
-            var x = k / 127.0;
+            double x = k / 127.0;
             keyGain[k] = CrossfadeIn(inLo, inHi, x, power) * CrossfadeOut(outLo, outHi, x, power);
         }
         return keyGain;
@@ -938,25 +938,25 @@ internal static class SfzZoneTranslator
     private static CcCrossfade[]? BuildCcCrossfades(SfzRegion r)
     {
         SortedSet<int>? ccs = null;
-        foreach (var prefix in new[] { "xfin_locc", "xfin_hicc", "xfout_locc", "xfout_hicc" })
-            foreach (var (cc, _) in r.EnumerateCc(prefix))
+        foreach (string prefix in new[] { "xfin_locc", "xfin_hicc", "xfout_locc", "xfout_hicc" })
+            foreach ((int cc, string _) in r.EnumerateCc(prefix))
                 (ccs ??= []).Add(cc);
         if (ccs == null) return null;
 
-        var power = !string.Equals(r.Get("xf_cccurve")?.Trim(), "gain", StringComparison.OrdinalIgnoreCase);
+        bool power = !string.Equals(r.Get("xf_cccurve")?.Trim(), "gain", StringComparison.OrdinalIgnoreCase);
         var result = new CcCrossfade[ccs.Count];
         var idx = 0;
-        foreach (var cc in ccs)
+        foreach (int cc in ccs)
         {
-            var inLo = r.GetInt("xfin_locc" + cc, 0) / 127.0;
-            var inHi = r.GetInt("xfin_hicc" + cc, 0) / 127.0;
-            var outLo = r.GetInt("xfout_locc" + cc, 127) / 127.0;
-            var outHi = r.GetInt("xfout_hicc" + cc, 127) / 127.0;
+            double inLo = r.GetInt("xfin_locc" + cc, 0) / 127.0;
+            double inHi = r.GetInt("xfin_hicc" + cc, 0) / 127.0;
+            double outLo = r.GetInt("xfout_locc" + cc, 127) / 127.0;
+            double outHi = r.GetInt("xfout_hicc" + cc, 127) / 127.0;
 
             var gain = new double[128];
             for (var v = 0; v < 128; v++)
             {
-                var x = v / 127.0;
+                double x = v / 127.0;
                 gain[v] = CrossfadeIn(inLo, inHi, x, power) * CrossfadeOut(outLo, outHi, x, power);
             }
             result[idx++] = new CcCrossfade(cc, gain);
@@ -969,19 +969,19 @@ internal static class SfzZoneTranslator
     private static double CrossfadeIn(double lo, double hi, double x, bool power)
     {
         if (x < lo) return 0.0;
-        var length = (hi - lo) - XfadeGap;
+        double length = (hi - lo) - XfadeGap;
         if (length <= 0.0) return 1.0;
-        if (x < hi) { var pos = (x - lo) / length; return power ? Math.Sqrt(pos) : pos; }
+        if (x < hi) { double pos = (x - lo) / length; return power ? Math.Sqrt(pos) : pos; }
         return 1.0;
     }
 
     private static double CrossfadeOut(double lo, double hi, double x, bool power)
     {
-        var length = (hi - lo) - XfadeGap;
+        double length = (hi - lo) - XfadeGap;
         if (length <= 0.0) return 1.0;
         if (x > lo)
         {
-            var pos = (x - lo) / length;
+            double pos = (x - lo) / length;
             if (pos > 1.0) return 0.0;
             return power ? Math.Sqrt(1.0 - pos) : (1.0 - pos);
         }
@@ -994,16 +994,16 @@ internal static class SfzZoneTranslator
         var routes = new List<ModulationRoute>();
         var handled = new HashSet<(int Cc, ModDestination Dest)>();
 
-        foreach (var (param, cc, value) in r.EnumerateModulations())
+        foreach ((string param, int cc, double value) in r.EnumerateModulations())
         {
-            var source = MapCcSource(cc);
+            ModSource? source = MapCcSource(cc);
             if (source == null) continue;
 
             // A custom <curve> (e.g. tune_curvecc16) shapes the CC response; built-in curves keep the
             // route's continuous transform (null table). pan/cutoff/tune curves are only applied when custom.
             double[]? Curve(string p) => ResolveCurveTable(r.GetInt(p + "_curvecc" + cc, 0), curves);
 
-            var route = param switch
+            ModulationRoute? route = param switch
             {
                 // pan_oncc: 0.1%-style ±100 span → normalized pan, linear (or pan_curvecc when custom).
                 "pan" => Route(source, ModDestination.PanNormalized, value / 100.0, ModTransform.Linear, Curve("pan")),
@@ -1035,7 +1035,7 @@ internal static class SfzZoneTranslator
         // GM-default controller routes — skip any (CC, destination) a bank _oncc
         // already covers so we don't double-apply (e.g. the bank's pan_oncc10
         // replaces our default CC10 pan route).
-        foreach (var d in SfzDefaultRoutes.Routes)
+        foreach (ModulationRoute d in SfzDefaultRoutes.Routes)
         {
             if (d.Source is ModSource.ChannelController c && handled.Contains((c.Number, d.Dest)))
                 continue;
@@ -1045,12 +1045,12 @@ internal static class SfzZoneTranslator
         // Pitch wheel → pitch, scaled by the region's bend_up (default 200 cents = ±2 semitones). SFZ
         // uses bend_up/bend_down rather than the channel's RPN bend range. Symmetric bends (bend_down =
         // -bend_up, the common case) map linearly; asymmetric ranges use bend_up's magnitude.
-        var bendUp = r.GetDouble("bend_up", 200.0);
+        double bendUp = r.GetDouble("bend_up", 200.0);
         routes.Add(Route(new ModSource.PitchBend(), ModDestination.PitchCents, bendUp, ModTransform.Linear));
 
         // fil_veltrack: velocity raises/lowers the filter cutoff (cents at full velocity). Emit it as a
         // velocity→cutoff route — linear in velocity, matching sfizz (cutoff += veltrack · vel).
-        var filVeltrack = r.GetDouble("fil_veltrack", 0);
+        double filVeltrack = r.GetDouble("fil_veltrack", 0);
         if (filVeltrack != 0)
             routes.Add(Route(new ModSource.Velocity(), ModDestination.FilterCutoffCents, filVeltrack, ModTransform.Linear));
 
@@ -1068,14 +1068,14 @@ internal static class SfzZoneTranslator
     /// and unknown built-ins (≥7) with no custom definition fall back to linear.
     /// </summary>
     private static double[]? ResolveCurveTable(int curveIndex, IReadOnlyDictionary<int, double[]> curves)
-        => curves.TryGetValue(curveIndex, out var custom) ? custom : null;
+        => curves.TryGetValue(curveIndex, out double[]? custom) ? custom : null;
 
     /// <summary>Evaluates a curve at x∈[0,1] for load-time bakes: a custom &lt;curve&gt; table, else built-in.</summary>
     private static double EvalCurve(int index, double x, IReadOnlyDictionary<int, double[]> curves)
     {
-        if (curves.TryGetValue(index, out var t))
+        if (curves.TryGetValue(index, out double[]? t))
         {
-            var i = Math.Clamp((int)(x * 127.0 + 0.5), 0, 127);
+            int i = Math.Clamp((int)(x * 127.0 + 0.5), 0, 127);
             return t[i];
         }
         return AriaCurve.Eval(index, x);
@@ -1097,5 +1097,5 @@ internal static class SfzZoneTranslator
 
     private static int ParseByte(string s, int fallback) =>
         int.TryParse(s.Trim(), NumberStyles.Integer,
-            CultureInfo.InvariantCulture, out var v) ? v : fallback;
+            CultureInfo.InvariantCulture, out int v) ? v : fallback;
 }

@@ -7,11 +7,11 @@ namespace MidiSharp.Audio.Vorbis
     {
         protected override bool WriteVectors(ICodebook codebook, IPacket packet, float[][] residue, int channel, int offset, int partitionSize)
         {
-            var res = residue[channel];
+            float[] res = residue[channel];
 
             for (var i = 0; i < partitionSize;)
             {
-                var entry = codebook.DecodeScalar(packet);
+                int entry = codebook.DecodeScalar(packet);
                 if (entry == -1)
                 {
                     return true;

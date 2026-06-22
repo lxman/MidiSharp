@@ -31,7 +31,7 @@ internal static class SfzNoteNames
 
         // Note name: letter, optional accidental, signed octave.
         var i = 0;
-        var pc = (char.ToLowerInvariant(value[i]) switch
+        int pc = (char.ToLowerInvariant(value[i]) switch
         {
             'c' => 0, 'd' => 2, 'e' => 4, 'f' => 5, 'g' => 7, 'a' => 9, 'b' => 11,
             _ => -1,
@@ -43,7 +43,7 @@ internal static class SfzNoteNames
         else if (i < value.Length && (value[i] == 'b' || value[i] == 'f')) { pc--; i++; }
 
         if (i >= value.Length) return false;
-        if (!int.TryParse(value.Substring(i), NumberStyles.Integer, CultureInfo.InvariantCulture, out var octave))
+        if (!int.TryParse(value.Substring(i), NumberStyles.Integer, CultureInfo.InvariantCulture, out int octave))
             return false;
 
         midi = (octave + 1) * 12 + pc;

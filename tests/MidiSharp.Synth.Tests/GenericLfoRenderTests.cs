@@ -25,14 +25,14 @@ public sealed class GenericLfoRenderTests
             Stages = [new LfoStage(1, 1.0, 1.0, 0.0)],   // sine
             Targets = [new LfoTarget { Destination = LfoDestination.Volume, Depth = 12 }],
         };
-        var (min, max) = RenderPeakWindow(WithLfo(lfo));
+        (float min, float max) = RenderPeakWindow(WithLfo(lfo));
         Assert.True(max > min * 3.0, $"volume LFO should swing the output (max {max}, min {min})");
     }
 
     [Fact]
     public void No_lfo_zone_renders_flat()
     {
-        var (min, max) = RenderPeakWindow(WithLfo(null));
+        (float min, float max) = RenderPeakWindow(WithLfo(null));
         Assert.True(max <= min * 1.05, $"a held constant sample with no LFO should be flat (max {max}, min {min})");
     }
 

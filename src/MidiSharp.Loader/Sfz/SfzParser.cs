@@ -47,7 +47,7 @@ internal static class SfzParser
     public static SfzInstrument Parse(string text, Func<string, string?>? readInclude = null)
     {
         var defines = new Dictionary<string, string>(StringComparer.Ordinal);
-        var expanded = Preprocess(text, readInclude, defines, depth: 0);
+        string expanded = Preprocess(text, readInclude, defines, depth: 0);
         return BuildRegions(expanded);
     }
 
@@ -66,7 +66,7 @@ internal static class SfzParser
         var pos = 0;
         while (pos < text.Length)
         {
-            var m = Directive.Match(text, pos);
+            Match m = Directive.Match(text, pos);
             if (!m.Success)
             {
                 sb.Append(Substitute(text.Substring(pos), defines));
@@ -74,11 +74,11 @@ internal static class SfzParser
             }
 
             sb.Append(Substitute(text.Substring(pos, m.Index - pos), defines));
-            var after = m.Index + m.Length;
+            int after = m.Index + m.Length;
 
             if (char.ToLowerInvariant(text[m.Index + 1]) == 'd')   // #define
             {
-                var d = DefineTail.Match(text, after);
+                Match d = DefineTail.Match(text, after);
                 if (d.Success && d.Index == after)
                 {
                     defines[d.Groups[1].Value] = Substitute(d.Groups[2].Value, defines);
@@ -88,12 +88,12 @@ internal static class SfzParser
             }
             else   // #include
             {
-                var inc = IncludeTail.Match(text, after);
+                Match inc = IncludeTail.Match(text, after);
                 if (inc.Success && inc.Index == after)
                 {
                     if (readInclude != null && depth < 16)
                     {
-                        var incText = readInclude(Substitute(inc.Groups[1].Value, defines));
+                        string? incText = readInclude(Substitute(inc.Groups[1].Value, defines));
                         if (incText != null)
                             sb.Append('\n').Append(Preprocess(incText, readInclude, defines, depth + 1)).Append('\n');
                     }
@@ -112,15 +112,15 @@ internal static class SfzParser
         var i = 0;
         while (i < text.Length)
         {
-            var c = text[i];
+            char c = text[i];
             if (c == '/' && i + 1 < text.Length && text[i + 1] == '*')
             {
-                var end = text.IndexOf("*/", i + 2, StringComparison.Ordinal);
+                int end = text.IndexOf("*/", i + 2, StringComparison.Ordinal);
                 i = end < 0 ? text.Length : end + 2;
             }
             else if (c == '/' && i + 1 < text.Length && text[i + 1] == '/')
             {
-                var nl = text.IndexOf('\n', i + 2);
+                int nl = text.IndexOf('\n', i + 2);
                 if (nl < 0) { i = text.Length; }
                 else { sb.Append('\n'); i = nl + 1; }
             }
@@ -136,7 +136,7 @@ internal static class SfzParser
     private static string Substitute(string line, Dictionary<string, string> defines)
     {
         if (defines.Count == 0 || line.IndexOf('$') < 0) return line;
-        return Variable.Replace(line, m => defines.TryGetValue(m.Value, out var v) ? v : m.Value);
+        return Variable.Replace(line, m => defines.TryGetValue(m.Value, out string? v) ? v : m.Value);
     }
 
     // ── Tokenize + cascade ──────────────────────────────────────────────
@@ -167,10 +167,10 @@ internal static class SfzParser
         {
             if (region == null) return;
             var merged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var kv in global) merged[kv.Key] = kv.Value;
-            foreach (var kv in master) merged[kv.Key] = kv.Value;
-            foreach (var kv in group) merged[kv.Key] = kv.Value;
-            foreach (var kv in region) merged[kv.Key] = kv.Value;
+            foreach (KeyValuePair<string, string> kv in global) merged[kv.Key] = kv.Value;
+            foreach (KeyValuePair<string, string> kv in master) merged[kv.Key] = kv.Value;
+            foreach (KeyValuePair<string, string> kv in group) merged[kv.Key] = kv.Value;
+            foreach (KeyValuePair<string, string> kv in region) merged[kv.Key] = kv.Value;
             merged["default_path"] = defaultPath;   // the path in effect at this region's position
             regions.Add(new SfzRegion(merged));
             region = null;
@@ -181,16 +181,16 @@ internal static class SfzParser
         void FlushCurve()
         {
             if (curve == null) return;
-            if (curve.TryGetValue("curve_index", out var idxStr) &&
-                int.TryParse(idxStr.Trim(), out var idx))
+            if (curve.TryGetValue("curve_index", out string? idxStr) &&
+                int.TryParse(idxStr.Trim(), out int idx))
             {
                 var points = new SortedDictionary<int, double>();
-                foreach (var kv in curve)
+                foreach (KeyValuePair<string, string> kv in curve)
                 {
                     if (kv.Key.Length == 4 && kv.Key[0] == 'v' &&
-                        int.TryParse(kv.Key.AsSpan(1), out var pos) && pos is >= 0 and <= 127 &&
+                        int.TryParse(kv.Key.AsSpan(1), out int pos) && pos is >= 0 and <= 127 &&
                         double.TryParse(kv.Value.Trim(), NumberStyles.Float,
-                            CultureInfo.InvariantCulture, out var v))
+                            CultureInfo.InvariantCulture, out double v))
                         points[pos] = v;
                 }
                 if (points.Count > 0) control.Curves[idx] = InterpolateCurve(points);
@@ -198,17 +198,17 @@ internal static class SfzParser
             curve = null;
         }
 
-        var matches = Anchor.Matches(text);
+        MatchCollection matches = Anchor.Matches(text);
         for (var m = 0; m < matches.Count; m++)
         {
-            var match = matches[m];
-            var token = match.Value;
+            Match match = matches[m];
+            string token = match.Value;
 
             if (token[0] == '<')
             {
                 FlushRegion();
                 FlushCurve();
-                var header = token.Substring(1, token.Length - 2).ToLowerInvariant();
+                string header = token.Substring(1, token.Length - 2).ToLowerInvariant();
                 switch (header)
                 {
                     case "control": scope = Scope.Control; break;
@@ -218,7 +218,7 @@ internal static class SfzParser
                     case "region": region = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase); scope = Scope.Region; break;
                     case "curve": curve = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase); scope = Scope.Curve; break;
                     default:  // <effect>, <sample>, … — skipped, but recorded for diagnostics
-                        ignoredHeaders.TryGetValue(header, out var count);
+                        ignoredHeaders.TryGetValue(header, out int count);
                         ignoredHeaders[header] = count + 1;
                         scope = Scope.Ignore;
                         break;
@@ -227,10 +227,10 @@ internal static class SfzParser
             }
 
             // opcode= : value is text up to the next anchor (or end).
-            var key = token.Substring(0, token.Length - 1).ToLowerInvariant();
-            var valueStart = match.Index + match.Length;
-            var valueEnd = (m + 1 < matches.Count) ? matches[m + 1].Index : text.Length;
-            var value = text.Substring(valueStart, valueEnd - valueStart).Trim();
+            string key = token.Substring(0, token.Length - 1).ToLowerInvariant();
+            int valueStart = match.Index + match.Length;
+            int valueEnd = (m + 1 < matches.Count) ? matches[m + 1].Index : text.Length;
+            string value = text.Substring(valueStart, valueEnd - valueStart).Trim();
 
             // default_path is positional in any scope — capture it and stamp it per region (above),
             // rather than letting it cascade or be a single global <control> value.
@@ -245,7 +245,7 @@ internal static class SfzParser
                 case Scope.Control:
                     if (!ApplyControl(control, key, value))
                     {
-                        controlIgnored.TryGetValue(key, out var cc);
+                        controlIgnored.TryGetValue(key, out int cc);
                         controlIgnored[key] = cc + 1;
                     }
                     break;
@@ -274,18 +274,18 @@ internal static class SfzParser
     {
         // set_ccN (0..127) / set_hdccN (0..1 → 0..127): initial value for controller N.
         if (key.StartsWith("set_hdcc", StringComparison.Ordinal) &&
-            int.TryParse(key.AsSpan(8), NumberStyles.Integer, CultureInfo.InvariantCulture, out var hcc) &&
+            int.TryParse(key.AsSpan(8), NumberStyles.Integer, CultureInfo.InvariantCulture, out int hcc) &&
             hcc is >= 0 and <= 127)
         {
-            if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var hv))
+            if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double hv))
                 control.InitialControllers[hcc] = Math.Clamp((int)Math.Round(hv * 127.0), 0, 127);
             return true;
         }
         if (key.StartsWith("set_cc", StringComparison.Ordinal) &&
-            int.TryParse(key.AsSpan(6), NumberStyles.Integer, CultureInfo.InvariantCulture, out var cc) &&
+            int.TryParse(key.AsSpan(6), NumberStyles.Integer, CultureInfo.InvariantCulture, out int cc) &&
             cc is >= 0 and <= 127)
         {
-            if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v))
+            if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int v))
                 control.InitialControllers[cc] = Math.Clamp(v, 0, 127);
             return true;
         }
@@ -294,11 +294,11 @@ internal static class SfzParser
         {
             // default_path is handled positionally in BuildRegions (it can change mid-file), not here.
             case "octave_offset":
-                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var oo))
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int oo))
                     control.OctaveOffset = oo;
                 return true;
             case "note_offset":
-                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var no))
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int no))
                     control.NoteOffset = no;
                 return true;
             default:
@@ -312,12 +312,12 @@ internal static class SfzParser
         var table = new double[128];
         var keys = new List<int>(points.Keys);
         for (var i = 0; i < keys[0]; i++) table[i] = points[keys[0]];                 // before first → hold
-        for (var i = keys[^1]; i < 128; i++) table[i] = points[keys[^1]];             // after last → hold
+        for (int i = keys[^1]; i < 128; i++) table[i] = points[keys[^1]];             // after last → hold
         for (var k = 0; k < keys.Count - 1; k++)
         {
             int a = keys[k], b = keys[k + 1];
             double va = points[a], vb = points[b];
-            for (var i = a; i <= b; i++)
+            for (int i = a; i <= b; i++)
                 table[i] = va + (vb - va) * (i - a) / (b - a);
         }
         return table;

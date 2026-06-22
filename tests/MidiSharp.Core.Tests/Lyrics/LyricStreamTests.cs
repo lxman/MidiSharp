@@ -17,7 +17,7 @@ public class LyricStreamTests
     public void PlainText_DecodesAsAscii()
     {
         var ls = new LyricStream();
-        var seg = ls.Parse(Make("Hello "));
+        LyricSegment seg = ls.Parse(Make("Hello "));
         Assert.Equal("Hello ", seg.Text);
         Assert.Equal(LyricFlags.None, seg.Flags);
         Assert.Null(seg.RubyText);
@@ -27,7 +27,7 @@ public class LyricStreamTests
     public void EmptyEvent_IsMelisma()
     {
         var ls = new LyricStream();
-        var seg = ls.Parse(Make(""));
+        LyricSegment seg = ls.Parse(Make(""));
         Assert.Equal(string.Empty, seg.Text);
         Assert.True(seg.Flags.HasFlag(LyricFlags.Melisma));
     }
@@ -36,7 +36,7 @@ public class LyricStreamTests
     public void RawCr_FlagsEndOfLine()
     {
         var ls = new LyricStream();
-        var seg = ls.Parse(MakeRaw([0x0D]));
+        LyricSegment seg = ls.Parse(MakeRaw([0x0D]));
         Assert.True(seg.Flags.HasFlag(LyricFlags.EndOfLine));
         Assert.Equal(string.Empty, seg.Text);
     }
@@ -45,7 +45,7 @@ public class LyricStreamTests
     public void RawLf_FlagsEndOfParagraph()
     {
         var ls = new LyricStream();
-        var seg = ls.Parse(MakeRaw([0x0A]));
+        LyricSegment seg = ls.Parse(MakeRaw([0x0A]));
         Assert.True(seg.Flags.HasFlag(LyricFlags.EndOfParagraph));
     }
 
@@ -53,7 +53,7 @@ public class LyricStreamTests
     public void BackslashR_FlagsEndOfLine()
     {
         var ls = new LyricStream();
-        var seg = ls.Parse(Make(@"\r"));
+        LyricSegment seg = ls.Parse(Make(@"\r"));
         Assert.True(seg.Flags.HasFlag(LyricFlags.EndOfLine));
         Assert.Equal(string.Empty, seg.Text);
     }
@@ -62,7 +62,7 @@ public class LyricStreamTests
     public void BackslashN_FlagsEndOfParagraph()
     {
         var ls = new LyricStream();
-        var seg = ls.Parse(Make(@"\n"));
+        LyricSegment seg = ls.Parse(Make(@"\n"));
         Assert.True(seg.Flags.HasFlag(LyricFlags.EndOfParagraph));
     }
 
@@ -70,7 +70,7 @@ public class LyricStreamTests
     public void BackslashEscapes_RenderLiteralCharacters()
     {
         var ls = new LyricStream();
-        var seg = ls.Parse(Make(@"a\{b\}c\[d\]e\\f"));
+        LyricSegment seg = ls.Parse(Make(@"a\{b\}c\[d\]e\\f"));
         Assert.Equal("a{b}c[d]e\\f", seg.Text);
     }
 
@@ -78,7 +78,7 @@ public class LyricStreamTests
     public void RubyBracket_ExtractsRubyText()
     {
         var ls = new LyricStream();
-        var seg = ls.Parse(Make("kanji[reading]"));
+        LyricSegment seg = ls.Parse(Make("kanji[reading]"));
         Assert.Equal("kanji", seg.Text);
         Assert.Equal("reading", seg.RubyText);
     }
@@ -87,7 +87,7 @@ public class LyricStreamTests
     public void LanguageTag_SwitchesEncoding()
     {
         var ls = new LyricStream();
-        var seg = ls.Parse(Make("{@JP}"));
+        LyricSegment seg = ls.Parse(Make("{@JP}"));
         Assert.Equal("JP", ls.LanguageCode);
         Assert.True(seg.Flags.HasFlag(LyricFlags.LanguageChanged));
         Assert.Equal(string.Empty, seg.Text);
@@ -99,7 +99,7 @@ public class LyricStreamTests
         var ls = new LyricStream();
         ls.Parse(Make("{@JP}"));
         // Shift-JIS bytes for "美" (kanji "beautiful") = 0x94 0xFC
-        var seg = ls.Parse(MakeRaw([0x94, 0xFC]));
+        LyricSegment seg = ls.Parse(MakeRaw([0x94, 0xFC]));
         Assert.Equal("美", seg.Text);
     }
 
@@ -107,7 +107,7 @@ public class LyricStreamTests
     public void SongInfoTitle_UpdatesSongInfo()
     {
         var ls = new LyricStream();
-        var seg = ls.Parse(Make("{#Title=Hello World}"));
+        LyricSegment seg = ls.Parse(Make("{#Title=Hello World}"));
         Assert.True(seg.Flags.HasFlag(LyricFlags.SongInfoChanged));
         Assert.Equal("Hello World", ls.SongInfo.Title);
     }
@@ -132,7 +132,7 @@ public class LyricStreamTests
         // Per RP-026 §5, {#} terminates the song-info group but doesn't update any field.
         var ls = new LyricStream();
         ls.Parse(Make("{#Title=Test}"));
-        var seg = ls.Parse(Make("{#}"));
+        LyricSegment seg = ls.Parse(Make("{#}"));
         Assert.Equal(string.Empty, seg.Text);
         Assert.Equal("Test", ls.SongInfo.Title);  // prior title still set
     }
@@ -142,7 +142,7 @@ public class LyricStreamTests
     {
         var ls = new LyricStream();
         var bytes = new byte[] { 0xFF, 0xFE, 0x48, 0x00, 0x69, 0x00 }; // BOM + "Hi"
-        var seg = ls.Parse(MakeRaw(bytes));
+        LyricSegment seg = ls.Parse(MakeRaw(bytes));
         Assert.Equal("Hi", seg.Text);
         Assert.True(seg.Flags.HasFlag(LyricFlags.LanguageChanged));
     }
@@ -154,7 +154,7 @@ public class LyricStreamTests
         // From RP-017 example: "syl" "la" "ble " all parse as plain text.
         Assert.Equal("syl", ls.Parse(Make("syl")).Text);
         Assert.Equal("la", ls.Parse(Make("la")).Text);
-        var s = ls.Parse(Make("ble "));
+        LyricSegment s = ls.Parse(Make("ble "));
         Assert.Equal("ble ", s.Text);
         Assert.Equal(LyricFlags.None, s.Flags);
     }
@@ -163,7 +163,7 @@ public class LyricStreamTests
     public void MixedTextAndControls_PreservesOrder()
     {
         var ls = new LyricStream();
-        var seg = ls.Parse(Make("end of line.\\r"));
+        LyricSegment seg = ls.Parse(Make("end of line.\\r"));
         Assert.Equal("end of line.", seg.Text);
         Assert.True(seg.Flags.HasFlag(LyricFlags.EndOfLine));
     }
@@ -172,7 +172,7 @@ public class LyricStreamTests
     public void UnterminatedTag_FallsBackGracefully()
     {
         var ls = new LyricStream();
-        var seg = ls.Parse(Make("{#Title=Unterminated"));
+        LyricSegment seg = ls.Parse(Make("{#Title=Unterminated"));
         // Unterminated {#...} reads to end of event, still extracts title.
         Assert.Equal("Unterminated", ls.SongInfo.Title);
     }

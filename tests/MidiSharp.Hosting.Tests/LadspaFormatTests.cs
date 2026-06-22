@@ -1,6 +1,6 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using MidiSharp.Hosting;
 using MidiSharp.Hosting.Ladspa;
 using Xunit;
 
@@ -25,15 +25,15 @@ public sealed class LadspaFormatTests
     public void Scanning_a_missing_directory_yields_nothing_and_does_not_throw()
     {
         var format = new LadspaFormat();
-        var ghost = Path.Combine(Path.GetTempPath(), "midisharp-no-ladspa-here");
-        var results = format.Scan([ghost]).ToList();
+        string ghost = Path.Combine(Path.GetTempPath(), "midisharp-no-ladspa-here");
+        List<PluginDescriptor> results = format.Scan([ghost]).ToList();
         Assert.Empty(results);
     }
 
     [Fact]
     public void Registry_registers_a_format_and_rescans_without_throwing()
     {
-        var registry = new PluginRegistry().Register(new LadspaFormat());
+        PluginRegistry registry = new PluginRegistry().Register(new LadspaFormat());
         Assert.Single(registry.Formats);
         Assert.Equal("LADSPA", registry.Formats[0].Name);
         // Rescan walks the format's default paths plus any extras; the plugin count is

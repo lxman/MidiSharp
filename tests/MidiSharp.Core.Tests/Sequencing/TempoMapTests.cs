@@ -1,5 +1,6 @@
 using System;
 using MidiSharp.IO;
+using MidiSharp.Model;
 using MidiSharp.Sequencing;
 using Xunit;
 
@@ -32,7 +33,7 @@ public class TempoMapTests
     [Fact]
     public void BuildFrom_SingleTempo_ReturnsCorrectBpm()
     {
-        var file = MidiFileReader.Read(SimpleMidiFile);
+        MidiFile file = MidiFileReader.Read(SimpleMidiFile);
         var tempoMap = TempoMap.BuildFrom(file);
 
         Assert.Equal(120.0, tempoMap.GetBpmAtTick(0), 1);
@@ -42,10 +43,10 @@ public class TempoMapTests
     [Fact]
     public void TickToTime_AtZero_ReturnsZero()
     {
-        var file = MidiFileReader.Read(SimpleMidiFile);
+        MidiFile file = MidiFileReader.Read(SimpleMidiFile);
         var tempoMap = TempoMap.BuildFrom(file);
 
-        var time = tempoMap.TickToTime(0);
+        TimeSpan time = tempoMap.TickToTime(0);
 
         Assert.Equal(TimeSpan.Zero, time);
     }
@@ -53,12 +54,12 @@ public class TempoMapTests
     [Fact]
     public void TickToTime_At96Ticks_ReturnsHalfSecond()
     {
-        var file = MidiFileReader.Read(SimpleMidiFile);
+        MidiFile file = MidiFileReader.Read(SimpleMidiFile);
         var tempoMap = TempoMap.BuildFrom(file);
 
         // 96 ticks at 96 ppqn = 1 quarter note
         // At 120 BPM, 1 quarter note = 0.5 seconds
-        var time = tempoMap.TickToTime(96);
+        TimeSpan time = tempoMap.TickToTime(96);
 
         Assert.Equal(500, time.TotalMilliseconds, 1);
     }
@@ -66,12 +67,12 @@ public class TempoMapTests
     [Fact]
     public void TimeToTick_RoundTrip()
     {
-        var file = MidiFileReader.Read(SimpleMidiFile);
+        MidiFile file = MidiFileReader.Read(SimpleMidiFile);
         var tempoMap = TempoMap.BuildFrom(file);
 
         var originalTick = 192L;  // 2 quarter notes = 1 second at 120 BPM
-        var time = tempoMap.TickToTime(originalTick);
-        var recoveredTick = tempoMap.TimeToTick(time);
+        TimeSpan time = tempoMap.TickToTime(originalTick);
+        long recoveredTick = tempoMap.TimeToTick(time);
 
         Assert.Equal(originalTick, recoveredTick);
     }
@@ -95,7 +96,7 @@ public class TempoMapTests
             0x00, 0xFF, 0x2F, 0x00
         };
 
-        var file = MidiFileReader.Read(noTempoFile);
+        MidiFile file = MidiFileReader.Read(noTempoFile);
         var tempoMap = TempoMap.BuildFrom(file);
 
         Assert.Equal(120.0, tempoMap.GetBpmAtTick(0), 1);

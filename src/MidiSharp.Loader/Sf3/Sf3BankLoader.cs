@@ -21,8 +21,8 @@ internal static class Sf3BankLoader
 {
     public static IRBank Load(SoundFont sf, SoundBankLoadOptions options)
     {
-        var samples = BuildSampleSource(sf, options);
-        var patches = Sf2BankLoader.BuildPatches(sf);
+        LazyVorbisSf3SampleSource samples = BuildSampleSource(sf, options);
+        IReadOnlyList<Patch> patches = Sf2BankLoader.BuildPatches(sf);
 
         return new IRBank
         {
@@ -38,20 +38,20 @@ internal static class Sf3BankLoader
 
     private static LazyVorbisSf3SampleSource BuildSampleSource(SoundFont sf, SoundBankLoadOptions options)
     {
-        var smpl = sf.RawSampleBytes;
+        ReadOnlyMemory<byte> smpl = sf.RawSampleBytes;
         var metadata = new SampleMetadata[sf.SampleHeaders.Count];
         var entries = new (int ByteStart, int ByteLength, int Channels)[sf.SampleHeaders.Count];
 
         for (var i = 0; i < sf.SampleHeaders.Count; i++)
         {
-            var hdr = sf.SampleHeaders[i];
+            SampleHeader? hdr = sf.SampleHeaders[i];
 
             // SF3 convention: SHDR.Start and SHDR.End are *byte* offsets into the
             // smpl chunk (not int16 frame indices as in SF2). Each [Start, End)
             // window contains one complete Ogg Vorbis bitstream.
             var byteStart = (int)hdr.Start;
             var byteEnd = (int)hdr.End;
-            var byteLen = Math.Max(0, byteEnd - byteStart);
+            int byteLen = Math.Max(0, byteEnd - byteStart);
 
             var channels = 1;
             long decodedFrames = 0;
@@ -89,7 +89,7 @@ internal static class Sf3BankLoader
     {
         try
         {
-            VorbisDecoder.Peek(blob, out var channels, out var frames);
+            VorbisDecoder.Peek(blob, out int channels, out long frames);
             return (channels, frames);
         }
         catch

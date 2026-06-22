@@ -76,13 +76,13 @@ public sealed unsafe class HostedEffect : IAudioProcessor, IDisposable
     {
         if (_disposed || _channels != 2) return;   // stereo bus for now (the engine's contract)
 
-        var total = interleavedStereo.Length / 2;
-        var hasEvents = _events.Count > 0;
+        int total = interleavedStereo.Length / 2;
+        bool hasEvents = _events.Count > 0;
         var done = 0;
         while (done < total)
         {
-            var n = Math.Min(_maxFrames, total - done);
-            var slice = interleavedStereo.Slice(done * 2, n * 2);
+            int n = Math.Min(_maxFrames, total - done);
+            Span<float> slice = interleavedStereo.Slice(done * 2, n * 2);
 
             PlanarBridge.DeinterleaveStereo(slice, _inBufs[0].Span[..n], _inBufs[1].Span[..n]);
 
@@ -100,11 +100,11 @@ public sealed unsafe class HostedEffect : IAudioProcessor, IDisposable
     // For the common single-chunk block this is the whole queue with offsets unchanged.
     private ReadOnlySpan<HostEvent> ChunkEvents(int start, int end)
     {
-        var src = CollectionsMarshal.AsSpan(_events);
+        Span<HostEvent> src = CollectionsMarshal.AsSpan(_events);
         var m = 0;
         for (var i = 0; i < src.Length && m < _evScratch.Length; i++)
         {
-            var off = src[i].SampleOffset;
+            int off = src[i].SampleOffset;
             if (off >= start && off < end) _evScratch[m++] = src[i] with { SampleOffset = off - start };
         }
         return _evScratch.AsSpan(0, m);

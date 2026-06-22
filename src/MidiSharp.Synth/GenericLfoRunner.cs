@@ -12,7 +12,7 @@ internal static class GenericLfoWave
 {
     public static double Eval(int wave, double phase)
     {
-        var p = phase - Math.Floor(phase);   // wrap to [0,1)
+        double p = phase - Math.Floor(phase);   // wrap to [0,1)
         switch (wave)
         {
             case 0:  // triangle — starts at 0 rising, +1 at 1/4, -1 at 3/4
@@ -90,7 +90,7 @@ internal sealed class GenericLfoRunner
         _pitchCc = _volumeCc = _cutoffCc = null;
 
         var eqNeeded = 0;
-        foreach (var t in lfo.Targets)
+        foreach (LfoTarget t in lfo.Targets)
             if (t.Destination is LfoDestination.EqGain or LfoDestination.EqFreq) eqNeeded++;
         if (_eqBand.Length < eqNeeded)
         {
@@ -102,7 +102,7 @@ internal sealed class GenericLfoRunner
         }
         _eqCount = 0;
 
-        foreach (var t in lfo.Targets)
+        foreach (LfoTarget t in lfo.Targets)
         {
             switch (t.Destination)
             {
@@ -138,7 +138,7 @@ internal sealed class GenericLfoRunner
 
         if (_eqCount > 0)
         {
-            var peek = Peek();
+            double peek = Peek();
             for (var i = 0; i < _eqCount; i++)
                 _eqDelta[i] = peek * (_eqBaseDepth[i] + SumCc(_eqDepthCc[i], ch));
         }
@@ -149,7 +149,7 @@ internal sealed class GenericLfoRunner
     {
         if (_delayCounter > 0) { _delayCounter--; return 0.0; }
 
-        var v = StageSum();
+        double v = StageSum();
         if (_fadeSamples > 0 && _fadeElapsed < _fadeSamples)
         {
             v *= (double)_fadeElapsed / _fadeSamples;
@@ -157,7 +157,7 @@ internal sealed class GenericLfoRunner
         }
 
         _phase += _phaseInc;
-        if (_phase >= 1.0) { var f = Math.Floor(_phase); _phase -= f; _cycle += (long)f; }
+        if (_phase >= 1.0) { double f = Math.Floor(_phase); _phase -= f; _cycle += (long)f; }
         return v;
     }
 
@@ -165,7 +165,7 @@ internal sealed class GenericLfoRunner
     private double Peek()
     {
         if (_delayCounter > 0) return 0.0;
-        var v = StageSum();
+        double v = StageSum();
         if (_fadeSamples > 0 && _fadeElapsed < _fadeSamples)
             v *= (double)_fadeElapsed / _fadeSamples;
         return v;
@@ -176,8 +176,8 @@ internal sealed class GenericLfoRunner
         var v = 0.0;
         for (var s = 0; s < _stages.Length; s++)
         {
-            var st = _stages[s];
-            var w = st.Wave switch
+            LfoStage st = _stages[s];
+            double w = st.Wave switch
             {
                 // Random sample-and-hold: a new random value twice per period, held between. Deterministic
                 // (hashed from the monotonic half-period index) so renders stay reproducible.
@@ -197,7 +197,7 @@ internal sealed class GenericLfoRunner
     private static double SampleHold(double monotonicPhase)
     {
         var halfIndex = (long)Math.Floor(monotonicPhase * 2.0);
-        var x = (ulong)halfIndex + 0x9E3779B97F4A7C15UL;
+        ulong x = (ulong)halfIndex + 0x9E3779B97F4A7C15UL;
         x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9UL;
         x = (x ^ (x >> 27)) * 0x94D049BB133111EBUL;
         x ^= x >> 31;
@@ -208,7 +208,7 @@ internal sealed class GenericLfoRunner
     private static double Stepped(double[]? steps, double phase)
     {
         if (steps is not { Length: > 0 }) return 0.0;
-        var p = phase - Math.Floor(phase);
+        double p = phase - Math.Floor(phase);
         var i = (int)(p * steps.Length);
         if (i >= steps.Length) i = steps.Length - 1;   // guard the p≈1 boundary
         return steps[i];

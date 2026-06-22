@@ -40,7 +40,7 @@ public sealed class ProcessorChain : IAudioProcessor
     {
         lock (_gate)
         {
-            var removed = _items.Remove(processor);
+            bool removed = _items.Remove(processor);
             if (removed) _snapshot = _items.ToArray();
             return removed;
         }
@@ -65,7 +65,7 @@ public sealed class ProcessorChain : IAudioProcessor
         lock (_gate)
         {
             _items.Clear();
-            foreach (var processor in processors)
+            foreach (IAudioProcessor? processor in processors)
             {
                 if (processor == null) throw new ArgumentException("null processor", nameof(processors));
                 _items.Add(processor);
@@ -77,15 +77,15 @@ public sealed class ProcessorChain : IAudioProcessor
     public void Process(Span<float> interleavedStereo)
     {
         if (Bypass) return;
-        var chain = _snapshot;            // single volatile read; stable for this block
-        foreach (var processor in chain)
+        IAudioProcessor[] chain = _snapshot;            // single volatile read; stable for this block
+        foreach (IAudioProcessor processor in chain)
             processor.Process(interleavedStereo);
     }
 
     public void Reset()
     {
-        var chain = _snapshot;
-        foreach (var processor in chain)
+        IAudioProcessor[] chain = _snapshot;
+        foreach (IAudioProcessor processor in chain)
             processor.Reset();
     }
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using MidiSharp.Model;
 using MidiSharp.Model.Events;
@@ -140,7 +141,7 @@ public sealed class RealtimePlayer
     /// <param name="right">Right channel output buffer (must be same length as left).</param>
     public void ProcessBlock(Span<float> left, Span<float> right)
     {
-        var frames = left.Length;
+        int frames = left.Length;
         if (right.Length != frames)
             throw new ArgumentException("Left and right buffers must be the same length.");
 
@@ -151,14 +152,14 @@ public sealed class RealtimePlayer
             return;
         }
 
-        var events = _sequencer.Events;
-        var startFrame = _currentFrame;
+        IReadOnlyList<ScheduledEvent> events = _sequencer.Events;
+        long startFrame = _currentFrame;
         var produced = 0;
 
         while (produced < frames)
         {
-            var absFrame = startFrame + produced;
-            var subFrames = frames - produced;
+            long absFrame = startFrame + produced;
+            int subFrames = frames - produced;
 
             // If the next event lies inside the remaining sub-block, shorten the sub-block
             // so the event fires on its exact frame boundary.
@@ -184,7 +185,7 @@ public sealed class RealtimePlayer
                 _synth.Generate(left.Slice(produced, subFrames), right.Slice(produced, subFrames));
                 produced += subFrames;
 
-                var active = _synth.ActiveVoiceCount;
+                int active = _synth.ActiveVoiceCount;
                 if (active > _peakActiveVoices) _peakActiveVoices = active;
             }
         }
@@ -198,7 +199,7 @@ public sealed class RealtimePlayer
     /// </summary>
     public void ProcessBlockInterleaved(Span<float> interleavedStereo)
     {
-        var frames = interleavedStereo.Length / 2;
+        int frames = interleavedStereo.Length / 2;
         if (frames == 0) return;
 
         if (_tempL.Length < frames)
@@ -206,8 +207,8 @@ public sealed class RealtimePlayer
             _tempL = new float[frames];
             _tempR = new float[frames];
         }
-        var L = _tempL.AsSpan(0, frames);
-        var R = _tempR.AsSpan(0, frames);
+        Span<float> L = _tempL.AsSpan(0, frames);
+        Span<float> R = _tempR.AsSpan(0, frames);
 
         ProcessBlock(L, R);
 
@@ -220,7 +221,7 @@ public sealed class RealtimePlayer
 
     private void DispatchEvent(in ScheduledEvent se)
     {
-        var evt = se.Event;
+        MidiEvent evt = se.Event;
         switch (evt)
         {
             case NoteOnEvent e:

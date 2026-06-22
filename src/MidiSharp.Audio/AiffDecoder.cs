@@ -40,13 +40,13 @@ public sealed class AiffDecoder : IAudioDecoder
         var off = 12;
         while (off + 8 <= bytes.Length)
         {
-            var id = bytes.Slice(off, 4);
-            var size = BinaryPrimitives.ReadUInt32BigEndian(bytes.Slice(off + 4, 4));
-            var body = off + 8;
+            ReadOnlySpan<byte> id = bytes.Slice(off, 4);
+            uint size = BinaryPrimitives.ReadUInt32BigEndian(bytes.Slice(off + 4, 4));
+            int body = off + 8;
 
             if (Is(id, 0, 'C', 'O', 'M', 'M') && body + 18 <= bytes.Length)
             {
-                var c = bytes.Slice(body, 18);
+                ReadOnlySpan<byte> c = bytes.Slice(body, 18);
                 channels = BinaryPrimitives.ReadInt16BigEndian(c.Slice(0, 2));
                 frameCount = BinaryPrimitives.ReadUInt32BigEndian(c.Slice(2, 4));
                 sampleRate = (int)Math.Round(ReadExtended80(c.Slice(8, 10)));
@@ -58,7 +58,7 @@ public sealed class AiffDecoder : IAudioDecoder
                 fine = (sbyte)bytes[body + 1];
             }
 
-            var next = body + size + (size & 1);
+            long next = body + size + (size & 1);
             if (next > bytes.Length) break;
             off = (int)next;
         }
@@ -89,7 +89,7 @@ public sealed class AiffDecoder : IAudioDecoder
         bool bigEndian = true, isFloat = false;
         ReadOnlySpan<byte> ssnd = default;
         var ssndOffset = 0;
-        var rootKey = -1;
+        int rootKey = -1;
         double fineTuneCents = 0;
         int loopBeginMarker = 0, loopEndMarker = 0, loopPlayMode = 0;
         var markers = new Dictionary<int, long>();
@@ -97,12 +97,12 @@ public sealed class AiffDecoder : IAudioDecoder
         var off = 12;
         while (off + 8 <= bytes.Length)
         {
-            var id = bytes.Slice(off, 4);
-            var size = BinaryPrimitives.ReadUInt32BigEndian(bytes.Slice(off + 4, 4));
-            var body = off + 8;
+            ReadOnlySpan<byte> id = bytes.Slice(off, 4);
+            uint size = BinaryPrimitives.ReadUInt32BigEndian(bytes.Slice(off + 4, 4));
+            int body = off + 8;
             long avail = bytes.Length - body;
             var chunkSize = (int)Math.Min(size, (uint)Math.Max(0, avail));
-            var chunk = bytes.Slice(body, chunkSize);
+            ReadOnlySpan<byte> chunk = bytes.Slice(body, chunkSize);
 
             if (Is(id, 0, 'C', 'O', 'M', 'M') && chunkSize >= 18)
             {
@@ -113,7 +113,7 @@ public sealed class AiffDecoder : IAudioDecoder
 
                 if (chunkSize >= 22)  // AIFF-C: 4-byte compression type follows
                 {
-                    var comp = chunk.Slice(18, 4);
+                    ReadOnlySpan<byte> comp = chunk.Slice(18, 4);
                     if (Is(comp, 0, 's', 'o', 'w', 't')) bigEndian = false;
                     else if (Is(comp, 0, 'f', 'l', '3', '2') || Is(comp, 0, 'F', 'L', '3', '2')) { isFloat = true; bits = 32; }
                     else if (Is(comp, 0, 'f', 'l', '6', '4') || Is(comp, 0, 'F', 'L', '6', '4')) { isFloat = true; bits = 64; }
@@ -145,7 +145,7 @@ public sealed class AiffDecoder : IAudioDecoder
                     long pos = BinaryPrimitives.ReadUInt32BigEndian(chunk.Slice(p + 2, 4));
                     markers[markerId] = pos;
                     int nameLen = chunk[p + 6];
-                    var advance = 6 + 1 + nameLen;
+                    int advance = 6 + 1 + nameLen;
                     if ((advance & 1) != 0) advance++;  // pstring padded to even
                     p += advance;
                 }
@@ -159,12 +159,12 @@ public sealed class AiffDecoder : IAudioDecoder
         if (ssndOffset > 0 && ssndOffset < ssnd.Length)
             ssnd = ssnd.Slice(ssndOffset);
 
-        var (samples, frames) = DecodeSamples(ssnd, channels, bits, bigEndian, isFloat, frameCount);
+        (float[] samples, long frames) = DecodeSamples(ssnd, channels, bits, bigEndian, isFloat, frameCount);
 
         long loopStart = -1, loopEnd = -1;
         if (loopPlayMode != 0 &&
-            markers.TryGetValue(loopBeginMarker, out var b2) &&
-            markers.TryGetValue(loopEndMarker, out var e))
+            markers.TryGetValue(loopBeginMarker, out long b2) &&
+            markers.TryGetValue(loopEndMarker, out long e))
         {
             loopStart = b2;
             loopEnd = e;
@@ -190,26 +190,26 @@ public sealed class AiffDecoder : IAudioDecoder
         ReadOnlySpan<byte> data, int channels, int bits, bool bigEndian, bool isFloat, long declaredFrames)
     {
         if (channels < 1) channels = 1;
-        var bytesPerSample = (bits + 7) / 8;
-        var bytesPerFrame = bytesPerSample * channels;
+        int bytesPerSample = (bits + 7) / 8;
+        int bytesPerFrame = bytesPerSample * channels;
         if (bytesPerFrame <= 0) return ([], 0);
 
-        var frames = Math.Min(declaredFrames, data.Length / bytesPerFrame);
+        long frames = Math.Min(declaredFrames, data.Length / bytesPerFrame);
         var total = (int)(frames * channels);
         var output = new float[total];
 
         for (var i = 0; i < total; i++)
         {
-            var p = i * bytesPerSample;
+            int p = i * bytesPerSample;
             if (isFloat && bits == 32)
             {
-                var b = bigEndian ? BinaryPrimitives.ReadInt32BigEndian(data.Slice(p, 4))
+                int b = bigEndian ? BinaryPrimitives.ReadInt32BigEndian(data.Slice(p, 4))
                                   : BinaryPrimitives.ReadInt32LittleEndian(data.Slice(p, 4));
                 output[i] = BitConverter.Int32BitsToSingle(b);
             }
             else if (isFloat && bits == 64)
             {
-                var b = bigEndian ? BinaryPrimitives.ReadInt64BigEndian(data.Slice(p, 8))
+                long b = bigEndian ? BinaryPrimitives.ReadInt64BigEndian(data.Slice(p, 8))
                                    : BinaryPrimitives.ReadInt64LittleEndian(data.Slice(p, 8));
                 output[i] = (float)BitConverter.Int64BitsToDouble(b);
             }
@@ -220,14 +220,14 @@ public sealed class AiffDecoder : IAudioDecoder
                     break;
                 case 16:
                 {
-                    var s = bigEndian ? BinaryPrimitives.ReadInt16BigEndian(data.Slice(p, 2))
+                    short s = bigEndian ? BinaryPrimitives.ReadInt16BigEndian(data.Slice(p, 2))
                                         : BinaryPrimitives.ReadInt16LittleEndian(data.Slice(p, 2));
                     output[i] = s / 32768f;
                     break;
                 }
                 case 24:
                 {
-                    var v = bigEndian
+                    int v = bigEndian
                         ? ((sbyte)data[p] << 16) | (data[p + 1] << 8) | data[p + 2]
                         : ((sbyte)data[p + 2] << 16) | (data[p + 1] << 8) | data[p];
                     output[i] = v / 8388608f;
@@ -235,7 +235,7 @@ public sealed class AiffDecoder : IAudioDecoder
                 }
                 case 32:
                 {
-                    var v = bigEndian ? BinaryPrimitives.ReadInt32BigEndian(data.Slice(p, 4))
+                    int v = bigEndian ? BinaryPrimitives.ReadInt32BigEndian(data.Slice(p, 4))
                                       : BinaryPrimitives.ReadInt32LittleEndian(data.Slice(p, 4));
                     output[i] = v / 2147483648f;
                     break;
@@ -251,9 +251,9 @@ public sealed class AiffDecoder : IAudioDecoder
     /// <summary>Decode an 80-bit IEEE 754 extended-precision float (AIFF sample rate).</summary>
     private static double ReadExtended80(ReadOnlySpan<byte> b)
     {
-        var sign = b[0] >> 7;
-        var exponent = ((b[0] & 0x7F) << 8) | b[1];
-        var mantissa = BinaryPrimitives.ReadUInt64BigEndian(b.Slice(2, 8));
+        int sign = b[0] >> 7;
+        int exponent = ((b[0] & 0x7F) << 8) | b[1];
+        ulong mantissa = BinaryPrimitives.ReadUInt64BigEndian(b.Slice(2, 8));
 
         double value;
         if (exponent == 0 && mantissa == 0) value = 0;

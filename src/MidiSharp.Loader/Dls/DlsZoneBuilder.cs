@@ -57,7 +57,7 @@ internal sealed class DlsZoneBuilder
 
     public void Apply(IReadOnlyList<ConnectionBlock> connections)
     {
-        foreach (var c in connections) Apply(c);
+        foreach (ConnectionBlock c in connections) Apply(c);
     }
 
     private void Apply(ConnectionBlock c)
@@ -118,7 +118,7 @@ internal sealed class DlsZoneBuilder
             // (positive = quieter), so we negate.
             case ConnectionDestination.Gain:
             {
-                var db = ScaleToDb(c.Scale);
+                double db = ScaleToDb(c.Scale);
                 AttenuationDb += db <= 0 ? -db : 0;
                 break;
             }
@@ -178,7 +178,7 @@ internal sealed class DlsZoneBuilder
 
     private void ApplyExternalRoute(ConnectionBlock c)
     {
-        var route = DlsArticulationTranslator.MakeRoute(c);
+        ModulationRoute? route = DlsArticulationTranslator.MakeRoute(c);
         if (route != null) Routes.Add(route);
     }
 
@@ -190,7 +190,7 @@ internal sealed class DlsZoneBuilder
     /// </summary>
     public static double TimeCentsToSec(int scale)
     {
-        var tc = scale / 65536.0;
+        double tc = scale / 65536.0;
         if (tc <= -12000) return 0;
         return Math.Pow(2.0, tc / 1200.0);
     }
@@ -198,7 +198,7 @@ internal sealed class DlsZoneBuilder
     /// <summary>DLS absolute cents → Hz, using the 8.176 Hz reference (= MIDI key 0).</summary>
     public static double AbsCentsToHz(int scale)
     {
-        var cents = scale / 65536.0;
+        double cents = scale / 65536.0;
         return 8.176 * Math.Pow(2.0, cents / 1200.0);
     }
 
@@ -211,7 +211,7 @@ internal sealed class DlsZoneBuilder
     /// </summary>
     public static double SustainCbToLinear(int scale)
     {
-        var cb = scale / 65536.0;
+        double cb = scale / 65536.0;
         if (cb <= 0) return 1.0;
         return Math.Pow(10.0, -cb / 200.0);
     }

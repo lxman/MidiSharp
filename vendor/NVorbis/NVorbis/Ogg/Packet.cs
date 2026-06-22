@@ -33,7 +33,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
         {
             if (_dataIndex == _dataParts.Count) return -1;
 
-            var b = _data.Span[_dataOfs];
+            byte b = _data.Span[_dataOfs];
 
             if (++_dataOfs == _data.Length)
             {

@@ -27,7 +27,7 @@ namespace MidiSharp.Audio.Vorbis
             offset /= _channels;
             for (var c = 0; c < partitionSize;)
             {
-                var entry = codebook.DecodeScalar(packet);
+                int entry = codebook.DecodeScalar(packet);
                 if (entry == -1)
                 {
                     return true;

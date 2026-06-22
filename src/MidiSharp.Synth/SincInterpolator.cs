@@ -36,16 +36,16 @@ internal static class SincInterpolator
 
         for (var f = 0; f < FractionSlots; f++)
         {
-            var frac = (double)f / FractionSlots;       // 0 .. just-under-1
+            double frac = (double)f / FractionSlots;       // 0 .. just-under-1
             double sum = 0;
             for (var i = 0; i < Width; i++)
             {
                 // x is the distance from the interpolation point to source sample (i - HalfWidth).
                 // At frac=0 we're sitting exactly on tap i=HalfWidth; positive frac moves toward i=HalfWidth+1.
-                var x = i - HalfWidth - frac;
-                var s = Sinc(x);
-                var w = Blackman(x, Width);
-                var v = s * w;
+                double x = i - HalfWidth - frac;
+                double s = Sinc(x);
+                double w = Blackman(x, Width);
+                double v = s * w;
                 _coeffs[f * Width + i] = (float)v;
                 sum += v;
             }
@@ -68,7 +68,7 @@ internal static class SincInterpolator
     {
         var fIdx = (int)(frac * FractionSlots);
         if (fIdx >= FractionSlots) fIdx = FractionSlots - 1;
-        var baseOff = fIdx * Width;
+        int baseOff = fIdx * Width;
 
         double sum = 0;
         for (var i = 0; i < Width; i++)
@@ -81,17 +81,17 @@ internal static class SincInterpolator
     private static double Sinc(double x)
     {
         if (Math.Abs(x) < 1e-12) return 1.0;
-        var px = Math.PI * x;
+        double px = Math.PI * x;
         return Math.Sin(px) / px;
     }
 
     /// <summary>Blackman window centred on x=0, zero outside [-width/2, +width/2].</summary>
     private static double Blackman(double x, int width)
     {
-        var half = width / 2.0;
+        double half = width / 2.0;
         if (x <= -half || x >= half) return 0;
         // Map x in [-half, half] to t in [0, 1]
-        var t = (x + half) / width;
+        double t = (x + half) / width;
         return 0.42 - 0.5 * Math.Cos(2 * Math.PI * t) + 0.08 * Math.Cos(4 * Math.PI * t);
     }
 }

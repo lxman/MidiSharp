@@ -25,7 +25,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
 
         private bool VerifyPage(byte[] headerBuf, int index, int cnt, out byte[] pageBuf, out int bytesRead)
         {
-            var segCnt = headerBuf[index + 26];
+            byte segCnt = headerBuf[index + 26];
             if (cnt - index < index + 27 + segCnt)
             {
                 pageBuf = null;
@@ -83,7 +83,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
             {
                 var newBuf = new byte[_overflowBuf.Length - _overflowBufIndex + count];
                 Buffer.BlockCopy(_overflowBuf, _overflowBufIndex, newBuf, 0, newBuf.Length - count);
-                var index = buf.Length - count;
+                int index = buf.Length - count;
                 Buffer.BlockCopy(buf, index, newBuf, newBuf.Length - count, count);
                 _overflowBufIndex = 0;
             }
@@ -141,7 +141,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
 
                 if (cnt >= 27)
                 {
-                    var segCnt = buffer[index + 26];
+                    byte segCnt = buffer[index + 26];
                     if (isFromReadNextPage)
                     {
                         cnt += FillHeader(buffer, index + 27, segCnt);
@@ -170,7 +170,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
             var tries = 0;
             do
             {
-                var cnt = _stream.Read(buf, index + read, count - read);
+                int cnt = _stream.Read(buf, index + read, count - read);
                 if (cnt == 0 && ++tries == maxTries)
                 {
                     break;
@@ -234,7 +234,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
                 {
                     if (VerifyHeader(_headerBuf, i, ref cnt, true))
                     {
-                        if (VerifyPage(_headerBuf, i, cnt, out var pageBuf, out var bytesRead))
+                        if (VerifyPage(_headerBuf, i, cnt, out byte[] pageBuf, out int bytesRead))
                         {
                             // one way or the other, we have to clear out the page's bytes from the queue (if queued)
                             ClearEnqueuedData(bytesRead);

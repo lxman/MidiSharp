@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using MidiSharp.Hosting;
 using static MidiSharp.Hosting.Vst3.Vst3Abi;
 
 namespace MidiSharp.Hosting.Vst3;
@@ -21,20 +20,20 @@ public sealed unsafe class Vst3Format : IPluginFormat
     {
         get
         {
-            var env = Environment.GetEnvironmentVariable("VST3_PATH");
+            string? env = Environment.GetEnvironmentVariable("VST3_PATH");
             if (!string.IsNullOrEmpty(env))
             {
-                foreach (var p in env.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+                foreach (string p in env.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
                     yield return p;
                 yield break;
             }
-            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             yield return Path.Combine(home, ".vst3");                                   // Linux user
             yield return "/usr/lib/vst3";
             yield return "/usr/local/lib/vst3";
-            var common = Environment.GetEnvironmentVariable("CommonProgramFiles");
+            string? common = Environment.GetEnvironmentVariable("CommonProgramFiles");
             if (!string.IsNullOrEmpty(common)) yield return Path.Combine(common, "VST3");   // Windows system
-            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             if (!string.IsNullOrEmpty(localAppData)) yield return Path.Combine(localAppData, "Programs", "Common", "VST3");   // Windows user
             yield return Path.Combine(home, "Library", "Audio", "Plug-Ins", "VST3");    // macOS user
         }
@@ -42,10 +41,10 @@ public sealed unsafe class Vst3Format : IPluginFormat
 
     public IEnumerable<string> EnumerateFiles(IEnumerable<string> searchPaths)
     {
-        foreach (var dir in searchPaths)
+        foreach (string dir in searchPaths)
         {
             if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) continue;
-            foreach (var entry in Directory.EnumerateFileSystemEntries(dir, "*.vst3").OrderBy(f => f, StringComparer.Ordinal))
+            foreach (string entry in Directory.EnumerateFileSystemEntries(dir, "*.vst3").OrderBy(f => f, StringComparer.Ordinal))
                 yield return entry;
         }
     }
@@ -56,7 +55,7 @@ public sealed unsafe class Vst3Format : IPluginFormat
 
     public IEnumerable<PluginDescriptor> ScanFile(string file)
     {
-        var binary = ResolveBinary(file);
+        string? binary = ResolveBinary(file);
         return binary == null ? [] : ScanBinary(binary);
     }
 
@@ -71,11 +70,11 @@ public sealed unsafe class Vst3Format : IPluginFormat
     {
         if (File.Exists(vst3)) return vst3;
         if (!Directory.Exists(vst3)) return null;
-        var name = Path.GetFileNameWithoutExtension(vst3);
+        string name = Path.GetFileNameWithoutExtension(vst3);
 
         string subdir, named;
         string[] patterns;
-        var arm = RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
+        bool arm = RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
         if (OperatingSystem.IsWindows())
         {
             subdir = arm ? "arm64-win" : "x86_64-win";
@@ -95,13 +94,13 @@ public sealed unsafe class Vst3Format : IPluginFormat
             patterns = ["*.so"];
         }
 
-        var contents = Path.Combine(vst3, "Contents", subdir);
+        string contents = Path.Combine(vst3, "Contents", subdir);
         if (!Directory.Exists(contents)) return null;
-        var namedPath = Path.Combine(contents, named);
+        string namedPath = Path.Combine(contents, named);
         if (File.Exists(namedPath)) return namedPath;
-        foreach (var p in patterns)
+        foreach (string p in patterns)
         {
-            var f = Directory.EnumerateFiles(contents, p).OrderBy(x => x, StringComparer.Ordinal).FirstOrDefault();
+            string? f = Directory.EnumerateFiles(contents, p).OrderBy(x => x, StringComparer.Ordinal).FirstOrDefault();
             if (f != null) return f;
         }
         return null;
@@ -110,10 +109,10 @@ public sealed unsafe class Vst3Format : IPluginFormat
     private static IEnumerable<PluginDescriptor> ScanBinary(string binary)
     {
         var results = new List<PluginDescriptor>();
-        if (!NativeLibrary.TryLoad(binary, out var lib)) return results;
+        if (!NativeLibrary.TryLoad(binary, out IntPtr lib)) return results;
         try
         {
-            var factory = GetFactory(lib);
+            void* factory = GetFactory(lib);
             if (factory == null) return results;
             var v = (FactoryVtbl*)*(void**)factory;
             // IPluginFactory2 (if supported) exposes subCategories — that's where "Instrument" lives.
@@ -121,9 +120,9 @@ public sealed unsafe class Vst3Format : IPluginFormat
             fixed (byte* iid2 = IidPluginFactory2)
                 if (!Ok(((delegate* unmanaged[Cdecl]<void*, byte*, void**, int>)(*(IntPtr**)factory)[0])(factory, iid2, &factory2)))
                     factory2 = null;
-            var f2 = factory2 != null ? (Factory2Vtbl*)*(void**)factory2 : null;
+            Factory2Vtbl* f2 = factory2 != null ? (Factory2Vtbl*)*(void**)factory2 : null;
 
-            var count = v->CountClasses(factory);
+            int count = v->CountClasses(factory);
             for (var i = 0; i < count; i++)
             {
                 PClassInfo info;
@@ -159,13 +158,13 @@ public sealed unsafe class Vst3Format : IPluginFormat
         if (descriptor.Format != Name)
             throw new ArgumentException($"Not a VST3 descriptor: {descriptor.Format}", nameof(descriptor));
 
-        var lib = NativeLibrary.Load(descriptor.Path);
+        IntPtr lib = NativeLibrary.Load(descriptor.Path);
         try
         {
-            var factory = GetFactory(lib);
+            void* factory = GetFactory(lib);
             if (factory == null) throw new InvalidOperationException($"'{descriptor.Path}' has no usable VST3 factory.");
 
-            var cid = Convert.FromHexString(descriptor.Id);
+            byte[] cid = Convert.FromHexString(descriptor.Id);
             void* component = null;
             var v = (FactoryVtbl*)*(void**)factory;
             fixed (byte* cidp = cid)
@@ -187,9 +186,9 @@ public sealed unsafe class Vst3Format : IPluginFormat
     // GetPluginFactory(), after ModuleEntry() if the binary exports it.
     private static void* GetFactory(IntPtr lib)
     {
-        if (NativeLibrary.TryGetExport(lib, "ModuleEntry", out var entry))
+        if (NativeLibrary.TryGetExport(lib, "ModuleEntry", out IntPtr entry))
             ((delegate* unmanaged[Cdecl]<void*, byte>)entry)(null);
-        if (!NativeLibrary.TryGetExport(lib, "GetPluginFactory", out var getFactory))
+        if (!NativeLibrary.TryGetExport(lib, "GetPluginFactory", out IntPtr getFactory))
             return null;
         return ((delegate* unmanaged[Cdecl]<void*>)getFactory)();
     }

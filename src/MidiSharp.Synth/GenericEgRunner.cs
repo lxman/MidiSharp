@@ -32,7 +32,7 @@ internal sealed class GenericEgRunner
     public void Configure(GenericEg eg, int sampleRate)
     {
         _sampleRate = sampleRate;
-        var n = eg.Stages.Length;
+        int n = eg.Stages.Length;
         if (_levels.Length < n) { _levels = new double[n]; _stageSamples = new int[n]; }
         for (var i = 0; i < n; i++)
         {
@@ -48,7 +48,7 @@ internal sealed class GenericEgRunner
 
         _basePitch = _baseCutoff = _baseVolume = 0;
         _pitchCc = _cutoffCc = _volumeCc = null;
-        foreach (var t in eg.Targets)
+        foreach (EgTarget t in eg.Targets)
         {
             switch (t.Destination)
             {
@@ -74,8 +74,8 @@ internal sealed class GenericEgRunner
     {
         if (_stageCount == 0 || _stage > _sustainStage) return _value;   // held at the sustain level
 
-        var len = _stageSamples[_stage];
-        var target = _levels[_stage];
+        int len = _stageSamples[_stage];
+        double target = _levels[_stage];
         _value = len <= 0 ? target : _prevLevel + (target - _prevLevel) * (_sampleInStage / (double)len);
 
         if (++_sampleInStage >= len)

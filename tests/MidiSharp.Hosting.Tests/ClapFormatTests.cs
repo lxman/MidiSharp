@@ -1,6 +1,5 @@
 using System.IO;
 using System.Linq;
-using MidiSharp.Hosting;
 using MidiSharp.Hosting.Clap;
 using Xunit;
 
@@ -21,14 +20,14 @@ public sealed class ClapFormatTests
     public void Scanning_a_missing_directory_yields_nothing_and_does_not_throw()
     {
         var format = new ClapFormat();
-        var ghost = Path.Combine(Path.GetTempPath(), "midisharp-no-clap-here");
+        string ghost = Path.Combine(Path.GetTempPath(), "midisharp-no-clap-here");
         Assert.Empty(format.Scan([ghost]).ToList());
     }
 
     [Fact]
     public void Registry_registers_the_clap_format()
     {
-        var registry = new PluginRegistry().Register(new ClapFormat());
+        PluginRegistry registry = new PluginRegistry().Register(new ClapFormat());
         Assert.Single(registry.Formats);
         Assert.Equal("CLAP", registry.Formats[0].Name);
     }

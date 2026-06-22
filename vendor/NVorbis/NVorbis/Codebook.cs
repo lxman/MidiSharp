@@ -16,7 +16,7 @@ namespace MidiSharp.Audio.Vorbis
 
             internal static FastRange Get(int start, int count)
             {
-                var fr = _cachedRange ?? (_cachedRange = new FastRange());
+                FastRange fr = _cachedRange ?? (_cachedRange = new FastRange());
                 fr._start = start;
                 fr._count = count;
                 return fr;
@@ -59,7 +59,7 @@ namespace MidiSharp.Audio.Vorbis
         public void Init(IPacket packet, IHuffman huffman)
         {
             // first, check the sync pattern
-            var chkVal = packet.ReadBits(24);
+            ulong chkVal = packet.ReadBits(24);
             if (chkVal != 0x564342UL) throw new InvalidDataException("Book header had invalid signature!");
 
             // get the counts
@@ -82,7 +82,7 @@ namespace MidiSharp.Audio.Vorbis
             if (packet.ReadBit())
             {
                 // ordered
-                var len = (int)packet.ReadBits(5) + 1;
+                int len = (int)packet.ReadBits(5) + 1;
                 for (var i = 0; i < Entries;)
                 {
                     var cnt = (int)packet.ReadBits(Utils.ilog(Entries - i));
@@ -160,7 +160,7 @@ namespace MidiSharp.Audio.Vorbis
 
                 if (!ComputeCodewords(sparse, codewords, codewordLengths, _lengths, Entries, values)) throw new InvalidDataException();
 
-                var valueList = (IReadOnlyList<int>)values ?? FastRange.Get(0, codewords.Length);
+                IReadOnlyList<int> valueList = (IReadOnlyList<int>)values ?? FastRange.Get(0, codewords.Length);
 
                 huffman.GenerateTable(valueList, codewordLengths ?? _lengths, codewords);
                 _prefixList = huffman.PrefixTree;
@@ -224,12 +224,12 @@ namespace MidiSharp.Audio.Vorbis
             MapType = (int)packet.ReadBits(4);
             if (MapType == 0) return;
 
-            var minValue = Utils.ConvertFromVorbisFloat32((uint)packet.ReadBits(32));
-            var deltaValue = Utils.ConvertFromVorbisFloat32((uint)packet.ReadBits(32));
-            var valueBits = (int)packet.ReadBits(4) + 1;
-            var sequence_p = packet.ReadBit();
+            float minValue = Utils.ConvertFromVorbisFloat32((uint)packet.ReadBits(32));
+            float deltaValue = Utils.ConvertFromVorbisFloat32((uint)packet.ReadBits(32));
+            int valueBits = (int)packet.ReadBits(4) + 1;
+            bool sequence_p = packet.ReadBit();
 
-            var lookupValueCount = Entries * Dimensions;
+            int lookupValueCount = Entries * Dimensions;
             var lookupTable = new float[lookupValueCount];
             if (MapType == 1)
             {
@@ -251,8 +251,8 @@ namespace MidiSharp.Audio.Vorbis
                     var idxDiv = 1;
                     for (var i = 0; i < Dimensions; i++)
                     {
-                        var moff = (idx / idxDiv) % lookupValueCount;
-                        var value = multiplicands[moff] * deltaValue + minValue + last;
+                        int moff = (idx / idxDiv) % lookupValueCount;
+                        double value = multiplicands[moff] * deltaValue + minValue + last;
                         lookupTable[idx * Dimensions + i] = (float)value;
 
                         if (sequence_p) last = value;
@@ -266,10 +266,10 @@ namespace MidiSharp.Audio.Vorbis
                 for (var idx = 0; idx < Entries; idx++)
                 {
                     var last = 0.0;
-                    var moff = idx * Dimensions;
+                    int moff = idx * Dimensions;
                     for (var i = 0; i < Dimensions; i++)
                     {
-                        var value = multiplicands[moff] * deltaValue + minValue + last;
+                        double value = multiplicands[moff] * deltaValue + minValue + last;
                         lookupTable[idx * Dimensions + i] = (float)value;
 
                         if (sequence_p) last = value;
@@ -293,11 +293,11 @@ namespace MidiSharp.Audio.Vorbis
 
         public int DecodeScalar(IPacket packet)
         {
-            var data = (int)packet.TryPeekBits(_prefixBitLength, out var bitsRead);
+            var data = (int)packet.TryPeekBits(_prefixBitLength, out int bitsRead);
             if (bitsRead == 0) return -1;
 
             // try to get the value from the prefix list...
-            var node = _prefixList[data];
+            HuffmanListNode node = _prefixList[data];
             if (node != null)
             {
                 packet.SkipBits(node.Length);

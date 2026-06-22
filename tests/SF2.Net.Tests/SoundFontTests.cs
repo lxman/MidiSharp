@@ -8,8 +8,8 @@ public class SoundFontTests
     [Fact]
     public void Load_ParsesInfoChunk()
     {
-        var bytes = SyntheticSoundFont.Build();
-        var sf = SoundFont.Load(bytes);
+        byte[] bytes = SyntheticSoundFont.Build();
+        SoundFont sf = SoundFont.Load(bytes);
 
         Assert.Equal("Test Bank", sf.Info.BankName);
         Assert.Equal("EMU8000", sf.Info.SoundEngine);
@@ -19,10 +19,10 @@ public class SoundFontTests
     [Fact]
     public void Load_FindsSinglePreset()
     {
-        var sf = SoundFont.Load(SyntheticSoundFont.Build());
+        SoundFont sf = SoundFont.Load(SyntheticSoundFont.Build());
 
         Assert.Single(sf.Presets);
-        var p = sf.Presets[0];
+        Preset p = sf.Presets[0];
         Assert.Equal("TestPiano", p.Name);
         Assert.Equal(0, p.Bank);
         Assert.Equal(0, p.Number);
@@ -36,7 +36,7 @@ public class SoundFontTests
         // Some real banks (e.g. FluidR3Mono) ship a blank-named terminal; it must
         // still be excluded, or it leaks as a phantom bank-0/program-0 preset that
         // shadows the real one in a (bank, program) lookup.
-        var sf = SoundFont.Load(SyntheticSoundFont.Build(terminalName: ""));
+        SoundFont sf = SoundFont.Load(SyntheticSoundFont.Build(terminalName: ""));
 
         Assert.Single(sf.Presets);
         Assert.Equal("TestPiano", sf.Presets[0].Name);
@@ -45,9 +45,9 @@ public class SoundFontTests
     [Fact]
     public void Load_LinksZoneToInstrument()
     {
-        var sf = SoundFont.Load(SyntheticSoundFont.Build());
+        SoundFont sf = SoundFont.Load(SyntheticSoundFont.Build());
 
-        var inst = sf.GetZoneInstrument(0, 0, 0);
+        Instrument? inst = sf.GetZoneInstrument(0, 0, 0);
         Assert.NotNull(inst);
         Assert.Equal("TestInst", inst!.Name);
         Assert.True(sf.HasInstrument(0, 0, 0));
@@ -56,10 +56,10 @@ public class SoundFontTests
     [Fact]
     public void Load_LinksInstrumentZoneToSample()
     {
-        var sf = SoundFont.Load(SyntheticSoundFont.Build());
+        SoundFont sf = SoundFont.Load(SyntheticSoundFont.Build());
 
         Assert.True(sf.HasSample(0, 0, 0, 0));
-        var info = sf.GetSampleInfo(0, 0, 0, 0);
+        SampleInfo? info = sf.GetSampleInfo(0, 0, 0, 0);
         Assert.NotNull(info);
         Assert.Equal("TestSample", info!.Name);
         Assert.Equal(22050u, info.SampleRate);
@@ -69,8 +69,8 @@ public class SoundFontTests
     [Fact]
     public void GetSampleData_DecodesPcm()
     {
-        var sf = SoundFont.Load(SyntheticSoundFont.Build());
-        var samples = sf.GetSampleData(0, 0, 0, 0);
+        SoundFont sf = SoundFont.Load(SyntheticSoundFont.Build());
+        int[] samples = sf.GetSampleData(0, 0, 0, 0);
 
         Assert.Equal(1024, samples.Length);
         // We synthesized a sine — should hit both positive and negative.
@@ -81,14 +81,14 @@ public class SoundFontTests
     [Fact]
     public void Banks_ReturnsDistinctSortedBanks()
     {
-        var sf = SoundFont.Load(SyntheticSoundFont.Build());
+        SoundFont sf = SoundFont.Load(SyntheticSoundFont.Build());
         Assert.Equal([0], sf.Banks);
     }
 
     [Fact]
     public void FindPreset_ReturnsNullWhenMissing()
     {
-        var sf = SoundFont.Load(SyntheticSoundFont.Build());
+        SoundFont sf = SoundFont.Load(SyntheticSoundFont.Build());
         Assert.Null(sf.FindPreset(99, 99));
     }
 
@@ -109,14 +109,14 @@ public class SoundFontTests
     [Fact]
     public void ExtractPreset_RoundTripsThroughLoad()
     {
-        var original = SoundFont.Load(SyntheticSoundFont.Build());
-        var extracted = original.ExtractPreset(0, 0);
+        SoundFont original = SoundFont.Load(SyntheticSoundFont.Build());
+        byte[] extracted = original.ExtractPreset(0, 0);
 
         Assert.NotEmpty(extracted);
 
-        var reloaded = SoundFont.Load(extracted);
+        SoundFont reloaded = SoundFont.Load(extracted);
         Assert.Single(reloaded.Presets);
-        var p = reloaded.Presets[0];
+        Preset p = reloaded.Presets[0];
         Assert.Equal("TestPiano", p.Name);
         Assert.True(reloaded.HasInstrument(0, 0, 0));
         Assert.True(reloaded.HasSample(0, 0, 0, 0));

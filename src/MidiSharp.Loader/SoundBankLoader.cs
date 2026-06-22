@@ -33,7 +33,7 @@ public static class SoundBankLoader
         if (string.IsNullOrEmpty(path)) throw new ArgumentException("Path must be non-empty", nameof(path));
         if (!File.Exists(path)) throw new FileNotFoundException($"Sound bank file not found: {path}", path);
 
-        var format = FormatDetector.DetectFromFile(path);
+        SoundBankFormat format = FormatDetector.DetectFromFile(path);
         options ??= new SoundBankLoadOptions();
 
         try
@@ -65,7 +65,7 @@ public static class SoundBankLoader
             try
             {
                 owner = new MemoryMappedFileManager(path);
-                var sf = SoundFont.Load(owner.Memory);
+                SoundFont sf = SoundFont.Load(owner.Memory);
                 return Sf2BankLoader.Load(sf, options, owner);   // bank takes ownership of the view
             }
             catch
@@ -91,7 +91,7 @@ public static class SoundBankLoader
     {
         if (sfzFiles == null || sfzFiles.Count == 0)
             throw new ArgumentException("At least one SFZ file is required", nameof(sfzFiles));
-        foreach (var (path, _) in sfzFiles)
+        foreach ((string path, int _) in sfzFiles)
             if (!File.Exists(path)) throw new FileNotFoundException($"SFZ file not found: {path}", path);
 
         return SfzBankLoader.LoadCombined(sfzFiles, options ?? new SoundBankLoadOptions());
@@ -116,7 +116,7 @@ public static class SoundBankLoader
         {
             case SoundBankFormat.Sf2:
             {
-                var bytes = ReadAllBytes(stream);
+                byte[] bytes = ReadAllBytes(stream);
                 try
                 {
                     return Sf2BankLoader.Load(SoundFont.Load(bytes), options);
@@ -128,7 +128,7 @@ public static class SoundBankLoader
             }
             case SoundBankFormat.Sf3:
             {
-                var bytes = ReadAllBytes(stream);
+                byte[] bytes = ReadAllBytes(stream);
                 try
                 {
                     return Sf3BankLoader.Load(SoundFont.Load(bytes), options);
@@ -142,7 +142,7 @@ public static class SoundBankLoader
                 return SfzBankLoader.Load(stream, basePath, options);
             case SoundBankFormat.Dls:
             {
-                var bytes = ReadAllBytes(stream);
+                byte[] bytes = ReadAllBytes(stream);
                 return DlsBankLoader.Load(DlsReader.Load(bytes), options);
             }
             default:

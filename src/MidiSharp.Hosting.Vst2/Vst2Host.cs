@@ -44,9 +44,9 @@ internal static unsafe class Vst2Host
     private static IntPtr WriteAnsi(void* dst, string s)
     {
         if (dst == null) return IntPtr.Zero;
-        var bytes = Encoding.ASCII.GetBytes(s);
+        byte[] bytes = Encoding.ASCII.GetBytes(s);
         var p = (byte*)dst;
-        var n = Math.Min(bytes.Length, 63);   // kVstMaxVendorStrLen is 64
+        int n = Math.Min(bytes.Length, 63);   // kVstMaxVendorStrLen is 64
         for (var i = 0; i < n; i++) p[i] = bytes[i];
         p[n] = 0;
         return 1;
@@ -54,8 +54,8 @@ internal static unsafe class Vst2Host
 
     private static IntPtr Ansi(string s)
     {
-        var bytes = Encoding.ASCII.GetBytes(s);
-        var p = Marshal.AllocHGlobal(bytes.Length + 1);
+        byte[] bytes = Encoding.ASCII.GetBytes(s);
+        IntPtr p = Marshal.AllocHGlobal(bytes.Length + 1);
         Marshal.Copy(bytes, 0, p, bytes.Length);
         ((byte*)p)[bytes.Length] = 0;
         return p;

@@ -1,6 +1,5 @@
 using System;
 using System.Runtime.InteropServices;
-using MidiSharp.Hosting;
 
 namespace MidiSharp.Hosting.EditorHost;
 
@@ -46,8 +45,8 @@ internal sealed class X11EditorWindow : INativeEditorWindow
         _display = X11.XOpenDisplay(IntPtr.Zero);
         if (_display == IntPtr.Zero) return false;
 
-        var screen = X11.XDefaultScreen(_display);
-        var root = X11.XDefaultRootWindow(_display);
+        int screen = X11.XDefaultScreen(_display);
+        ulong root = X11.XDefaultRootWindow(_display);
         // Background BLACK (not white): the embedded plugin owns the pixels, but a white parent background
         // shows through compositing seams as bright lines behind a dark editor.
         _window = X11.XCreateSimpleWindow(_display, root, 0, 0, (uint)width, (uint)height, 0,
@@ -66,7 +65,7 @@ internal sealed class X11EditorWindow : INativeEditorWindow
     {
         if (_display == IntPtr.Zero || width <= 0 || height <= 0) return;
         X11.XResizeWindow(_display, _window, (uint)width, (uint)height);
-        var child = X11.FirstChild(_display, _window);
+        ulong child = X11.FirstChild(_display, _window);
         if (child != 0) X11.XResizeWindow(_display, child, (uint)width, (uint)height);
         X11.XFlush(_display);
     }
@@ -81,7 +80,7 @@ internal sealed class X11EditorWindow : INativeEditorWindow
     {
         // After the plugin parented its window, notify it per the XEMBED spec — some editors' show() blocks
         // until they receive XEMBED_EMBEDDED_NOTIFY.
-        var child = X11.FirstChild(_display, _window);
+        ulong child = X11.FirstChild(_display, _window);
         if (child != 0) X11.SendXEmbedNotify(_display, _window, child);
     }
 
@@ -89,7 +88,7 @@ internal sealed class X11EditorWindow : INativeEditorWindow
 
     private void DrainEvents()
     {
-        var pending = X11.XPending(_display);
+        int pending = X11.XPending(_display);
         while (pending-- > 0)
         {
             X11.XNextEvent(_display, _ev);

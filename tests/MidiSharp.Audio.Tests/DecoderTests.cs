@@ -20,7 +20,7 @@ public sealed class DecoderTests : IDisposable
         _dir = Path.Combine(Path.GetTempPath(), "audiotest_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_dir);
         _wav = Path.Combine(_dir, "ref.wav");
-        var signal = CodecFixtures.MakeSignal(frames: 22050, channels: 2);  // 0.5 s stereo
+        float[] signal = CodecFixtures.MakeSignal(frames: 22050, channels: 2);  // 0.5 s stereo
         CodecFixtures.WriteWav16(_wav, signal, channels: 2);
         _reference = AudioCodecs.Decode(_wav);
     }
@@ -42,10 +42,10 @@ public sealed class DecoderTests : IDisposable
     public void Aiff_matches_wav_sample_exact()
     {
         if (!CodecFixtures.FfmpegAvailable) return;
-        var aiff = Path.Combine(_dir, "out.aiff");
+        string aiff = Path.Combine(_dir, "out.aiff");
         Assert.True(CodecFixtures.Transcode(_wav, aiff));
 
-        var d = AudioCodecs.Decode(aiff);
+        DecodedAudio d = AudioCodecs.Decode(aiff);
         Assert.Equal("AIFF", new AiffDecoder().Name);
         Assert.Equal(_reference.Channels, d.Channels);
         Assert.Equal(_reference.SampleRate, d.SampleRate);
@@ -56,11 +56,11 @@ public sealed class DecoderTests : IDisposable
     public void AiffC_sowt_little_endian_matches_wav_sample_exact()
     {
         if (!CodecFixtures.FfmpegAvailable) return;
-        var aifc = Path.Combine(_dir, "out_sowt.aifc");
+        string aifc = Path.Combine(_dir, "out_sowt.aifc");
         // ffmpeg's aiff muxer writes AIFF-C sowt when the codec is pcm_s16le.
         if (!CodecFixtures.Transcode(_wav, aifc, "-c:a pcm_s16le -f aiff")) return;
 
-        var d = AudioCodecs.Decode(aifc);
+        DecodedAudio d = AudioCodecs.Decode(aifc);
         AssertLossless(_reference, d);
     }
 
@@ -68,10 +68,10 @@ public sealed class DecoderTests : IDisposable
     public void Flac_matches_wav_sample_exact()
     {
         if (!CodecFixtures.FfmpegAvailable) return;
-        var flac = Path.Combine(_dir, "out.flac");
+        string flac = Path.Combine(_dir, "out.flac");
         Assert.True(CodecFixtures.Transcode(_wav, flac));
 
-        var d = AudioCodecs.Decode(flac);
+        DecodedAudio d = AudioCodecs.Decode(flac);
         Assert.Equal(_reference.Channels, d.Channels);
         Assert.Equal(_reference.SampleRate, d.SampleRate);
         Assert.Equal(_reference.FrameCount, d.FrameCount);
@@ -82,16 +82,16 @@ public sealed class DecoderTests : IDisposable
     public void Vorbis_decodes_to_correct_shape_and_low_error()
     {
         if (!CodecFixtures.FfmpegAvailable) return;
-        var ogg = Path.Combine(_dir, "out.ogg");
+        string ogg = Path.Combine(_dir, "out.ogg");
         if (!CodecFixtures.Transcode(_wav, ogg, "-c:a libvorbis -q:a 6")) return;
 
-        var d = AudioCodecs.Decode(ogg);
+        DecodedAudio d = AudioCodecs.Decode(ogg);
         Assert.Equal(_reference.Channels, d.Channels);
         Assert.Equal(_reference.SampleRate, d.SampleRate);
         // Vorbis is lossy + adds encoder delay, so don't compare sample-exact —
         // just confirm it produced a comparable amount of non-silent audio.
         Assert.True(d.FrameCount > _reference.FrameCount * 0.8, $"frames={d.FrameCount}");
-        var rms = Rms(d.Samples);
+        double rms = Rms(d.Samples);
         Assert.True(rms > 0.05 && rms < 0.5, $"rms={rms}");
     }
 
@@ -99,15 +99,15 @@ public sealed class DecoderTests : IDisposable
     public void VorbisDecodePcmInto_matches_DecodePcm()
     {
         if (!CodecFixtures.FfmpegAvailable) return;
-        var ogg = Path.Combine(_dir, "into.ogg");
+        string ogg = Path.Combine(_dir, "into.ogg");
         if (!CodecFixtures.Transcode(_wav, ogg, "-c:a libvorbis -q:a 6")) return;
 
-        var bytes = File.ReadAllBytes(ogg);
-        var reference = VorbisDecoder.DecodePcm(bytes, out _, out _, out _);
+        byte[] bytes = File.ReadAllBytes(ogg);
+        float[] reference = VorbisDecoder.DecodePcm(bytes, out _, out _, out _);
 
-        VorbisDecoder.Peek(bytes, out var ch, out var frames);
+        VorbisDecoder.Peek(bytes, out int ch, out long frames);
         var buf = new float[(int)(frames * ch)];
-        var n = VorbisDecoder.DecodePcmInto(bytes, buf, buf.Length, out _, out _);
+        int n = VorbisDecoder.DecodePcmInto(bytes, buf, buf.Length, out _, out _);
 
         Assert.Equal(reference.Length, n);
         Assert.True(buf.AsSpan(0, n).SequenceEqual(reference.AsSpan()), "DecodePcmInto differs from DecodePcm");
@@ -117,7 +117,7 @@ public sealed class DecoderTests : IDisposable
     public void Peek_matches_decode_for_all_formats()
     {
         if (!CodecFixtures.FfmpegAvailable) return;
-        foreach (var (ext, args) in new[]
+        foreach ((string ext, string args) in new[]
         {
             ("wav", "-c:a pcm_s16le"),
             ("flac", "-c:a flac"),
@@ -125,11 +125,11 @@ public sealed class DecoderTests : IDisposable
             ("ogg", "-c:a libvorbis -q:a 6"),
         })
         {
-            var f = Path.Combine(_dir, "peek." + ext);
+            string f = Path.Combine(_dir, "peek." + ext);
             if (!CodecFixtures.Transcode(_wav, f, args)) continue;
 
-            var dec = AudioCodecs.Decode(f);
-            var info = AudioCodecs.Peek(f);
+            DecodedAudio dec = AudioCodecs.Decode(f);
+            AudioInfo info = AudioCodecs.Peek(f);
 
             Assert.Equal(dec.Channels, info.Channels);
             Assert.Equal(dec.SampleRate, info.SampleRate);
@@ -146,12 +146,12 @@ public sealed class DecoderTests : IDisposable
     {
         if (!CodecFixtures.FfmpegAvailable) return;
         // No extension hint → must dispatch purely on header bytes.
-        var flac = Path.Combine(_dir, "headeronly.bin");
+        string flac = Path.Combine(_dir, "headeronly.bin");
         Assert.True(CodecFixtures.Transcode(_wav, Path.Combine(_dir, "tmp.flac")));
         File.Copy(Path.Combine(_dir, "tmp.flac"), flac, overwrite: true);
 
-        var bytes = File.ReadAllBytes(flac);
-        var d = AudioCodecs.Decode(bytes, pathHint: null);
+        byte[] bytes = File.ReadAllBytes(flac);
+        DecodedAudio d = AudioCodecs.Decode(bytes, pathHint: null);
         Assert.Equal(_reference.FrameCount, d.FrameCount);
     }
 
@@ -159,7 +159,7 @@ public sealed class DecoderTests : IDisposable
     public void Real_flac_instrument_matches_ffmpeg_decode_sample_exact()
     {
         if (!CodecFixtures.FfmpegAvailable) return;
-        var flac = Path.Combine(
+        string flac = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             "soundfonts", "sfz", "Discord-SFZ-GM-Bank", "Discord GM", "Melodic", "112-Shanai", "Shn16.flac");
         if (!File.Exists(flac)) return;  // asset not present — skip
@@ -167,11 +167,11 @@ public sealed class DecoderTests : IDisposable
         // ffmpeg decodes the FLAC to a 16-bit WAV; our FLAC decode of the original
         // must match it bit-for-bit (real instrument data → exercises LPC, varied
         // Rice partitions, mid/side — not just the synthetic sine path).
-        var refWav = Path.Combine(_dir, "shanai_ref.wav");
+        string refWav = Path.Combine(_dir, "shanai_ref.wav");
         Assert.True(CodecFixtures.Transcode(flac, refWav, "-c:a pcm_s16le"));
 
-        var mine = AudioCodecs.Decode(flac);
-        var reference = AudioCodecs.Decode(refWav);
+        DecodedAudio mine = AudioCodecs.Decode(flac);
+        DecodedAudio reference = AudioCodecs.Decode(refWav);
         Assert.Equal(reference.Channels, mine.Channels);
         Assert.Equal(reference.SampleRate, mine.SampleRate);
         AssertLossless(reference, mine);
@@ -181,11 +181,11 @@ public sealed class DecoderTests : IDisposable
     public void Flac_reserved_channel_assignment_is_rejected()
     {
         if (!CodecFixtures.FfmpegAvailable) return;
-        var flac = Path.Combine(_dir, "reserved.flac");
+        string flac = Path.Combine(_dir, "reserved.flac");
         if (!CodecFixtures.Transcode(_wav, flac)) return;
-        var bytes = File.ReadAllBytes(flac);
+        byte[] bytes = File.ReadAllBytes(flac);
 
-        var frame = FirstFrameOffset(bytes);
+        int frame = FirstFrameOffset(bytes);
         // Sanity: a FLAC frame begins with the 0xFF F8/F9 sync; bail if we mis-located it.
         Assert.True(frame > 0 && frame + 3 < bytes.Length && bytes[frame] == 0xFF && (bytes[frame + 1] & 0xFC) == 0xF8,
             "could not locate the first FLAC frame header");
@@ -207,8 +207,8 @@ public sealed class DecoderTests : IDisposable
         var p = 4;
         while (p + 4 <= b.Length)
         {
-            var last = (b[p] & 0x80) != 0;
-            var len = (b[p + 1] << 16) | (b[p + 2] << 8) | b[p + 3];
+            bool last = (b[p] & 0x80) != 0;
+            int len = (b[p + 1] << 16) | (b[p + 2] << 8) | b[p + 3];
             p += 4 + len;
             if (last) break;
         }
@@ -233,7 +233,7 @@ public sealed class DecoderTests : IDisposable
     private static double Rms(float[] s)
     {
         double sum = 0;
-        foreach (var v in s) sum += (double)v * v;
+        foreach (float v in s) sum += (double)v * v;
         return Math.Sqrt(sum / Math.Max(1, s.Length));
     }
 }

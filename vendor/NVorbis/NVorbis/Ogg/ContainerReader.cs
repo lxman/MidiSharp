@@ -31,7 +31,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
             var list = new List<Contracts.IPacketProvider>(_packetProviders.Count);
             for (var i = 0; i < _packetProviders.Count; i++)
             {
-                if (_packetProviders[i].TryGetTarget(out var pp))
+                if (_packetProviders[i].TryGetTarget(out Contracts.IPacketProvider pp))
                 {
                     list.Add(pp);
                 }
@@ -119,7 +119,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
 
         private bool ProcessNewStream(Contracts.IPacketProvider packetProvider)
         {
-            var relock = _reader.Release();
+            bool relock = _reader.Release();
             try
             {
                 if (NewStreamCallback?.Invoke(packetProvider) ?? true)

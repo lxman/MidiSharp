@@ -25,14 +25,14 @@ public sealed class PcmDecoderBitDepthTests
     [InlineData(20, 3)]   // sub-byte, 24-bit container
     public void Generic_depth_decodes_half_scale_and_extremes(int bits, int containerBytes)
     {
-        var half = 1L << (containerBytes * 8 - 2);   // 2^(N-2) = +0.5 of full-scale 2^(N-1)
-        var min = -(1L << (containerBytes * 8 - 1));  // -2^(N-1) = -1.0
+        long half = 1L << (containerBytes * 8 - 2);   // 2^(N-2) = +0.5 of full-scale 2^(N-1)
+        long min = -(1L << (containerBytes * 8 - 1));  // -2^(N-1) = -1.0
 
-        var (pos, fp) = PcmDecoder.Decode(Le(half, containerBytes), channels: 1, bits, isFloat: false);
+        (float[] pos, long fp) = PcmDecoder.Decode(Le(half, containerBytes), channels: 1, bits, isFloat: false);
         Assert.Equal(1, fp);
         Assert.True(Math.Abs(pos[0] - 0.5f) < 1e-4, $"{bits}-bit +half: {pos[0]}");
 
-        var (neg, fn) = PcmDecoder.Decode(Le(min, containerBytes), channels: 1, bits, isFloat: false);
+        (float[] neg, long fn) = PcmDecoder.Decode(Le(min, containerBytes), channels: 1, bits, isFloat: false);
         Assert.Equal(1, fn);
         Assert.True(Math.Abs(neg[0] - -1.0f) < 1e-4, $"{bits}-bit min: {neg[0]}");
     }
@@ -41,13 +41,13 @@ public sealed class PcmDecoderBitDepthTests
     public void Forty_eight_bit_two_frames_decode_in_order()
     {
         // Two 48-bit frames: +0.25 then -0.5.
-        var q = 1L << 45;             // 2^45 / 2^47 = 0.25
-        var h = -(1L << 46);          // -2^46 / 2^47 = -0.5
+        long q = 1L << 45;             // 2^45 / 2^47 = 0.25
+        long h = -(1L << 46);          // -2^46 / 2^47 = -0.5
         var data = new byte[12];
         Le(q, 6).CopyTo(data, 0);
         Le(h, 6).CopyTo(data, 6);
 
-        var (s, frames) = PcmDecoder.Decode(data, channels: 1, bitsPerSample: 48, isFloat: false);
+        (float[] s, long frames) = PcmDecoder.Decode(data, channels: 1, bitsPerSample: 48, isFloat: false);
         Assert.Equal(2, frames);
         Assert.True(Math.Abs(s[0] - 0.25f) < 1e-4, $"{s[0]}");
         Assert.True(Math.Abs(s[1] - -0.5f) < 1e-4, $"{s[1]}");
@@ -56,7 +56,7 @@ public sealed class PcmDecoderBitDepthTests
     [Fact]
     public void Above_64_bit_container_returns_empty()
     {
-        var (s, frames) = PcmDecoder.Decode(new byte[16], channels: 1, bitsPerSample: 72, isFloat: false);
+        (float[] s, long frames) = PcmDecoder.Decode(new byte[16], channels: 1, bitsPerSample: 72, isFloat: false);
         Assert.Equal(0, frames);
         Assert.Empty(s);
     }
@@ -65,7 +65,7 @@ public sealed class PcmDecoderBitDepthTests
     public void Standard_depths_still_decode_through_their_fast_paths()
     {
         // 16-bit half-scale stays exact (guards against the generic path disturbing the dedicated cases).
-        var (s, _) = PcmDecoder.Decode(Le(1L << 14, 2), channels: 1, bitsPerSample: 16, isFloat: false);
+        (float[] s, _) = PcmDecoder.Decode(Le(1L << 14, 2), channels: 1, bitsPerSample: 16, isFloat: false);
         Assert.True(Math.Abs(s[0] - 0.5f) < 1e-4, $"{s[0]}");
     }
 }

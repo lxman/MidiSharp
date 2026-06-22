@@ -35,7 +35,7 @@ internal sealed class SdtaChunkReader
 
     public SdtaChunkReader(ReadOnlyMemory<byte> sdtaList)
     {
-        var span = sdtaList.Span;
+        ReadOnlySpan<byte> span = sdtaList.Span;
         if (BinaryHelpers.ReadTag(span, 0) != "sdta")
             throw new SoundFontException(SoundFontValidationCode.FileBroken, "Expected sdta form type");
 
@@ -45,12 +45,12 @@ internal sealed class SdtaChunkReader
         var pos = 4;
         while (pos + 8 <= span.Length)
         {
-            var tag = BinaryHelpers.ReadTag(span, pos);
-            var size = BinaryHelpers.ReadUInt32LE(span, pos + 4);
-            var bodyStart = pos + 8;
+            string tag = BinaryHelpers.ReadTag(span, pos);
+            uint size = BinaryHelpers.ReadUInt32LE(span, pos + 4);
+            int bodyStart = pos + 8;
             if (bodyStart + size > span.Length)
                 throw new SoundFontException(SoundFontValidationCode.FileBroken);
-            var body = sdtaList.Slice(bodyStart, (int)size);
+            ReadOnlyMemory<byte> body = sdtaList.Slice(bodyStart, (int)size);
             switch (tag)
             {
                 case "smpl": smpl = body; break;
@@ -78,8 +78,8 @@ internal sealed class SdtaChunkReader
     public ReadOnlyMemory<byte> GetRawBytes(uint startFrame, uint endFrame)
     {
         if (endFrame < startFrame) return ReadOnlyMemory<byte>.Empty;
-        var start = (long)startFrame * 2;
-        var len = (long)(endFrame - startFrame) * 2;
+        long start = (long)startFrame * 2;
+        long len = (long)(endFrame - startFrame) * 2;
         if (start < 0 || start >= _data16.Length || start + len > _data16.Length)
             return ReadOnlyMemory<byte>.Empty;
         return _data16.Slice((int)start, (int)len);
@@ -98,9 +98,9 @@ internal sealed class SdtaChunkReader
 
         if (_decodedFallback is null)
         {
-            var frames = FrameCount;
+            int frames = FrameCount;
             var buf = new short[frames];
-            var src = _data16.Span;
+            ReadOnlySpan<byte> src = _data16.Span;
             for (var i = 0; i < frames; i++)
                 buf[i] = BinaryHelpers.ReadInt16LE(src, i * 2);
             _decodedFallback = buf;
@@ -112,12 +112,12 @@ internal sealed class SdtaChunkReader
     public int[] GetSamples(uint startFrame, uint endFrame)
     {
         if (endFrame < startFrame) return [];
-        var byteStart = (long)startFrame * 2;
-        var byteLen = (long)(endFrame - startFrame) * 2;
+        long byteStart = (long)startFrame * 2;
+        long byteLen = (long)(endFrame - startFrame) * 2;
         if (byteStart < 0 || byteStart + byteLen > _data16.Length) return [];
         var frames = (int)(endFrame - startFrame);
         var result = new int[frames];
-        var s16 = _data16.Span.Slice((int)byteStart, frames * 2);
+        ReadOnlySpan<byte> s16 = _data16.Span.Slice((int)byteStart, frames * 2);
         if (_data24.IsEmpty)
         {
             for (var i = 0; i < frames; i++)
@@ -126,7 +126,7 @@ internal sealed class SdtaChunkReader
         else
         {
             // sm24 length is bounded to (data16/2) above, so the slice is always safe here.
-            var s24 = _data24.Span.Slice((int)startFrame, frames);
+            ReadOnlySpan<byte> s24 = _data24.Span.Slice((int)startFrame, frames);
             for (var i = 0; i < frames; i++)
             {
                 int lo = s24[i];

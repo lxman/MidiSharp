@@ -34,7 +34,7 @@ public class MidiFileReaderTests
     [Fact]
     public void Read_ValidMidiFile_ReturnsCorrectHeader()
     {
-        var file = MidiFileReader.Read(MinimalMidiFile);
+        MidiFile file = MidiFileReader.Read(MinimalMidiFile);
 
         Assert.Equal(MidiFormat.SingleTrack, file.Header.Format);
         Assert.Equal(1, file.Header.TrackCount);
@@ -45,7 +45,7 @@ public class MidiFileReaderTests
     [Fact]
     public void Read_ValidMidiFile_ReturnsCorrectTrackCount()
     {
-        var file = MidiFileReader.Read(MinimalMidiFile);
+        MidiFile file = MidiFileReader.Read(MinimalMidiFile);
 
         Assert.Single(file.Tracks);
     }
@@ -53,8 +53,8 @@ public class MidiFileReaderTests
     [Fact]
     public void Read_ValidMidiFile_ParsesTempoEvent()
     {
-        var file = MidiFileReader.Read(MinimalMidiFile);
-        var track = file.Tracks[0];
+        MidiFile file = MidiFileReader.Read(MinimalMidiFile);
+        MidiTrack track = file.Tracks[0];
 
         var tempoEvent = Assert.IsType<MetaEvent>(track.Events[0]);
         Assert.Equal(MetaEventType.SetTempo, tempoEvent.Type);
@@ -65,8 +65,8 @@ public class MidiFileReaderTests
     [Fact]
     public void Read_ValidMidiFile_ParsesProgramChange()
     {
-        var file = MidiFileReader.Read(MinimalMidiFile);
-        var track = file.Tracks[0];
+        MidiFile file = MidiFileReader.Read(MinimalMidiFile);
+        MidiTrack track = file.Tracks[0];
 
         var programChange = Assert.IsType<ProgramChangeEvent>(track.Events[1]);
         Assert.Equal(0, programChange.Channel);
@@ -76,8 +76,8 @@ public class MidiFileReaderTests
     [Fact]
     public void Read_ValidMidiFile_ParsesNoteOnOff()
     {
-        var file = MidiFileReader.Read(MinimalMidiFile);
-        var track = file.Tracks[0];
+        MidiFile file = MidiFileReader.Read(MinimalMidiFile);
+        MidiTrack track = file.Tracks[0];
 
         var noteOn = Assert.IsType<NoteOnEvent>(track.Events[2]);
         Assert.Equal(0, noteOn.Channel);
@@ -95,8 +95,8 @@ public class MidiFileReaderTests
     [Fact]
     public void Read_ValidMidiFile_ParsesEndOfTrack()
     {
-        var file = MidiFileReader.Read(MinimalMidiFile);
-        var track = file.Tracks[0];
+        MidiFile file = MidiFileReader.Read(MinimalMidiFile);
+        MidiTrack track = file.Tracks[0];
 
         var endOfTrack = Assert.IsType<MetaEvent>(track.Events[^1]);
         Assert.Equal(MetaEventType.EndOfTrack, endOfTrack.Type);
@@ -105,8 +105,8 @@ public class MidiFileReaderTests
     [Fact]
     public void Read_ValidMidiFile_CalculatesAbsoluteTicks()
     {
-        var file = MidiFileReader.Read(MinimalMidiFile);
-        var track = file.Tracks[0];
+        MidiFile file = MidiFileReader.Read(MinimalMidiFile);
+        MidiTrack track = file.Tracks[0];
 
         Assert.Equal(0, track.Events[0].AbsoluteTicks);   // tempo
         Assert.Equal(0, track.Events[1].AbsoluteTicks);   // program change

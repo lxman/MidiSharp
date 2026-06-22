@@ -18,9 +18,9 @@ public sealed class InstrumentMixRenderTests
     [Fact]
     public void Untouched_mixer_is_bit_identical()
     {
-        var baseline = RenderProgram0(mix: null);
+        (float[] left, float[] right) baseline = RenderProgram0(mix: null);
         // Touch the mixer (create an entry) but leave every field at its no-op default.
-        var touched = RenderProgram0(synth => synth.GetInstrumentMix(0, 0));
+        (float[] left, float[] right) touched = RenderProgram0(synth => synth.GetInstrumentMix(0, 0));
         Assert.Equal(baseline.left, touched.left);     // exact sample-for-sample equality
         Assert.Equal(baseline.right, touched.right);
     }
@@ -31,8 +31,8 @@ public sealed class InstrumentMixRenderTests
         // A note carrying a track index mixes by (TrackMixBank, TrackPart(track, channel)), not by its
         // program — so the mixer groups by part. Trimming track 5's part (channel 0) halves its level
         // even though it plays program 0.
-        var flat = Rms(RenderTrackNote(5, null).left);
-        var cut = Rms(RenderTrackNote(5, s => s.GetInstrumentMix(Synthesizer.TrackMixBank, Synthesizer.TrackPart(5, 0)).GainDb = -6.0206).left);
+        double flat = Rms(RenderTrackNote(5, null).left);
+        double cut = Rms(RenderTrackNote(5, s => s.GetInstrumentMix(Synthesizer.TrackMixBank, Synthesizer.TrackPart(5, 0)).GainDb = -6.0206).left);
         Assert.True(Math.Abs(cut / flat - 0.5) < 0.02, $"track-5 -6 dB trim should halve RMS (ratio {cut / flat:F4})");
     }
 
@@ -42,8 +42,8 @@ public sealed class InstrumentMixRenderTests
         // Program 0 played by two different parts (track 3 / channel 0, and track 7 / channel 1).
         // Soloing the first silences the second even though they share the program — proof the mix
         // identity is the part, not the sound.
-        var only3 = RenderTwoTrackNotes(soloTrack: 3, includeTrack7: false);
-        var soloed = RenderTwoTrackNotes(soloTrack: 3, includeTrack7: true);
+        (float[] left, float[] right) only3 = RenderTwoTrackNotes(soloTrack: 3, includeTrack7: false);
+        (float[] left, float[] right) soloed = RenderTwoTrackNotes(soloTrack: 3, includeTrack7: true);
         Assert.Equal(only3.left, soloed.left);    // the other part contributes nothing when track 3 is soloed
         Assert.Equal(only3.right, soloed.right);
     }
@@ -70,23 +70,23 @@ public sealed class InstrumentMixRenderTests
     [Fact]
     public void Gain_trim_plus_6dB_doubles_rms()
     {
-        var flat = Rms(RenderProgram0(mix: null).left);
-        var boosted = Rms(RenderProgram0(s => s.GetInstrumentMix(0, 0).GainDb = 6.0206).left);
+        double flat = Rms(RenderProgram0(mix: null).left);
+        double boosted = Rms(RenderProgram0(s => s.GetInstrumentMix(0, 0).GainDb = 6.0206).left);
         Assert.True(Math.Abs(boosted / flat - 2.0) < 0.02, $"+6 dB should ~double RMS (ratio {boosted / flat:F4})");
     }
 
     [Fact]
     public void Gain_trim_minus_6dB_halves_rms()
     {
-        var flat = Rms(RenderProgram0(mix: null).left);
-        var cut = Rms(RenderProgram0(s => s.GetInstrumentMix(0, 0).GainDb = -6.0206).left);
+        double flat = Rms(RenderProgram0(mix: null).left);
+        double cut = Rms(RenderProgram0(s => s.GetInstrumentMix(0, 0).GainDb = -6.0206).left);
         Assert.True(Math.Abs(cut / flat - 0.5) < 0.02, $"-6 dB should ~halve RMS (ratio {cut / flat:F4})");
     }
 
     [Fact]
     public void Mute_silences_the_instrument()
     {
-        var muted = Rms(RenderProgram0(s => s.GetInstrumentMix(0, 0).Mute = true).left);
+        double muted = Rms(RenderProgram0(s => s.GetInstrumentMix(0, 0).Mute = true).left);
         Assert.True(muted < 1e-6, $"mute should be silent (rms {muted:E3})");
     }
 
@@ -94,10 +94,10 @@ public sealed class InstrumentMixRenderTests
     public void Solo_silences_others_and_leaves_the_soloed_part_bit_identical()
     {
         // Program 0 alone (the part we will solo) — the reference.
-        var solo0Reference = RenderTwoPrograms(soloProgram0: false, muteAll: false, onlyProgram0: true);
+        (float[] left, float[] right) solo0Reference = RenderTwoPrograms(soloProgram0: false, muteAll: false, onlyProgram0: true);
 
         // Both parts, with program 0 soloed: program 1 must vanish and program 0 must be untouched.
-        var soloed = RenderTwoPrograms(soloProgram0: true, muteAll: false, onlyProgram0: false);
+        (float[] left, float[] right) soloed = RenderTwoPrograms(soloProgram0: true, muteAll: false, onlyProgram0: false);
 
         Assert.Equal(solo0Reference.left, soloed.left);    // soloed part is bit-identical to itself-alone
         Assert.Equal(solo0Reference.right, soloed.right);
@@ -106,8 +106,8 @@ public sealed class InstrumentMixRenderTests
     [Fact]
     public void Pan_offset_hard_right_empties_the_left()
     {
-        var neutral = RenderProgram0(mix: null);
-        var hardRight = RenderProgram0(s => s.GetInstrumentMix(0, 0).Pan = 1.0);
+        (float[] left, float[] right) neutral = RenderProgram0(mix: null);
+        (float[] left, float[] right) hardRight = RenderProgram0(s => s.GetInstrumentMix(0, 0).Pan = 1.0);
         Assert.True(Rms(neutral.left) > 1e-3, "sanity: neutral pan has left signal");
         Assert.True(Rms(hardRight.left) < 1e-6, $"hard-right pan should empty the left (rms {Rms(hardRight.left):E3})");
         Assert.True(Rms(hardRight.right) > Rms(neutral.right), "hard-right pan should keep/raise the right");
@@ -117,8 +117,8 @@ public sealed class InstrumentMixRenderTests
     public void Reverb_send_adds_wet_energy()
     {
         // A short note then a tail; the reverb send should leave audible energy after the note ends.
-        var dry = TotalEnergy(RenderProgram0(mix: null, blocks: 80));
-        var wet = TotalEnergy(RenderProgram0(s => s.GetInstrumentMix(0, 0).ReverbSend = 1.0, blocks: 80));
+        double dry = TotalEnergy(RenderProgram0(mix: null, blocks: 80));
+        double wet = TotalEnergy(RenderProgram0(s => s.GetInstrumentMix(0, 0).ReverbSend = 1.0, blocks: 80));
         Assert.True(wet > dry * 1.01, $"reverb send should add wet energy (wet {wet:F3} vs dry {dry:F3})");
     }
 
@@ -168,7 +168,7 @@ public sealed class InstrumentMixRenderTests
     private static IRBank MakeBank(int programs)
     {
         // One mono constant-0.5 sample, shared by every program; a flat sustained envelope.
-        var data = new[] { Constant(0.5f, 16000) };
+        float[][] data = new[] { Constant(0.5f, 16000) };
         var meta = new[] { new SampleMetadata { SampleRate = Rate, Channels = 1, LengthFrames = 16000, RootKey = 60 } };
         var patches = new Patch[programs];
         for (var p = 0; p < programs; p++)

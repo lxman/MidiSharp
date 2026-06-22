@@ -1,7 +1,6 @@
 using System;
 using System.Linq;
 using System.Threading;
-using MidiSharp.Hosting;
 using MidiSharp.Hosting.EditorHost;
 using MidiSharp.Hosting.Vst3;
 using Xunit;
@@ -29,14 +28,14 @@ public sealed class Vst3WindowsEditorTests
     {
         Assert.SkipWhen(!OperatingSystem.IsWindows(), "Win32 backend is Windows-only.");
         Assert.SkipWhen(!EditorPlatform.Current.IsAvailable, "no interactive desktop.");
-        var desc = FindTarget();
+        PluginDescriptor? desc = FindTarget();
         Assert.SkipWhen(desc == null, "no target VST3 plugin (Podolski/Protoverb) installed.");
 
-        using var plugin = _format.Load(desc!, Config);
+        using IHostedPlugin plugin = _format.Load(desc!, Config);
         Assert.True(plugin.Gui is { HasEditor: true }, "the target VST3 should expose an editor.");
         Assert.True(plugin.Gui!.IsApiSupported("win32", floating: false), "the VST3 editor should support win32 (HWND).");
 
-        using var window = EditorWindow.Open(plugin.Gui, "VST3 win32 editor test");
+        using EditorWindow? window = EditorWindow.Open(plugin.Gui, "VST3 win32 editor test");
         Assert.NotNull(window);
         Assert.True(window!.IsOpen, $"editor window should open (error: {window.Error}).");
 

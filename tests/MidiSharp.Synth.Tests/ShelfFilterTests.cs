@@ -66,8 +66,8 @@ public sealed class ShelfFilterTests
         double inSumSq = 0, outSumSq = 0;
         for (var i = 0; i < n; i++)
         {
-            var x = Math.Sin(2.0 * Math.PI * freq * i / Rate);
-            var y = f.Process(x);
+            double x = Math.Sin(2.0 * Math.PI * freq * i / Rate);
+            double y = f.Process(x);
             if (i >= Rate / 2)               // measure the second half (skip the warm-up transient)
             {
                 inSumSq += x * x;

@@ -57,7 +57,7 @@ namespace MidiSharp.Audio.Vorbis
             _currentPosition = 0L;
             ClipSamples = true;
 
-            var packet = _packetProvider.PeekNextPacket();
+            IPacket packet = _packetProvider.PeekNextPacket();
             if (!ProcessHeaderPackets(packet))
             {
                 _packetProvider = null;
@@ -72,7 +72,7 @@ namespace MidiSharp.Audio.Vorbis
             try
             {
                 // let's give our caller some helpful hints about what they've encountered...
-                var header = packet.ReadBits(64);
+                ulong header = packet.ReadBits(64);
                 if (header == 0x646165487375704ful)
                 {
                     return new ArgumentException("Found OPUS bitstream.");
@@ -169,7 +169,7 @@ namespace MidiSharp.Audio.Vorbis
             }
             
             var buf = new byte[len];
-            var cnt = packet.Read(buf, 0, len);
+            int cnt = packet.Read(buf, 0, len);
             if (cnt < len)
             {
                 throw new InvalidDataException("Could not read full string!");
@@ -231,8 +231,8 @@ namespace MidiSharp.Audio.Vorbis
                 return false;
             }
 
-            var mdct = _factory.CreateMdct();
-            var huffman = _factory.CreateHuffman();
+            IMdct mdct = _factory.CreateMdct();
+            IHuffman huffman = _factory.CreateHuffman();
 
             // read the books
             var books = new ICodebook[packet.ReadBits(8) + 1];
@@ -243,7 +243,7 @@ namespace MidiSharp.Audio.Vorbis
             }
 
             // Vorbis never used this feature, so we just skip the appropriate number of bits
-            var times = (int)packet.ReadBits(6) + 1;
+            int times = (int)packet.ReadBits(6) + 1;
             packet.SkipBits(16 * times);
 
             // read the floors
@@ -332,8 +332,8 @@ namespace MidiSharp.Audio.Vorbis
             }
 
             // save off value to track when we're done with the request
-            var idx = offset;
-            var tgt = offset + count;
+            int idx = offset;
+            int tgt = offset + count;
 
             // try to fill the buffer; drain the last buffer if EOS, resync, bad packet, or parameter change
             while (idx < tgt)
@@ -350,7 +350,7 @@ namespace MidiSharp.Audio.Vorbis
                         break;
                     }
 
-                    if (!ReadNextPacket((idx - offset) / _channels, out var samplePosition))
+                    if (!ReadNextPacket((idx - offset) / _channels, out long? samplePosition))
                     {
                         // drain the current packet (the windowing will fade it out)
                         _prevPacketEnd = _prevPacketStop;
@@ -365,7 +365,7 @@ namespace MidiSharp.Audio.Vorbis
                 }
 
                 // we read out the valid samples from the previous packet
-                var copyLen = Math.Min((tgt - idx) / _channels, _prevPacketEnd - _prevPacketStart);
+                int copyLen = Math.Min((tgt - idx) / _channels, _prevPacketEnd - _prevPacketStart);
                 if (copyLen > 0)
                 {
                     if (ClipSamples)
@@ -391,7 +391,7 @@ namespace MidiSharp.Audio.Vorbis
 
         private int ClippingCopyBuffer(Span<float> target, int targetIndex, int count)
         {
-            var idx = targetIndex;
+            int idx = targetIndex;
             for (; count > 0; _prevPacketStart++, count--)
             {
                 for (var ch = 0; ch < _channels; ch++)
@@ -404,7 +404,7 @@ namespace MidiSharp.Audio.Vorbis
 
         private int CopyBuffer(Span<float> target, int targetIndex, int count)
         {
-            var idx = targetIndex;
+            int idx = targetIndex;
             for (; count > 0; _prevPacketStart++, count--)
             {
                 for (var ch = 0; ch < _channels; ch++)
@@ -418,7 +418,7 @@ namespace MidiSharp.Audio.Vorbis
         private bool ReadNextPacket(int bufferedSamples, out long? samplePosition)
         {
             // decode the next packet now so we can start overlapping with it
-            var curPacket = DecodeNextPacket(out var startIndex, out var validLen, out var totalLen, out var isEndOfStream, out samplePosition, out var bitsRead, out var bitsRemaining, out var containerOverheadBits);
+            float[][] curPacket = DecodeNextPacket(out int startIndex, out int validLen, out int totalLen, out bool isEndOfStream, out samplePosition, out int bitsRead, out int bitsRemaining, out int containerOverheadBits);
             _eosFound |= isEndOfStream;
             if (curPacket == null)
             {
@@ -429,7 +429,7 @@ namespace MidiSharp.Audio.Vorbis
             // if we get a max sample position, back off our valid length to match
             if (samplePosition.HasValue && isEndOfStream)
             {
-                var actualEnd = _currentPosition + bufferedSamples + validLen - startIndex;
+                long actualEnd = _currentPosition + bufferedSamples + validLen - startIndex;
                 var diff = (int)(samplePosition.Value - actualEnd);
                 if (diff < 0)
                 {
@@ -495,7 +495,7 @@ namespace MidiSharp.Audio.Vorbis
                     else
                     {
                         // if we get here, we should have a good packet; decode it and add it to the buffer
-                        var mode = _modes[(int)packet.ReadBits(_modeFieldBits)];
+                        IMode mode = _modes[(int)packet.ReadBits(_modeFieldBits)];
                         if (_nextPacketBuf == null)
                         {
                             _nextPacketBuf = new float[_channels][];
@@ -592,7 +592,7 @@ namespace MidiSharp.Audio.Vorbis
             else
             {
                 // seek the stream to the correct position
-                var pos = _packetProvider.SeekTo(samplePosition, 1, GetPacketGranules);
+                long pos = _packetProvider.SeekTo(samplePosition, 1, GetPacketGranules);
                 rollForward = (int)(samplePosition - pos);
             }
 

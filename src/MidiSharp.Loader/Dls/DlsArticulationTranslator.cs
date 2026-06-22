@@ -18,8 +18,8 @@ internal static class DlsArticulationTranslator
     /// </summary>
     public static ModulationRoute? MakeRoute(ConnectionBlock c)
     {
-        var source = MapSource(c.Source);
-        var dest = MapDestination(c.Destination);
+        ModSource? source = MapSource(c.Source);
+        ModDestination? dest = MapDestination(c.Destination);
         if (source == null || dest == null) return null;
 
         return new ModulationRoute
@@ -80,7 +80,7 @@ internal static class DlsArticulationTranslator
 
     private static double ScaleToAmount(ConnectionDestination dest, int scale)
     {
-        var raw = scale / 65536.0;
+        double raw = scale / 65536.0;
         return dest switch
         {
             // DLS Gain: positive = louder. IR AttenuationDb: positive = quieter.

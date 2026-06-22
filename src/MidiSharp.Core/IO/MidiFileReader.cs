@@ -19,7 +19,7 @@ public static class MidiFileReader
     /// </summary>
     public static MidiFile Read(string path)
     {
-        var bytes = File.ReadAllBytes(path);
+        byte[] bytes = File.ReadAllBytes(path);
         return Read(bytes);
     }
 
@@ -55,7 +55,7 @@ public static class MidiFileReader
     public static MidiFile Read(ReadOnlySpan<byte> data)
     {
         var reader = new SpanReader(data);
-        var header = ReadHeader(ref reader);
+        MidiHeader header = ReadHeader(ref reader);
         var tracks = new List<MidiTrack>(header.TrackCount);
 
         for (var i = 0; i < header.TrackCount; i++)
@@ -68,17 +68,17 @@ public static class MidiFileReader
 
     private static MidiHeader ReadHeader(ref SpanReader reader)
     {
-        var chunkType = reader.ReadUInt32BigEndian();
+        uint chunkType = reader.ReadUInt32BigEndian();
         if (chunkType != MThd)
             throw new InvalidDataException($"Expected MThd chunk, got 0x{chunkType:X8}");
 
-        var length = reader.ReadUInt32BigEndian();
+        uint length = reader.ReadUInt32BigEndian();
         if (length < 6)
             throw new InvalidDataException($"Header chunk too short: {length}");
 
-        var format = reader.ReadUInt16BigEndian();
-        var trackCount = reader.ReadUInt16BigEndian();
-        var division = reader.ReadInt16BigEndian();
+        ushort format = reader.ReadUInt16BigEndian();
+        ushort trackCount = reader.ReadUInt16BigEndian();
+        short division = reader.ReadInt16BigEndian();
 
         // Skip any extra header bytes (future compatibility)
         if (length > 6)
@@ -92,12 +92,12 @@ public static class MidiFileReader
 
     private static MidiTrack ReadTrack(ref SpanReader reader)
     {
-        var chunkType = reader.ReadUInt32BigEndian();
+        uint chunkType = reader.ReadUInt32BigEndian();
         if (chunkType != MTrk)
             throw new InvalidDataException($"Expected MTrk chunk, got 0x{chunkType:X8}");
 
-        var length = reader.ReadUInt32BigEndian();
-        var trackData = reader.ReadBytes((int)length);
+        uint length = reader.ReadUInt32BigEndian();
+        ReadOnlySpan<byte> trackData = reader.ReadBytes((int)length);
         var trackReader = new SpanReader(trackData);
 
         var events = new List<MidiEvent>();
@@ -107,10 +107,10 @@ public static class MidiFileReader
 
         while (!trackReader.IsAtEnd)
         {
-            var deltaTicks = trackReader.ReadVariableLengthQuantity();
+            int deltaTicks = trackReader.ReadVariableLengthQuantity();
             absoluteTicks += deltaTicks;
 
-            var evt = ReadEvent(ref trackReader, ref runningStatus, deltaTicks);
+            MidiEvent evt = ReadEvent(ref trackReader, ref runningStatus, deltaTicks);
             evt.AbsoluteTicks = absoluteTicks;
             events.Add(evt);
 
@@ -128,7 +128,7 @@ public static class MidiFileReader
 
     private static MidiEvent ReadEvent(ref SpanReader reader, ref byte runningStatus, int deltaTicks)
     {
-        var status = reader.PeekByte();
+        byte status = reader.PeekByte();
 
         // If high bit is set, it's a status byte
         if ((status & 0x80) != 0)
@@ -219,9 +219,9 @@ public static class MidiFileReader
 
     private static PitchBendEvent ReadPitchBend(ref SpanReader reader, byte channel, int deltaTicks)
     {
-        var lsb = reader.ReadByte();
-        var msb = reader.ReadByte();
-        var raw = (msb << 7) | lsb;
+        byte lsb = reader.ReadByte();
+        byte msb = reader.ReadByte();
+        int raw = (msb << 7) | lsb;
         var value = (short)(raw - 8192);
 
         return new PitchBendEvent
@@ -234,9 +234,9 @@ public static class MidiFileReader
 
     private static MetaEvent ReadMetaEvent(ref SpanReader reader, int deltaTicks)
     {
-        var type = reader.ReadByte();
-        var length = reader.ReadVariableLengthQuantity();
-        var data = reader.ReadBytes(length).ToArray();
+        byte type = reader.ReadByte();
+        int length = reader.ReadVariableLengthQuantity();
+        byte[]? data = reader.ReadBytes(length).ToArray();
 
         return new MetaEvent
         {
@@ -248,8 +248,8 @@ public static class MidiFileReader
 
     private static SysExEvent ReadSysExEvent(ref SpanReader reader, byte status, int deltaTicks)
     {
-        var length = reader.ReadVariableLengthQuantity();
-        var data = reader.ReadBytes(length).ToArray();
+        int length = reader.ReadVariableLengthQuantity();
+        byte[]? data = reader.ReadBytes(length).ToArray();
 
         return new SysExEvent
         {

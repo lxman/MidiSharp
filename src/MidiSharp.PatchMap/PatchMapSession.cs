@@ -113,6 +113,6 @@ public sealed class PatchMapSession(IRBank baseBank) : IDisposable
         if (_disposed) return;
         _disposed = true;
         Base.Dispose();
-        foreach (var source in _sources) source.Dispose();
+        foreach (IRBank? source in _sources) source.Dispose();
     }
 }

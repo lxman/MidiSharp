@@ -57,16 +57,16 @@ public sealed class BiquadFilter
     /// </summary>
     public void Configure(BiquadType type, double freqHz, double q, double gainDb)
     {
-        var nyquist = _sampleRate * 0.5;
+        double nyquist = _sampleRate * 0.5;
         if (freqHz <= 0.0 || freqHz >= nyquist) { SetIdentity(); return; }
         if (q <= 0.0) q = 1e-4;
 
-        var a = Math.Pow(10.0, gainDb / 40.0);      // shelf/peak linear amplitude
-        var w0 = 2.0 * Math.PI * freqHz / _sampleRate;
-        var cw = Math.Cos(w0);
-        var sw = Math.Sin(w0);
-        var alpha = sw / (2.0 * q);
-        var sqrtA = Math.Sqrt(a);
+        double a = Math.Pow(10.0, gainDb / 40.0);      // shelf/peak linear amplitude
+        double w0 = 2.0 * Math.PI * freqHz / _sampleRate;
+        double cw = Math.Cos(w0);
+        double sw = Math.Sin(w0);
+        double alpha = sw / (2.0 * q);
+        double sqrtA = Math.Sqrt(a);
 
         double b0, b1, b2, a0, a1, a2;
         switch (type)
@@ -108,7 +108,7 @@ public sealed class BiquadFilter
                 return;
         }
 
-        var inv = 1.0 / a0;
+        double inv = 1.0 / a0;
         _b0 = b0 * inv; _b1 = b1 * inv; _b2 = b2 * inv;
         _a1 = a1 * inv; _a2 = a2 * inv;
     }
@@ -116,7 +116,7 @@ public sealed class BiquadFilter
     /// <summary>Processes one sample through the section.</summary>
     public double Process(double x)
     {
-        var y = _b0 * x + _z1;
+        double y = _b0 * x + _z1;
         _z1 = _b1 * x - _a1 * y + _z2;
         _z2 = _b2 * x - _a2 * y;
         return y;

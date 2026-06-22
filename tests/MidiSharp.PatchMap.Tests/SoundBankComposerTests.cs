@@ -13,7 +13,7 @@ public class SoundBankComposerTests
     private static float FirstFrame(IRBank bank, int sampleId)
     {
         var buf = new float[4];
-        var n = bank.Samples.ReadFrames(sampleId, 0, buf);
+        int n = bank.Samples.ReadFrames(sampleId, 0, buf);
         Assert.Equal(4, n);
         return buf[0];
     }
@@ -38,18 +38,18 @@ public class SoundBankComposerTests
             InitialControllers = new Dictionary<int, int> { { 1, 96 } },
         };
 
-        var composite = SoundBankComposer.BuildComposite(baseBank, NoOverrides);
+        IRBank composite = SoundBankComposer.BuildComposite(baseBank, NoOverrides);
         Assert.Equal(96, composite.InitialControllers[1]);
     }
 
     [Fact]
     public void NoOverrides_PreservesBasePatchesAndSamples()
     {
-        using var baseBank = TestBanks.OneSamplePatch("base", 0.1f, 0, 0, "Piano");
+        using IRBank baseBank = TestBanks.OneSamplePatch("base", 0.1f, 0, 0, "Piano");
 
-        var comp = SoundBankComposer.BuildComposite(baseBank, NoOverrides);
+        IRBank comp = SoundBankComposer.BuildComposite(baseBank, NoOverrides);
 
-        var p = comp.FindPatch(0, 0);
+        Patch? p = comp.FindPatch(0, 0);
         Assert.NotNull(p);
         Assert.Equal("Piano", p!.Name);
         Assert.Equal(baseBank.Samples.Count, comp.Samples.Count);
@@ -59,13 +59,13 @@ public class SoundBankComposerTests
     [Fact]
     public void Override_PullsSoundFromSourceFont_WithRebasedSampleId()
     {
-        using var baseBank = TestBanks.OneSamplePatch("base", 0.1f, 0, 0, "Piano");
-        using var srcBank = TestBanks.OneSamplePatch("src", 0.7f, 0, 5, "Distortion");
+        using IRBank baseBank = TestBanks.OneSamplePatch("base", 0.1f, 0, 0, "Piano");
+        using IRBank srcBank = TestBanks.OneSamplePatch("src", 0.7f, 0, 5, "Distortion");
         var overrides = new Dictionary<(int, int), PatchRef> { [(0, 0)] = new PatchRef(srcBank, 0, 5) };
 
-        var comp = SoundBankComposer.BuildComposite(baseBank, overrides);
+        IRBank comp = SoundBankComposer.BuildComposite(baseBank, overrides);
 
-        var p = comp.FindPatch(0, 0);
+        Patch? p = comp.FindPatch(0, 0);
         Assert.NotNull(p);
         Assert.Equal("Distortion", p!.Name);
         // base has 1 sample (id 0); the borrowed source sample is rebased to id 1.
@@ -78,14 +78,14 @@ public class SoundBankComposerTests
     [Fact]
     public void OverrideToNewAddress_LeavesBaseAddressIntact()
     {
-        using var baseBank = TestBanks.OneSamplePatch("base", 0.1f, 0, 0, "Piano");
-        using var srcBank = TestBanks.OneSamplePatch("src", 0.7f, 0, 5, "Distortion");
+        using IRBank baseBank = TestBanks.OneSamplePatch("base", 0.1f, 0, 0, "Piano");
+        using IRBank srcBank = TestBanks.OneSamplePatch("src", 0.7f, 0, 5, "Distortion");
         var overrides = new Dictionary<(int, int), PatchRef> { [(0, 30)] = new PatchRef(srcBank, 0, 5) };
 
-        var comp = SoundBankComposer.BuildComposite(baseBank, overrides);
+        IRBank comp = SoundBankComposer.BuildComposite(baseBank, overrides);
 
         Assert.Equal("Piano", comp.FindPatch(0, 0)!.Name);
-        var moved = comp.FindPatch(0, 30);
+        Patch? moved = comp.FindPatch(0, 30);
         Assert.NotNull(moved);
         Assert.Equal("Distortion", moved!.Name);
         Assert.Equal(0.7f, FirstFrame(comp, moved.Zones[0].Sample.SampleId), 3);
@@ -94,12 +94,12 @@ public class SoundBankComposerTests
     [Fact]
     public void UnresolvedOverride_FallsBackToBase()
     {
-        using var baseBank = TestBanks.OneSamplePatch("base", 0.1f, 0, 0, "Piano");
-        using var srcBank = TestBanks.OneSamplePatch("src", 0.7f, 0, 5, "Distortion");
+        using IRBank baseBank = TestBanks.OneSamplePatch("base", 0.1f, 0, 0, "Piano");
+        using IRBank srcBank = TestBanks.OneSamplePatch("src", 0.7f, 0, 5, "Distortion");
         // The source font has no patch at (9, 9): the override is skipped, base stays.
         var overrides = new Dictionary<(int, int), PatchRef> { [(0, 0)] = new PatchRef(srcBank, 9, 9) };
 
-        var comp = SoundBankComposer.BuildComposite(baseBank, overrides);
+        IRBank comp = SoundBankComposer.BuildComposite(baseBank, overrides);
 
         Assert.Equal("Piano", comp.FindPatch(0, 0)!.Name);
         Assert.Equal(0.1f, FirstFrame(comp, comp.FindPatch(0, 0)!.Zones[0].Sample.SampleId), 3);
@@ -108,11 +108,11 @@ public class SoundBankComposerTests
     [Fact]
     public void StereoLinkSampleId_RebasedIntoCompositeSpace()
     {
-        using var baseBank = TestBanks.OneSamplePatch("base", 0.1f, 0, 0, "Piano");
-        using var srcBank = MakeStereoSource();
+        using IRBank baseBank = TestBanks.OneSamplePatch("base", 0.1f, 0, 0, "Piano");
+        using IRBank srcBank = MakeStereoSource();
         var overrides = new Dictionary<(int, int), PatchRef> { [(0, 30)] = new PatchRef(srcBank, 0, 5) };
 
-        var comp = SoundBankComposer.BuildComposite(baseBank, overrides);
+        IRBank comp = SoundBankComposer.BuildComposite(baseBank, overrides);
 
         // base has 1 sample (id 0); the source's two samples occupy ids 1 and 2. The source's
         // sample 0 (global id 1) links to its local sample 1, which must rebase to global id 2.

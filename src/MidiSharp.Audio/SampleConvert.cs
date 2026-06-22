@@ -17,23 +17,23 @@ public static class SampleConvert
     /// </summary>
     public static void Int16ToFloat(ReadOnlySpan<short> src, Span<float> dest, float scale)
     {
-        var n = Math.Min(src.Length, dest.Length);
+        int n = Math.Min(src.Length, dest.Length);
         var i = 0;
 
         if (Vector.IsHardwareAccelerated && n >= Vector<short>.Count)
         {
-            var step = Vector<short>.Count;        // e.g. 16 shorts → two Vector<int>/Vector<float>
-            var half = Vector<int>.Count;
+            int step = Vector<short>.Count;        // e.g. 16 shorts → two Vector<int>/Vector<float>
+            int half = Vector<int>.Count;
             var vScale = new Vector<float>(scale);
-            var srcBytes = MemoryMarshal.AsBytes(src);
-            var dstBytes = MemoryMarshal.AsBytes(dest);
-            var last = n - step;
+            ReadOnlySpan<byte> srcBytes = MemoryMarshal.AsBytes(src);
+            Span<byte> dstBytes = MemoryMarshal.AsBytes(dest);
+            int last = n - step;
             for (; i <= last; i += step)
             {
                 var s = MemoryMarshal.Read<Vector<short>>(srcBytes.Slice(i * sizeof(short)));
-                Vector.Widen(s, out var lo, out var hi);
-                var fLo = Vector.ConvertToSingle(lo) * vScale;
-                var fHi = Vector.ConvertToSingle(hi) * vScale;
+                Vector.Widen(s, out Vector<int> lo, out Vector<int> hi);
+                Vector<float> fLo = Vector.ConvertToSingle(lo) * vScale;
+                Vector<float> fHi = Vector.ConvertToSingle(hi) * vScale;
                 MemoryMarshal.Write(dstBytes.Slice(i * sizeof(float)), ref fLo);
                 MemoryMarshal.Write(dstBytes.Slice((i + half) * sizeof(float)), ref fHi);
             }

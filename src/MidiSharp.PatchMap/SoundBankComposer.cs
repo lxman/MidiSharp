@@ -111,30 +111,30 @@ public static class SoundBankComposer
         // Assign each contributing font a sample-id offset. Base is always first at offset 0.
         var offsetOf = new Dictionary<IRBank, int> { [baseBank] = 0 };
         var extraSources = new List<IRBank>();
-        var running = baseBank.Samples.Count;
+        int running = baseBank.Samples.Count;
         void Reserve(PatchRef pref)
         {
             if (!offsetOf.TryAdd(pref.Source, running)) return;
             extraSources.Add(pref.Source);
             running += pref.Source.Samples.Count;
         }
-        foreach (var pref in patchOverrides.Values) Reserve(pref);
-        foreach (var pref in trackOverrides.Values) Reserve(pref);
-        foreach (var pref in partOverrides.Values) Reserve(pref);
+        foreach (PatchRef pref in patchOverrides.Values) Reserve(pref);
+        foreach (PatchRef pref in trackOverrides.Values) Reserve(pref);
+        foreach (PatchRef pref in partOverrides.Values) Reserve(pref);
 
         // Start from the base patches (ids valid as-is at offset 0), then apply overrides.
         var byKey = new Dictionary<(int, int), Patch>();
-        foreach (var p in baseBank.Patches)
+        foreach (Patch? p in baseBank.Patches)
             byKey[(p.Bank, p.Program)] = p;
 
         // A composed patch at a logical address, drawn from a source font with its sample ids
         // shifted into the concatenated sample space. Returns null when the source patch is absent.
         Patch? Compose(int logicalBank, int logicalProgram, PatchRef pref)
         {
-            var srcPatch = pref.Source.FindPatch(pref.Bank, pref.Program);
+            Patch? srcPatch = pref.Source.FindPatch(pref.Bank, pref.Program);
             if (srcPatch == null) return null;   // unresolved → caller leaves base/fallback in place
-            var offset = offsetOf[pref.Source];
-            var zones = offset == 0 ? srcPatch.Zones : CloneZonesWithOffset(srcPatch.Zones, offset);
+            int offset = offsetOf[pref.Source];
+            IReadOnlyList<PatchZone> zones = offset == 0 ? srcPatch.Zones : CloneZonesWithOffset(srcPatch.Zones, offset);
             return new Patch
             {
                 Bank = logicalBank,
@@ -144,19 +144,19 @@ public static class SoundBankComposer
             };
         }
 
-        foreach (var entry in patchOverrides)
+        foreach (KeyValuePair<(int Bank, int Program), PatchRef> entry in patchOverrides)
         {
-            var (logicalBank, logicalProgram) = entry.Key;
-            var composed = Compose(logicalBank, logicalProgram, entry.Value);
+            (int logicalBank, int logicalProgram) = entry.Key;
+            Patch? composed = Compose(logicalBank, logicalProgram, entry.Value);
             if (composed != null) byKey[(logicalBank, logicalProgram)] = composed;
         }
 
         // Per-track overrides occupy the reserved bank; record trackIndex → synthetic address.
         var trackPatchMap = new Dictionary<int, (int Bank, int Program)>();
-        foreach (var entry in trackOverrides)
+        foreach (KeyValuePair<int, PatchRef> entry in trackOverrides)
         {
-            var trackIndex = entry.Key;
-            var composed = Compose(TrackOverrideBank, trackIndex, entry.Value);
+            int trackIndex = entry.Key;
+            Patch? composed = Compose(TrackOverrideBank, trackIndex, entry.Value);
             if (composed == null) continue;   // unresolved → track keeps its channel-based sound
             byKey[(TrackOverrideBank, trackIndex)] = composed;
             trackPatchMap[trackIndex] = (TrackOverrideBank, trackIndex);
@@ -164,10 +164,10 @@ public static class SoundBankComposer
 
         // Per-part overrides occupy their own reserved bank, keyed by the packed (track, channel).
         var partPatchMap = new Dictionary<int, (int Bank, int Program)>();
-        foreach (var entry in partOverrides)
+        foreach (KeyValuePair<(int Track, int Channel), PatchRef> entry in partOverrides)
         {
-            var key = PartKey(entry.Key.Track, entry.Key.Channel);
-            var composed = Compose(PartOverrideBank, key, entry.Value);
+            int key = PartKey(entry.Key.Track, entry.Key.Channel);
+            Patch? composed = Compose(PartOverrideBank, key, entry.Value);
             if (composed == null) continue;   // unresolved → part keeps its channel-based sound
             byKey[(PartOverrideBank, key)] = composed;
             partPatchMap[key] = (PartOverrideBank, key);
@@ -183,8 +183,8 @@ public static class SoundBankComposer
         // makes a substituted string section inaudible while a non-CC-driven instrument (a harpsichord) is
         // fine. Overrides win on conflict, since the seed that matters is the substituted instrument's.
         var initialControllers = new Dictionary<int, int>(baseBank.InitialControllers);
-        foreach (var src in extraSources)
-            foreach (var kv in src.InitialControllers)
+        foreach (IRBank? src in extraSources)
+            foreach (KeyValuePair<int, int> kv in src.InitialControllers)
                 initialControllers[kv.Key] = kv.Value;
 
         var bank = new IRBank
@@ -211,8 +211,8 @@ public static class SoundBankComposer
         var result = new PatchZone[zones.Count];
         for (var i = 0; i < zones.Count; i++)
         {
-            var z = zones[i];
-            var s = z.Sample;
+            PatchZone? z = zones[i];
+            SampleRef s = z.Sample;
             result[i] = new PatchZone
             {
                 Keys = z.Keys,

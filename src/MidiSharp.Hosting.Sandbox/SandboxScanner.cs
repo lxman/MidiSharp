@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
@@ -22,7 +21,7 @@ public static class SandboxScanner
     public static List<PluginDescriptor> ScanAll(IEnumerable<string> formats, string workerDll)
     {
         var all = new List<PluginDescriptor>();
-        foreach (var format in formats)
+        foreach (string format in formats)
             all.AddRange(ScanFormat(format, workerDll));
         return all;
     }
@@ -35,13 +34,13 @@ public static class SandboxScanner
     public static List<PluginDescriptor> ScanFormat(string format, string workerDll, IEnumerable<string>? searchPaths = null)
     {
         var found = new List<PluginDescriptor>();
-        var paths = searchPaths?.ToArray() ?? [];
+        string[] paths = searchPaths?.ToArray() ?? [];
         var resumeAfter = "";
         var guard = 0;   // bound the resume loop: at most one restart per crashing file
 
         while (guard++ < 10_000)
         {
-            var (done, lastFile) = RunOnce(format, workerDll, resumeAfter, paths, found);
+            (bool done, string? lastFile) = RunOnce(format, workerDll, resumeAfter, paths, found);
             if (done) break;                       // clean finish (ScanDone)
             if (lastFile == null || lastFile == resumeAfter) break;   // crashed before any file, or no progress
             resumeAfter = lastFile;                // crashed scanning lastFile → resume past it
@@ -60,7 +59,7 @@ public static class SandboxScanner
         psi.ArgumentList.Add(format);
         psi.ArgumentList.Add(pipe.GetClientHandleAsString());
         psi.ArgumentList.Add(resumeAfter);
-        foreach (var p in paths) psi.ArgumentList.Add(p);
+        foreach (string p in paths) psi.ArgumentList.Add(p);
 
         SysProcess? worker = null;
         string? lastFile = null;

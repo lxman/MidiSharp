@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using MidiSharp.IO;
+using MidiSharp.Model;
 using MidiSharp.Model.Events;
 using MidiSharp.Sequencing;
 using Xunit;
@@ -33,7 +35,7 @@ public class MidiSequencerTests
     [Fact]
     public void Constructor_ValidFile_BuildsTimeline()
     {
-        var file = MidiFileReader.Read(TestMidiFile);
+        MidiFile file = MidiFileReader.Read(TestMidiFile);
         var sequencer = new MidiSequencer(file);
 
         Assert.Equal(5, sequencer.Events.Count);
@@ -42,7 +44,7 @@ public class MidiSequencerTests
     [Fact]
     public void Duration_ReturnsCorrectValue()
     {
-        var file = MidiFileReader.Read(TestMidiFile);
+        MidiFile file = MidiFileReader.Read(TestMidiFile);
         var sequencer = new MidiSequencer(file);
 
         // Last event at tick 96, at 120 BPM = 0.5 seconds
@@ -52,11 +54,11 @@ public class MidiSequencerTests
     [Fact]
     public void Events_AreSortedByTime()
     {
-        var file = MidiFileReader.Read(TestMidiFile);
+        MidiFile file = MidiFileReader.Read(TestMidiFile);
         var sequencer = new MidiSequencer(file);
 
         long previousTick = -1;
-        foreach (var evt in sequencer.Events)
+        foreach (ScheduledEvent evt in sequencer.Events)
         {
             Assert.True(evt.AbsoluteTicks >= previousTick);
             previousTick = evt.AbsoluteTicks;
@@ -66,10 +68,10 @@ public class MidiSequencerTests
     [Fact]
     public void GetPlayableEvents_ExcludesMetaEvents()
     {
-        var file = MidiFileReader.Read(TestMidiFile);
+        MidiFile file = MidiFileReader.Read(TestMidiFile);
         var sequencer = new MidiSequencer(file);
 
-        var playable = sequencer.GetPlayableEvents().ToList();
+        List<ScheduledEvent> playable = sequencer.GetPlayableEvents().ToList();
 
         // Should have program change, note on, note off (3 events)
         // Excluding tempo and end of track meta events
@@ -80,11 +82,11 @@ public class MidiSequencerTests
     [Fact]
     public void GetEventsFrom_ReturnsEventsAfterTime()
     {
-        var file = MidiFileReader.Read(TestMidiFile);
+        MidiFile file = MidiFileReader.Read(TestMidiFile);
         var sequencer = new MidiSequencer(file);
 
         // Get events from 250ms onwards (half a quarter note at 120 BPM)
-        var fromMiddle = sequencer.GetEventsFrom(TimeSpan.FromMilliseconds(250)).ToList();
+        List<ScheduledEvent> fromMiddle = sequencer.GetEventsFrom(TimeSpan.FromMilliseconds(250)).ToList();
 
         // Should get note off and end of track
         Assert.Equal(2, fromMiddle.Count);
@@ -94,10 +96,10 @@ public class MidiSequencerTests
     [Fact]
     public void TickToTime_DelegatesToTempoMap()
     {
-        var file = MidiFileReader.Read(TestMidiFile);
+        MidiFile file = MidiFileReader.Read(TestMidiFile);
         var sequencer = new MidiSequencer(file);
 
-        var time = sequencer.TickToTime(96);
+        TimeSpan time = sequencer.TickToTime(96);
 
         Assert.Equal(500, time.TotalMilliseconds, 1);
     }
@@ -105,13 +107,13 @@ public class MidiSequencerTests
     [Fact]
     public void GetEventIndexAtTime_ReturnsCorrectIndex()
     {
-        var file = MidiFileReader.Read(TestMidiFile);
+        MidiFile file = MidiFileReader.Read(TestMidiFile);
         var sequencer = new MidiSequencer(file);
 
         // Events at tick 0: tempo, program change, note on (indices 0, 1, 2)
         // Events at tick 96: note off, end of track (indices 3, 4)
 
-        var index = sequencer.GetEventIndexAtTime(TimeSpan.FromMilliseconds(250));
+        int index = sequencer.GetEventIndexAtTime(TimeSpan.FromMilliseconds(250));
 
         // Should return index of first event at or after tick 48 (250ms)
         // That would be index 3 (note off at tick 96)

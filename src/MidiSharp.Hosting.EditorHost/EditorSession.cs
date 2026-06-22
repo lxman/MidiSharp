@@ -1,5 +1,4 @@
 using System;
-using MidiSharp.Hosting;
 
 namespace MidiSharp.Hosting.EditorHost;
 
@@ -48,12 +47,12 @@ public sealed class EditorSession : IDisposable
     {
         try
         {
-            var platform = EditorPlatform.Current;
+            IEditorPlatform platform = EditorPlatform.Current;
             if (!platform.IsAvailable) { _error = "no windowing backend available (no display?)."; return; }
 
             // A default starting size; the real size comes from the plugin once it has laid out (after show).
             var w = 400; var h = 300;
-            if (_gui.TryGetSize(out var gw0, out var gh0) && gw0 > 0 && gh0 > 0) { w = gw0; h = gh0; }
+            if (_gui.TryGetSize(out int gw0, out int gh0) && gw0 > 0 && gh0 > 0) { w = gw0; h = gh0; }
 
             _window = platform.CreateWindow(title, w, h);
             if (_window == null) { _error = "could not create a host window."; return; }
@@ -63,7 +62,7 @@ public sealed class EditorSession : IDisposable
             _gui.BindRunLoop(_window.RunLoop);
             if (!_gui.Create(_window.WindowApi, floating: false)) { _error = $"plugin gui create({_window.WindowApi}) failed."; _gui.BindRunLoop(null); Teardown(); return; }
             _gui.SetScale(1.0);
-            if (_gui.TryGetSize(out var gw, out var gh) && gw > 0 && gh > 0) _window.Resize(gw, gh);
+            if (_gui.TryGetSize(out int gw, out int gh) && gw > 0 && gh > 0) _window.Resize(gw, gh);
 
             if (!_gui.SetParent(_window.WindowApi, _window.Handle)) { _error = "plugin gui set_parent failed."; _gui.Destroy(); _gui.BindRunLoop(null); Teardown(); return; }
             _window.Map();
@@ -71,7 +70,7 @@ public sealed class EditorSession : IDisposable
             _gui.Show();
 
             // After show() the plugin has laid out and may report its real size — apply it.
-            if (_gui.TryGetSize(out var rw, out var rh) && rw > 0 && rh > 0) _window.Resize(rw, rh);
+            if (_gui.TryGetSize(out int rw, out int rh) && rw > 0 && rh > 0) _window.Resize(rw, rh);
 
             _window.RunLoop.RegisterTimer(30, IdleToken, () => { try { _gui.Idle(); } catch { } });
             _opened = true;

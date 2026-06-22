@@ -27,21 +27,21 @@ internal sealed class DlsWaveTableSampleSource : ISampleSource
 
     public DlsWaveTableSampleSource(IReadOnlyList<DlsWave> waves)
     {
-        var n = waves.Count;
+        int n = waves.Count;
         _samples = new float[n][];
         _metadata = new SampleMetadata[n];
         for (var i = 0; i < n; i++)
         {
-            var w = waves[i];
-            var isFloat = w.FormatTag == WaveFormatTag.IeeeFloat;
-            var (decoded, frames) = PcmDecoder.Decode(w.Data.Span, w.Channels, w.BitsPerSample, isFloat);
+            DlsWave? w = waves[i];
+            bool isFloat = w.FormatTag == WaveFormatTag.IeeeFloat;
+            (float[] decoded, long frames) = PcmDecoder.Decode(w.Data.Span, w.Channels, w.BitsPerSample, isFloat);
             _samples[i] = decoded;
 
-            var info = w.SampleInfo;
+            WaveSampleInfo? info = w.SampleInfo;
             long loopStart = 0, loopEnd = frames;
             if (info != null && info.Loops.Count > 0)
             {
-                var loop = info.Loops[0];
+                SampleLoop loop = info.Loops[0];
                 loopStart = loop.StartFrame;
                 loopEnd = (long)loop.StartFrame + loop.LengthFrames;
             }
@@ -62,9 +62,9 @@ internal sealed class DlsWaveTableSampleSource : ISampleSource
 
     public int ReadFrames(int sampleId, long frameOffset, Span<float> dest)
     {
-        var src = _samples[sampleId];
-        var channels = _metadata[sampleId].Channels;
-        var firstFloat = frameOffset * channels;
+        float[] src = _samples[sampleId];
+        int channels = _metadata[sampleId].Channels;
+        long firstFloat = frameOffset * channels;
         if (firstFloat < 0 || firstFloat >= src.Length) return 0;
 
         var available = (int)Math.Min(dest.Length, src.Length - firstFloat);

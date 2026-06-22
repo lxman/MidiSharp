@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using MidiSharp.Loader.Sf2;
+using MidiSharp.Loader.Sf2.Model;
 using SF2.Net.SmokeTest;
 
 if (args.Length >= 2 && args[0] == "inspect")
@@ -25,46 +26,46 @@ if (args.Length >= 2 && args[0] == "phdr")
 
 if (args.Length >= 1 && args[0] == "extract")
 {
-    var extractRoot = args.Length > 1 ? args[1] : Path.Combine(Environment.GetEnvironmentVariable("HOME")!, "soundfonts");
-    int? extractLimit = args.Length > 2 && int.TryParse(args[2], out var en) ? en : null;
+    string extractRoot = args.Length > 1 ? args[1] : Path.Combine(Environment.GetEnvironmentVariable("HOME")!, "soundfonts");
+    int? extractLimit = args.Length > 2 && int.TryParse(args[2], out int en) ? en : null;
     RunExtract(extractRoot, extractLimit);
     return;
 }
 
 if (args.Length >= 1 && args[0] == "validate")
 {
-    var validateRoot = args.Length > 1 ? args[1] : Path.Combine(Environment.GetEnvironmentVariable("HOME")!, "soundfonts");
-    int? validateLimit = args.Length > 2 && int.TryParse(args[2], out var vn) ? vn : null;
+    string validateRoot = args.Length > 1 ? args[1] : Path.Combine(Environment.GetEnvironmentVariable("HOME")!, "soundfonts");
+    int? validateLimit = args.Length > 2 && int.TryParse(args[2], out int vn) ? vn : null;
     RunSampleValidation(validateRoot, validateLimit);
     return;
 }
 
 if (args.Length >= 2 && args[0] == "list-broken")
 {
-    var listRoot = args[1];
-    var outFile = args.Length > 2 ? args[2] : "/tmp/playback_broken.txt";
+    string listRoot = args[1];
+    string outFile = args.Length > 2 ? args[2] : "/tmp/playback_broken.txt";
     ListPlaybackBroken(listRoot, outFile);
     return;
 }
 
 if (args.Length >= 2 && args[0] == "find-pitch")
 {
-    foreach (var p in Directory.EnumerateFiles(args[1], "*.sf2", SearchOption.AllDirectories))
+    foreach (string p in Directory.EnumerateFiles(args[1], "*.sf2", SearchOption.AllDirectories))
     {
         SoundFont sf; try { sf = SoundFont.Load(p); } catch { continue; }
-        var bad = sf.SampleHeaders.Select((s, i) => (s, i)).Where(t => t.s.OriginalPitch > 127 && t.s.OriginalPitch != 255).Take(5).ToList();
+        List<(SampleHeader s, int i)> bad = sf.SampleHeaders.Select((s, i) => (s, i)).Where(t => t.s.OriginalPitch > 127 && t.s.OriginalPitch != 255).Take(5).ToList();
         if (bad.Count == 0) continue;
         Console.WriteLine($"{p}");
-        foreach (var (s, i) in bad)
+        foreach ((SampleHeader s, int i) in bad)
             Console.WriteLine($"  [{i}] '{s.Name}'  OriginalPitch={s.OriginalPitch}  Type={s.SampleType}  Rate={s.SampleRate}");
     }
     return;
 }
 
-var root = args.Length > 0 ? args[0] : Path.Combine(Environment.GetEnvironmentVariable("HOME")!, "soundfonts");
-int? limit = args.Length > 1 && int.TryParse(args[1], out var n) ? n : null;
+string root = args.Length > 0 ? args[0] : Path.Combine(Environment.GetEnvironmentVariable("HOME")!, "soundfonts");
+int? limit = args.Length > 1 && int.TryParse(args[1], out int n) ? n : null;
 
-var files = Directory.EnumerateFiles(root, "*.sf2", SearchOption.AllDirectories).ToArray();
+string[] files = Directory.EnumerateFiles(root, "*.sf2", SearchOption.AllDirectories).ToArray();
 if (limit is { } lim) files = files.Take(lim).ToArray();
 
 Console.WriteLine($"Scanning {files.Length} files under {root}");
@@ -74,11 +75,11 @@ var byCode = new Dictionary<string, int>();
 var sample = new Dictionary<string, string>();
 var sw = Stopwatch.StartNew();
 
-foreach (var path in files)
+foreach (string path in files)
 {
     try
     {
-        var sf = SoundFont.Load(path);
+        SoundFont sf = SoundFont.Load(path);
         _ = sf.Presets.Count;
         _ = sf.Instruments.Count;
         _ = sf.Banks;
@@ -87,7 +88,7 @@ foreach (var path in files)
     catch (SoundFontException ex)
     {
         failed++;
-        var code = string.Join(",", ex.Codes);
+        string code = string.Join(",", ex.Codes);
         byCode[code] = byCode.GetValueOrDefault(code) + 1;
         sample.TryAdd(code, path);
         if (Environment.GetEnvironmentVariable("LIST_FAILURES") == "1" && code != "FileBroken")
@@ -98,7 +99,7 @@ foreach (var path in files)
     catch (Exception ex)
     {
         crashed++;
-        var code = ex.GetType().Name;
+        string code = ex.GetType().Name;
         byCode[code] = byCode.GetValueOrDefault(code) + 1;
         if (!sample.ContainsKey(code))
             sample[code] = $"{path}  ::  {ex.Message}";
@@ -114,7 +115,7 @@ Console.WriteLine($"  Failed:  {failed}  (clean SoundFontException)");
 Console.WriteLine($"  Crashed: {crashed}  (unhandled exception)");
 Console.WriteLine();
 Console.WriteLine("Failure breakdown:");
-foreach (var kv in byCode.OrderByDescending(k => k.Value))
+foreach (KeyValuePair<string, int> kv in byCode.OrderByDescending(k => k.Value))
 {
     Console.WriteLine($"  {kv.Value,5}  {kv.Key}");
     Console.WriteLine($"          first: {sample[kv.Key]}");
@@ -137,21 +138,21 @@ static void ListPlaybackBroken(string root, string outFile)
         SampleValidationCode.StereoLinkLengthMismatch,
     };
 
-    var files = Directory.EnumerateFiles(root, "*.sf2", SearchOption.AllDirectories).ToArray();
+    string[] files = Directory.EnumerateFiles(root, "*.sf2", SearchOption.AllDirectories).ToArray();
     Console.WriteLine($"Scanning {files.Length} files for playback-breaking sample defects");
 
     var broken = new List<(string path, int issueCount, HashSet<SampleValidationCode> categories)>();
     int filesScanned = 0, filesSkipped = 0;
     var sw = Stopwatch.StartNew();
 
-    foreach (var path in files)
+    foreach (string path in files)
     {
         SoundFont sf;
         try { sf = SoundFont.Load(path); }
         catch { filesSkipped++; continue; }
 
         filesScanned++;
-        var realIssues = sf.ValidateSamples()
+        List<SampleValidationIssue> realIssues = sf.ValidateSamples()
             .Where(i => playbackBreaking.Contains(i.Code))
             .ToList();
         if (realIssues.Count == 0) continue;
@@ -171,7 +172,7 @@ static void ListPlaybackBroken(string root, string outFile)
     Console.WriteLine($"  Path list written to:        {outFile}");
     Console.WriteLine();
     Console.WriteLine("Distribution by defect-category combination:");
-    foreach (var g in broken
+    foreach (IGrouping<string, (string path, int issueCount, HashSet<SampleValidationCode> categories)> g in broken
         .GroupBy(b => string.Join('+', b.categories.OrderBy(c => c.ToString()).Select(c => c.ToString())))
         .OrderByDescending(g => g.Count())
         .Take(15))
@@ -193,7 +194,7 @@ static void RunSampleValidation(string root, int? limit)
         SampleValidationCode.SampleTooShort,
     };
 
-    var files = Directory.EnumerateFiles(root, "*.sf2", SearchOption.AllDirectories).ToArray();
+    string[] files = Directory.EnumerateFiles(root, "*.sf2", SearchOption.AllDirectories).ToArray();
     if (limit is { } lim) files = files.Take(lim).ToArray();
 
     Console.WriteLine($"Sample-validation pass over {files.Length} files");
@@ -207,7 +208,7 @@ static void RunSampleValidation(string root, int? limit)
     var realDefectFiles = new List<(string path, int realIssueCount, HashSet<SampleValidationCode> realCategories)>();
     var sw = Stopwatch.StartNew();
 
-    foreach (var path in files)
+    foreach (string path in files)
     {
         SoundFont sf;
         try { sf = SoundFont.Load(path); }
@@ -215,7 +216,7 @@ static void RunSampleValidation(string root, int? limit)
 
         filesScanned++;
         totalSamples += sf.SampleHeaders.Count;
-        var issues = sf.ValidateSamples();
+        IReadOnlyList<SampleValidationIssue> issues = sf.ValidateSamples();
         if (issues.Count == 0) { filesClean++; continue; }
 
         filesWithIssues++;
@@ -223,7 +224,7 @@ static void RunSampleValidation(string root, int? limit)
         worstOffenders.Add((path, issues.Count, sf.SampleHeaders.Count));
         var realCount = 0;
         var realCats = new HashSet<SampleValidationCode>();
-        foreach (var iss in issues)
+        foreach (SampleValidationIssue iss in issues)
         {
             byCode[iss.Code] = byCode.GetValueOrDefault(iss.Code) + 1;
             if (!firstExample.ContainsKey(iss.Code))
@@ -255,28 +256,28 @@ static void RunSampleValidation(string root, int? limit)
     Console.WriteLine($"  Total issues:         {totalIssues:N0}");
     Console.WriteLine();
     Console.WriteLine("Issues by category:");
-    foreach (var kv in byCode.OrderByDescending(k => k.Value))
+    foreach (KeyValuePair<SampleValidationCode, int> kv in byCode.OrderByDescending(k => k.Value))
     {
         Console.WriteLine($"  {kv.Value,8:N0}  {kv.Key}");
         Console.WriteLine($"             first: {firstExample[kv.Key]}");
     }
     Console.WriteLine();
     Console.WriteLine("Top 10 worst offenders (most issues, all categories):");
-    foreach (var (path, ic, sc) in worstOffenders.OrderByDescending(t => t.issueCount).Take(10))
+    foreach ((string path, int ic, int sc) in worstOffenders.OrderByDescending(t => t.issueCount).Take(10))
         Console.WriteLine($"  {ic,6} issues across {sc,5} samples  {path}");
 
     Console.WriteLine();
     Console.WriteLine("Distribution of real-defect categories per file:");
-    var distinctRealCats = realDefectFiles
+    IOrderedEnumerable<IGrouping<string, (string path, int realIssueCount, HashSet<SampleValidationCode> realCategories)>> distinctRealCats = realDefectFiles
         .GroupBy(f => string.Join('+', f.realCategories.Select(c => c.ToString()).OrderBy(s => s)))
         .OrderByDescending(g => g.Count());
-    foreach (var g in distinctRealCats.Take(15))
+    foreach (IGrouping<string, (string path, int realIssueCount, HashSet<SampleValidationCode> realCategories)> g in distinctRealCats.Take(15))
         Console.WriteLine($"  {g.Count(),5}  {g.Key}");
 }
 
 static void RunExtract(string root, int? limit)
 {
-    var files = Directory.EnumerateFiles(root, "*.sf2", SearchOption.AllDirectories).ToArray();
+    string[] files = Directory.EnumerateFiles(root, "*.sf2", SearchOption.AllDirectories).ToArray();
     if (limit is { } lim) files = files.Take(lim).ToArray();
 
     Console.WriteLine($"Extract test over {files.Length} files");
@@ -285,24 +286,24 @@ static void RunExtract(string root, int? limit)
     var firstError = new Dictionary<string, string>();
     var sw = Stopwatch.StartNew();
 
-    foreach (var path in files)
+    foreach (string path in files)
     {
         SoundFont sf;
         try { sf = SoundFont.Load(path); }
         catch { filesSkipped++; continue; }
 
         filesOk++;
-        foreach (var preset in sf.Presets)
+        foreach (Preset preset in sf.Presets)
         {
             totalPresets++;
             try
             {
-                var extracted = sf.ExtractPreset(preset.Bank, preset.Number);
+                byte[] extracted = sf.ExtractPreset(preset.Bank, preset.Number);
                 if (extracted.Length == 0) { extractedEmpty++; continue; }
                 extractedOk++;
                 try
                 {
-                    var reloaded = SoundFont.Load(extracted);
+                    SoundFont reloaded = SoundFont.Load(extracted);
                     if (reloaded.Presets.Count >= 1) extractParseOk++;
                     else extractParseFail++;
                 }
@@ -337,7 +338,7 @@ static void RunExtract(string root, int? limit)
     {
         Console.WriteLine();
         Console.WriteLine("First example per error kind:");
-        foreach (var kv in firstError.OrderBy(k => k.Key))
+        foreach (KeyValuePair<string, string> kv in firstError.OrderBy(k => k.Key))
             Console.WriteLine($"  {kv.Key}\n      {kv.Value}");
     }
 }

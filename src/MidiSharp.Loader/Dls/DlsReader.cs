@@ -14,7 +14,7 @@ public static class DlsReader
     public static DlsCollection Load(string path)
     {
         if (string.IsNullOrEmpty(path)) throw new ArgumentException("path required");
-        var bytes = File.ReadAllBytes(path);
+        byte[] bytes = File.ReadAllBytes(path);
         return Load(bytes);
     }
 
@@ -39,8 +39,8 @@ public static class DlsReader
                     // are actually present.
                     break;
                 case "LIST":
-                    var listType = ReadFourCc(body.Span, 0);
-                    var listBody = body.Slice(4);
+                    string listType = ReadFourCc(body.Span, 0);
+                    ReadOnlyMemory<byte> listBody = body.Slice(4);
                     switch (listType)
                     {
                         case "lins":
@@ -51,7 +51,7 @@ public static class DlsReader
                             break;
                         case "INFO":
                         {
-                            var info = ReadInfoChunks(listBody);
+                            InfoStrings info = ReadInfoChunks(listBody);
                             name = info.Name; copyright = info.Copyright;
                             engineer = info.Engineer; comments = info.Comments;
                             break;
@@ -105,7 +105,7 @@ public static class DlsReader
         var rdr = new ChunkReader(body);
         rdr.ForEachSubChunk((tag, b) =>
         {
-            var span = b.Span;
+            ReadOnlySpan<byte> span = b.Span;
             switch (tag)
             {
                 case "insh":
@@ -116,8 +116,8 @@ public static class DlsReader
                     isDrumKit = (locale_bank & 0x80000000u) != 0;
                     break;
                 case "LIST":
-                    var sub = ReadFourCc(span, 0);
-                    var subBody = b.Slice(4);
+                    string sub = ReadFourCc(span, 0);
+                    ReadOnlyMemory<byte> subBody = b.Slice(4);
                     switch (sub)
                     {
                         case "lrgn":
@@ -139,9 +139,9 @@ public static class DlsReader
 
         // Bank in DLS locale: bits 0-14 are MSB+LSB combined (bits 0-6 = LSB, 8-14 = MSB).
         // Most banks use just the LSB; folding to (msb<<7 | lsb) gives a 14-bit bank.
-        var bankLsb = locale_bank & 0x7Fu;
-        var bankMsb = (locale_bank >> 8) & 0x7Fu;
-        var bank = (bankMsb << 7) | bankLsb;
+        uint bankLsb = locale_bank & 0x7Fu;
+        uint bankMsb = (locale_bank >> 8) & 0x7Fu;
+        uint bank = (bankMsb << 7) | bankLsb;
         if (isDrumKit) bank = 128;
 
         return new DlsInstrument
@@ -163,7 +163,7 @@ public static class DlsReader
         rdr.ForEachSubChunk((tag, b) =>
         {
             if (tag != "LIST") return;
-            var sub = ReadFourCc(b.Span, 0);
+            string sub = ReadFourCc(b.Span, 0);
             if (sub != "rgn " && sub != "rgn2") return;
             output.Add(ReadRegion(b.Slice(4)));
         });
@@ -180,7 +180,7 @@ public static class DlsReader
         var rdr = new ChunkReader(body);
         rdr.ForEachSubChunk((tag, b) =>
         {
-            var span = b.Span;
+            ReadOnlySpan<byte> span = b.Span;
             switch (tag)
             {
                 case "rgnh":
@@ -204,8 +204,8 @@ public static class DlsReader
                         BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(8)));
                     break;
                 case "LIST":
-                    var sub = ReadFourCc(span, 0);
-                    var subBody = b.Slice(4);
+                    string sub = ReadFourCc(span, 0);
+                    ReadOnlyMemory<byte> subBody = b.Slice(4);
                     if (sub == "lart") arts.Add(ReadArticulator(subBody, isLevel2: false));
                     else if (sub == "lar2") arts.Add(ReadArticulator(subBody, isLevel2: true));
                     break;
@@ -230,22 +230,22 @@ public static class DlsReader
     {
         // wsmp: cbSize DWORD, usUnityNote WORD, sFineTune SHORT, lAttenuation/lGain LONG,
         //       fulOptions DWORD, cSampleLoops DWORD, then cSampleLoops × WLOOP records.
-        var span = body.Span;
-        var headerSize = BinaryPrimitives.ReadUInt32LittleEndian(span);
-        var unityNote = BinaryPrimitives.ReadUInt16LittleEndian(span.Slice(4));
-        var fineTune = BinaryPrimitives.ReadInt16LittleEndian(span.Slice(6));
-        var gain = BinaryPrimitives.ReadInt32LittleEndian(span.Slice(8));
-        var options = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(12));
-        var loopCount = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(16));
+        ReadOnlySpan<byte> span = body.Span;
+        uint headerSize = BinaryPrimitives.ReadUInt32LittleEndian(span);
+        ushort unityNote = BinaryPrimitives.ReadUInt16LittleEndian(span.Slice(4));
+        short fineTune = BinaryPrimitives.ReadInt16LittleEndian(span.Slice(6));
+        int gain = BinaryPrimitives.ReadInt32LittleEndian(span.Slice(8));
+        uint options = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(12));
+        uint loopCount = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(16));
 
         var loops = new SampleLoop[loopCount];
         var pos = (int)headerSize;
         for (var i = 0; i < loopCount; i++)
         {
-            var loopHeaderSize = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(pos));
-            var loopType = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(pos + 4));
-            var loopStart = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(pos + 8));
-            var loopLen = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(pos + 12));
+            uint loopHeaderSize = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(pos));
+            uint loopType = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(pos + 4));
+            uint loopStart = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(pos + 8));
+            uint loopLen = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(pos + 12));
             loops[i] = new SampleLoop((DlsLoopType)loopType, loopStart, loopLen);
             pos += (int)loopHeaderSize;
         }
@@ -272,17 +272,17 @@ public static class DlsReader
         rdr.ForEachSubChunk((tag, b) =>
         {
             if (tag != "art1" && tag != "art2") return;
-            var span = b.Span;
-            var headerSize = BinaryPrimitives.ReadUInt32LittleEndian(span);
-            var connectionCount = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(4));
+            ReadOnlySpan<byte> span = b.Span;
+            uint headerSize = BinaryPrimitives.ReadUInt32LittleEndian(span);
+            uint connectionCount = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(4));
             var pos = (int)headerSize;
             for (var i = 0; i < connectionCount; i++)
             {
-                var src = BinaryPrimitives.ReadUInt16LittleEndian(span.Slice(pos));
-                var ctl = BinaryPrimitives.ReadUInt16LittleEndian(span.Slice(pos + 2));
-                var dst = BinaryPrimitives.ReadUInt16LittleEndian(span.Slice(pos + 4));
-                var xform = BinaryPrimitives.ReadUInt16LittleEndian(span.Slice(pos + 6));
-                var scale = BinaryPrimitives.ReadInt32LittleEndian(span.Slice(pos + 8));
+                ushort src = BinaryPrimitives.ReadUInt16LittleEndian(span.Slice(pos));
+                ushort ctl = BinaryPrimitives.ReadUInt16LittleEndian(span.Slice(pos + 2));
+                ushort dst = BinaryPrimitives.ReadUInt16LittleEndian(span.Slice(pos + 4));
+                ushort xform = BinaryPrimitives.ReadUInt16LittleEndian(span.Slice(pos + 6));
+                int scale = BinaryPrimitives.ReadInt32LittleEndian(span.Slice(pos + 8));
                 connections.Add(new ConnectionBlock(
                     (ConnectionSource)src, ctl, (ConnectionDestination)dst, xform, scale));
                 pos += 12;
@@ -317,7 +317,7 @@ public static class DlsReader
         var rdr = new ChunkReader(body);
         rdr.ForEachSubChunk((tag, b) =>
         {
-            var span = b.Span;
+            ReadOnlySpan<byte> span = b.Span;
             switch (tag)
             {
                 case "fmt ":
@@ -372,7 +372,7 @@ public static class DlsReader
         var rdr = new ChunkReader(body);
         rdr.ForEachSubChunk((tag, b) =>
         {
-            var text = ReadZeroTerminated(b.Span);
+            string text = ReadZeroTerminated(b.Span);
             switch (tag)
             {
                 case "INAM": result.Name = text; break;
@@ -401,7 +401,7 @@ public static class DlsReader
     {
         public void ExpectRiff(string formType)
         {
-            var span = data.Span;
+            ReadOnlySpan<byte> span = data.Span;
             if (span.Length < 12) throw new InvalidDataException("Truncated RIFF");
             if (ReadFourCc(span, 0) != "RIFF") throw new InvalidDataException("Not a RIFF file");
             if (ReadFourCc(span, 8) != formType)
@@ -413,15 +413,15 @@ public static class DlsReader
             // For top-level RIFF, body starts after "RIFF<size><formType>" = 12 bytes.
             // For sub-LISTs, body starts after "<formType>" = 4 bytes (caller pre-slices).
             var start = 0;
-            var span = data.Span;
+            ReadOnlySpan<byte> span = data.Span;
             if (span.Length >= 12 && ReadFourCc(span, 0) == "RIFF") start = 12;
 
-            var pos = start;
+            int pos = start;
             while (pos + 8 <= span.Length)
             {
-                var tag = ReadFourCc(span, pos);
-                var size = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(pos + 4));
-                var bodyStart = pos + 8;
+                string tag = ReadFourCc(span, pos);
+                uint size = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(pos + 4));
+                int bodyStart = pos + 8;
                 if (bodyStart + size > span.Length) break;
                 handler(tag, data.Slice(bodyStart, (int)size));
                 pos = bodyStart + (int)size;

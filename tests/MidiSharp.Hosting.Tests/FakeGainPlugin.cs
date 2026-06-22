@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using MidiSharp.Hosting;
 
 namespace MidiSharp.Hosting.Tests;
 
@@ -28,8 +27,8 @@ internal sealed class FakeGainPlugin : IHostedPlugin
         var g = (float)_gain.Denormalize(_normalized);
         for (var c = 0; c < output.ChannelCount; c++)
         {
-            var src = input.ChannelSpan(c);
-            var dst = output.ChannelSpan(c);
+            Span<float> src = input.ChannelSpan(c);
+            Span<float> dst = output.ChannelSpan(c);
             for (var i = 0; i < dst.Length; i++) dst[i] = src[i] * g;
         }
     }

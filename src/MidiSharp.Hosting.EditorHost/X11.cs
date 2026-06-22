@@ -48,8 +48,8 @@ internal static class X11
     /// <summary>Send XEMBED_EMBEDDED_NOTIFY from <paramref name="embedder"/> to the embedded <paramref name="client"/>.</summary>
     public static void SendXEmbedNotify(IntPtr display, ulong embedder, ulong client)
     {
-        var atom = XInternAtom(display, "_XEMBED", false);
-        var ev = Marshal.AllocHGlobal(96);
+        IntPtr atom = XInternAtom(display, "_XEMBED", false);
+        IntPtr ev = Marshal.AllocHGlobal(96);
         try
         {
             for (var i = 0; i < 96; i++) Marshal.WriteByte(ev, i, 0);
@@ -80,7 +80,7 @@ internal static class X11
     /// <summary>Count the direct child windows of <paramref name="w"/> (the embedded editor shows up here).</summary>
     public static uint ChildCount(IntPtr display, ulong w)
     {
-        if (XQueryTree(display, w, out _, out _, out var children, out var n) == 0) return 0;
+        if (XQueryTree(display, w, out _, out _, out IntPtr children, out uint n) == 0) return 0;
         if (children != IntPtr.Zero) XFree(children);
         return n;
     }
@@ -88,7 +88,7 @@ internal static class X11
     /// <summary>The first direct child window of <paramref name="w"/> (the plugin's embedded editor), or 0.</summary>
     public static ulong FirstChild(IntPtr display, ulong w)
     {
-        if (XQueryTree(display, w, out _, out _, out var children, out var n) == 0 || n == 0 || children == IntPtr.Zero)
+        if (XQueryTree(display, w, out _, out _, out IntPtr children, out uint n) == 0 || n == 0 || children == IntPtr.Zero)
         {
             if (children != IntPtr.Zero) XFree(children);
             return 0;

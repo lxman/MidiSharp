@@ -32,19 +32,19 @@ public sealed class Zone
     /// </summary>
     public bool MatchesKeyVelocity(int key, int velocity)
     {
-        foreach (var gen in Generators)
+        foreach (Generator? gen in Generators)
         {
             switch (gen.Operator)
             {
                 case SFGenerator.KeyRange:
                 {
-                    var r = gen.Amount.Range;
+                    ByteRange r = gen.Amount.Range;
                     if (key < r.Low || key > r.High) return false;
                     break;
                 }
                 case SFGenerator.VelRange:
                 {
-                    var r = gen.Amount.Range;
+                    ByteRange r = gen.Amount.Range;
                     if (velocity < r.Low || velocity > r.High) return false;
                     break;
                 }

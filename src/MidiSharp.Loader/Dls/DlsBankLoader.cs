@@ -21,7 +21,7 @@ internal static class DlsBankLoader
     public static IRBank Load(DlsCollection col, SoundBankLoadOptions options)
     {
         var samples = new DlsWaveTableSampleSource(col.Waves);
-        var patches = BuildPatches(col);
+        IReadOnlyList<Patch> patches = BuildPatches(col);
 
         return new IRBank
         {
@@ -38,10 +38,10 @@ internal static class DlsBankLoader
     private static IReadOnlyList<Patch> BuildPatches(DlsCollection col)
     {
         var patches = new List<Patch>(col.Instruments.Count);
-        foreach (var inst in col.Instruments)
+        foreach (DlsInstrument? inst in col.Instruments)
         {
             var zones = new List<PatchZone>(inst.Regions.Count);
-            foreach (var region in inst.Regions)
+            foreach (DlsRegion? region in inst.Regions)
             {
                 if ((int)region.WaveLink.TableIndex >= col.Waves.Count) continue;
                 zones.Add(BuildZone(inst, region, col.Waves[(int)region.WaveLink.TableIndex]));
@@ -64,9 +64,9 @@ internal static class DlsBankLoader
         // fields each connection by source type: None → static, internal modulator
         // → depth, external MIDI → runtime route.
         var b = new DlsZoneBuilder();
-        foreach (var artList in inst.Articulators)
+        foreach (ArticulatorList? artList in inst.Articulators)
             b.Apply(artList.Connections);
-        foreach (var artList in region.Articulators)
+        foreach (ArticulatorList? artList in region.Articulators)
             b.Apply(artList.Connections);
 
         // Prepend DLS Level 2 default-articulation routes so banks that omit
@@ -78,7 +78,7 @@ internal static class DlsBankLoader
 
         // Wsmp metadata sits outside the articulator system: tuning, gain, loops.
         // Region wsmp overrides wave wsmp.
-        var wsmp = region.SampleInfo ?? wave.SampleInfo;
+        WaveSampleInfo? wsmp = region.SampleInfo ?? wave.SampleInfo;
         int rootKey = wsmp?.UnityNote ?? 60;
         double fineTune = wsmp?.FineTuneCents ?? 0;
         // DLS wsmp gain stores attenuation as cB (already negated by the reader so

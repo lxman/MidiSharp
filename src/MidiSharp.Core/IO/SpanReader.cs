@@ -39,7 +39,7 @@ internal ref struct SpanReader(ReadOnlySpan<byte> data)
     {
         if (_position + count > _data.Length)
             throw new InvalidOperationException($"Cannot read {count} bytes, only {Remaining} remaining");
-        var result = _data.Slice(_position, count);
+        ReadOnlySpan<byte> result = _data.Slice(_position, count);
         _position += count;
         return result;
     }
@@ -62,10 +62,10 @@ internal ref struct SpanReader(ReadOnlySpan<byte> data)
     {
         if (_position + 4 > _data.Length)
             throw new InvalidOperationException("Not enough data for uint32");
-        var result = ((uint)_data[_position] << 24) |
-                     ((uint)_data[_position + 1] << 16) |
-                     ((uint)_data[_position + 2] << 8) |
-                     _data[_position + 3];
+        uint result = ((uint)_data[_position] << 24) |
+                      ((uint)_data[_position + 1] << 16) |
+                      ((uint)_data[_position + 2] << 8) |
+                      _data[_position + 3];
         _position += 4;
         return result;
     }

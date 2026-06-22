@@ -21,7 +21,7 @@ public sealed class Win32EditorWindowTests
         Assert.SkipWhen(!EditorPlatform.Current.IsAvailable, "no interactive desktop.");
 
         var gui = new FakeEditorGui(320, 240);
-        using var window = EditorWindow.Open(gui, "MidiSharp Win32 editor test");
+        using EditorWindow? window = EditorWindow.Open(gui, "MidiSharp Win32 editor test");
         Assert.NotNull(window);
         Assert.True(window!.IsOpen, $"editor window should be open (error: {window.Error}).");
         Assert.NotEqual(0UL, window.WindowHandle);

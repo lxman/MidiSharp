@@ -110,7 +110,7 @@ public sealed class LowPassFilter
         if (!_enabled)
             return;
 
-        var modFreq = _cutoffFrequency * Math.Pow(2.0, cents / 1200.0);
+        double modFreq = _cutoffFrequency * Math.Pow(2.0, cents / 1200.0);
         modFreq = Math.Clamp(modFreq, 20, _sampleRate * 0.45);
 
         // Recalculate coefficients with modulated frequency
@@ -126,7 +126,7 @@ public sealed class LowPassFilter
             return input;
 
         // Direct Form II transposed biquad
-        var output = _a0 * input + _z1;
+        double output = _a0 * input + _z1;
         _z1 = _a1 * input - _b1 * output + _z2;
         _z2 = _a2 * input - _b2 * output;
 
@@ -144,7 +144,7 @@ public sealed class LowPassFilter
         for (var i = 0; i < buffer.Length; i++)
         {
             double input = buffer[i];
-            var output = _a0 * input + _z1;
+            double output = _a0 * input + _z1;
             _z1 = _a1 * input - _b1 * output + _z2;
             _z2 = _a2 * input - _b2 * output;
             buffer[i] = (float)output;
@@ -159,10 +159,10 @@ public sealed class LowPassFilter
     private void CalculateCoefficients(double frequency)
     {
         // RBJ cookbook biquad. Numerator (n*) varies by type; denominator is shared. Normalised by a0.
-        var omega = 2.0 * Math.PI * frequency / _sampleRate;
-        var sinOmega = Math.Sin(omega);
-        var cosOmega = Math.Cos(omega);
-        var alpha = sinOmega / (2.0 * _resonance);
+        double omega = 2.0 * Math.PI * frequency / _sampleRate;
+        double sinOmega = Math.Sin(omega);
+        double cosOmega = Math.Cos(omega);
+        double alpha = sinOmega / (2.0 * _resonance);
 
         // Shelving / peaking biquads have a gain-dependent denominator, so they don't share the
         // normalised form below — compute and set their coefficients directly, then return. (The
@@ -190,7 +190,7 @@ public sealed class LowPassFilter
                 break;
         }
 
-        var a0 = 1.0 + alpha;
+        double a0 = 1.0 + alpha;
         _a0 = n0 / a0;
         _a1 = n1 / a0;
         _a2 = n2 / a0;
@@ -204,7 +204,7 @@ public sealed class LowPassFilter
     /// </summary>
     private void SetShelfOrPeakCoefficients(double cosOmega, double alpha)
     {
-        var A = Math.Pow(10.0, GainDb / 40.0);
+        double A = Math.Pow(10.0, GainDb / 40.0);
         double b0, b1, b2, a0, a1, a2;
 
         if (Type == FilterType.Peaking)
@@ -218,8 +218,8 @@ public sealed class LowPassFilter
         }
         else
         {
-            var sqrtA = Math.Sqrt(A);
-            var twoSqrtAalpha = 2.0 * sqrtA * alpha;
+            double sqrtA = Math.Sqrt(A);
+            double twoSqrtAalpha = 2.0 * sqrtA * alpha;
             double am1 = A - 1.0, ap1 = A + 1.0;
             if (Type == FilterType.LowShelf)
             {

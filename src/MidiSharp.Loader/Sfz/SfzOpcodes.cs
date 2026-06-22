@@ -145,12 +145,12 @@ internal static class SfzOpcodes
     {
         if (HandledExact.Contains(opcode)) return true;
 
-        foreach (var p in NumberedPrefixes)
+        foreach (string p in NumberedPrefixes)
             if (opcode.Length > p.Length && opcode.StartsWith(p, StringComparison.Ordinal)
                 && AllDigits(opcode, p.Length))
                 return true;
 
-        if (TryGetModParam(opcode, out var param) && ModParams.Contains(param))
+        if (TryGetModParam(opcode, out string param) && ModParams.Contains(param))
             return true;
 
         if (HandledFamilies.Contains(Family(opcode)))
@@ -168,7 +168,7 @@ internal static class SfzOpcodes
     /// <summary>A short human note for a common unsupported (ARIA) opcode family, or null.</summary>
     public static string? Describe(string family)
     {
-        if (Descriptions.TryGetValue(family, out var note)) return note;
+        if (Descriptions.TryGetValue(family, out string? note)) return note;
         if (family.Contains("_curvecc")) return "CC response curve table";
         if (family.Contains("_smoothcc")) return "CC smoothing";
         if (family.Contains("_stepcc")) return "CC step quantization";
@@ -211,7 +211,7 @@ internal static class SfzOpcodes
 
     private static bool AllDigits(string s, int start)
     {
-        for (var i = start; i < s.Length; i++)
+        for (int i = start; i < s.Length; i++)
             if (!char.IsDigit(s[i])) return false;
         return start < s.Length;
     }
@@ -220,7 +220,7 @@ internal static class SfzOpcodes
     private static bool TryGetModParam(string key, out string param)
     {
         param = string.Empty;
-        var marker = key.IndexOf("_oncc", StringComparison.Ordinal);
+        int marker = key.IndexOf("_oncc", StringComparison.Ordinal);
         var len = 5;
         if (marker < 0) { marker = key.IndexOf("_cc", StringComparison.Ordinal); len = 3; }
         if (marker <= 0) return false;

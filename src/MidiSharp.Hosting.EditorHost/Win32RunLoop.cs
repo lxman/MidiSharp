@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using MidiSharp.Hosting;
 using static MidiSharp.Hosting.EditorHost.Win32;
 
 namespace MidiSharp.Hosting.EditorHost;
@@ -58,17 +57,17 @@ internal sealed class Win32RunLoop : IEditorRunLoop
         if (maxWaitMs < 0) maxWaitMs = 0;
 
         int timeout;
-        var now = Environment.TickCount64;
+        long now = Environment.TickCount64;
         lock (_lock)
         {
             timeout = maxWaitMs;
-            foreach (var t in _timers) { var d = (int)Math.Min(int.MaxValue, Math.Max(0, t.NextDue - now)); if (d < timeout) timeout = d; }
+            foreach (Timer t in _timers) { var d = (int)Math.Min(int.MaxValue, Math.Max(0, t.NextDue - now)); if (d < timeout) timeout = d; }
         }
 
         MsgWaitForMultipleObjectsEx(0, IntPtr.Zero, (uint)timeout, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
 
         // Drain every queued message; the window's WndProc handles WM_CLOSE etc. during dispatch.
-        while (PeekMessageW(out var msg, IntPtr.Zero, 0, 0, PM_REMOVE))
+        while (PeekMessageW(out MSG msg, IntPtr.Zero, 0, 0, PM_REMOVE))
         {
             TranslateMessage(in msg);
             DispatchMessageW(in msg);
@@ -78,9 +77,9 @@ internal sealed class Win32RunLoop : IEditorRunLoop
         now = Environment.TickCount64;
         List<Timer> due = [];
         lock (_lock)
-            foreach (var t in _timers)
+            foreach (Timer t in _timers)
                 if (now >= t.NextDue) { due.Add(t); t.NextDue = now + t.Period; }
-        foreach (var t in due) { try { t.OnTick(); } catch { } }
+        foreach (Timer t in due) { try { t.OnTick(); } catch { } }
 
         // Posted work.
         while (true)

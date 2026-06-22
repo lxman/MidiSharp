@@ -44,7 +44,7 @@ internal sealed unsafe class Vst3EventList : IDisposable
     public void AddNoteOn(int sampleOffset, int channel, int pitch, int velocity)
     {
         if (_count >= _capacity) return;
-        ref var e = ref _events[_count++];
+        ref VstEvent e = ref _events[_count++];
         e = default;
         e.Type = (ushort)kNoteOnEvent;
         e.SampleOffset = sampleOffset;
@@ -57,7 +57,7 @@ internal sealed unsafe class Vst3EventList : IDisposable
     public void AddNoteOff(int sampleOffset, int channel, int pitch, int velocity)
     {
         if (_count >= _capacity) return;
-        ref var e = ref _events[_count++];
+        ref VstEvent e = ref _events[_count++];
         e = default;
         e.Type = (ushort)kNoteOffEvent;
         e.SampleOffset = sampleOffset;
@@ -85,7 +85,7 @@ internal sealed unsafe class Vst3EventList : IDisposable
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static int GetEvent(void* self, int index, VstEvent* e)
     {
-        var s = Self(self);
+        Vst3EventList s = Self(self);
         if ((uint)index >= (uint)s._count || e == null) return ResultFalse;
         *e = s._events[index];
         return ResultOk;

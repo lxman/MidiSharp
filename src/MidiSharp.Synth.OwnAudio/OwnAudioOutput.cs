@@ -76,7 +76,7 @@ public sealed class OwnAudioOutput : IAudioOutput
     {
         lock (s_initLock)
         {
-            var transient = s_initRefCount == 0;
+            bool transient = s_initRefCount == 0;
             if (transient)
             {
                 OwnaudioNet.Initialize(new AudioConfig
@@ -93,7 +93,7 @@ public sealed class OwnAudioOutput : IAudioOutput
             try
             {
                 var devices = new List<OutputDevice>();
-                foreach (var d in OwnaudioNet.GetOutputDevices())
+                foreach (AudioDeviceInfo d in OwnaudioNet.GetOutputDevices())
                 {
                     if (!d.IsOutput) continue;
                     devices.Add(new OutputDevice(d.DeviceId, d.Name, d.EngineName, d.IsDefault));
@@ -126,7 +126,7 @@ public sealed class OwnAudioOutput : IAudioOutput
 
         EnsureEngineInitialized(_sampleRate, _channels, _bufferSizeFrames, _outputDeviceId);
 
-        var engine = OwnaudioNet.Engine!.UnderlyingEngine;
+        IAudioEngine engine = OwnaudioNet.Engine!.UnderlyingEngine;
         _mixer = new AudioMixer(engine, bufferSizeInFrames: _bufferSizeFrames);
         _source = new SynthCallbackSource(_sampleRate, _channels) { Callback = _callback };
         _mixer.AddSource(_source);

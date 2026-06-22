@@ -60,14 +60,14 @@ public sealed class SoundBank : IDisposable
         if (_patchIndex == null)
         {
             var index = new Dictionary<(int, int), Patch>(Patches.Count);
-            foreach (var patch in Patches)
+            foreach (Patch? patch in Patches)
             {
                 index[(patch.Bank, patch.Program)] = patch;
             }
             _patchIndex = index;
         }
 
-        return _patchIndex.TryGetValue((bank, program), out var found) ? found : null;
+        return _patchIndex.TryGetValue((bank, program), out Patch? found) ? found : null;
     }
 
     public void Dispose()

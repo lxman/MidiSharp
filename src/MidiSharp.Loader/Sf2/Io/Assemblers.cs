@@ -127,9 +127,9 @@ internal static class InfoAssembler
     private static void WriteStringField(MemoryStream ms, string tag, string value)
     {
         WriteFourByteTag(ms, tag);
-        var bytes = BinaryHelpers.Ascii.GetBytes(value);
+        byte[] bytes = BinaryHelpers.Ascii.GetBytes(value);
         // Always zero-terminate, then pad to even length.
-        var len = bytes.Length + 1;
+        int len = bytes.Length + 1;
         if ((len & 1) != 0) len++;
         WriteUInt32(ms, (uint)len);
         ms.Write(bytes, 0, bytes.Length);

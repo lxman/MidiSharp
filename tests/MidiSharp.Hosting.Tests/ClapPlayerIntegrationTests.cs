@@ -1,6 +1,5 @@
 using System;
 using System.Linq;
-using MidiSharp.Hosting;
 using MidiSharp.Hosting.Clap;
 using MidiSharp.Model;
 using MidiSharp.Model.Events;
@@ -37,7 +36,7 @@ public sealed class ClapPlayerIntegrationTests
     [Fact]
     public void Midi_file_plays_through_a_hosted_clap_instrument()
     {
-        var d = new ClapFormat().Scan(new ClapFormat().DefaultSearchPaths)
+        PluginDescriptor? d = new ClapFormat().Scan(new ClapFormat().DefaultSearchPaths)
             .FirstOrDefault(p => p.Id == "midisharp.test.synth");
         Assert.SkipWhen(d == null, "synth fixture not installed.");
 
@@ -79,7 +78,7 @@ public sealed class ClapPlayerIntegrationTests
         rms = Math.Sqrt(rms / left.Length);
         for (var i = 1; i < left.Length; i++)
             if ((left[i - 1] < 0f && left[i] >= 0f) || (left[i - 1] >= 0f && left[i] < 0f)) crossings++;
-        var hz = crossings * (double)Rate / (2.0 * left.Length);
+        double hz = crossings * (double)Rate / (2.0 * left.Length);
 
         Assert.True(rms > 0.1, $"the hosted instrument should sound through the player (rms {rms:F4}).");
         Assert.True(Math.Abs(hz - 440.0) < 5.0, $"channel-0 notes should sound at A4 ~440 Hz via the plugin (measured {hz:F1}).");

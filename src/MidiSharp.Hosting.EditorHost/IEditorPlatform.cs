@@ -1,5 +1,4 @@
 using System;
-using MidiSharp.Hosting;
 
 namespace MidiSharp.Hosting.EditorHost;
 

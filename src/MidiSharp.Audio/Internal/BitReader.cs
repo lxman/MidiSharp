@@ -22,9 +22,9 @@ internal sealed class BitReader(byte[] data, long startByte)
         {
             var byteIndex = (int)(_bitPos >> 3);
             var bitOffset = (int)(_bitPos & 7);
-            var bitsLeft = 8 - bitOffset;
-            var take = Math.Min(n, bitsLeft);
-            var shift = bitsLeft - take;
+            int bitsLeft = 8 - bitOffset;
+            int take = Math.Min(n, bitsLeft);
+            int shift = bitsLeft - take;
             var mask = (uint)((1 << take) - 1);
             var bits = (uint)((data[byteIndex] >> shift) & mask);
             result = (result << take) | bits;
@@ -38,7 +38,7 @@ internal sealed class BitReader(byte[] data, long startByte)
     public int ReadBitsSigned(int n)
     {
         if (n == 0) return 0;
-        var v = ReadBits(n);
+        uint v = ReadBits(n);
         if (n < 32 && (v & (1u << (n - 1))) != 0)
             return (int)(v - (1u << n));
         return (int)v;
@@ -53,7 +53,7 @@ internal sealed class BitReader(byte[] data, long startByte)
             var byteIndex = (int)(_bitPos >> 3);
             var bitOffset = (int)(_bitPos & 7);
             // Scan the rest of the current byte for a set bit.
-            var b = data[byteIndex] << bitOffset & 0xFF;
+            int b = data[byteIndex] << bitOffset & 0xFF;
             if (b == 0)
             {
                 count += 8 - bitOffset;

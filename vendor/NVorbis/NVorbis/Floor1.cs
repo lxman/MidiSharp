@@ -30,7 +30,7 @@ namespace MidiSharp.Audio.Vorbis
 
         public void Init(IPacket packet, int channels, int block0Size, int block1Size, ICodebook[] codebooks)
         {
-            var maximum_class = -1;
+            int maximum_class = -1;
             _partitionClass = new int[(int)packet.ReadBits(5)];
             for (var i = 0; i < _partitionClass.Length; i++)
             {
@@ -61,7 +61,7 @@ namespace MidiSharp.Audio.Vorbis
                 _subclassBookIndex[i] = new int[_subclassBooks[i].Length];
                 for (var j = 0; j < _subclassBooks[i].Length; j++)
                 {
-                    var bookNum = (int)packet.ReadBits(8) - 1;
+                    int bookNum = (int)packet.ReadBits(8) - 1;
                     if (bookNum >= 0) _subclassBooks[i][j] = codebooks[bookNum];
                     _subclassBookIndex[i][j] = bookNum;
                 }
@@ -82,7 +82,7 @@ namespace MidiSharp.Audio.Vorbis
 
             for (var i = 0; i < _partitionClass.Length; i++)
             {
-                var classNum = _partitionClass[i];
+                int classNum = _partitionClass[i];
                 for (var j = 0; j < _classDimensions[classNum]; j++)
                 {
                     xList.Add((int)packet.ReadBits(rangeBits));
@@ -103,7 +103,7 @@ namespace MidiSharp.Audio.Vorbis
                 _sortIdx[i] = i;
                 for (var j = 2; j < i; j++)
                 {
-                    var temp = _xList[j];
+                    int temp = _xList[j];
                     if (temp < _xList[i])
                     {
                         if (temp > _xList[_lNeigh[i]]) _lNeigh[i] = j;
@@ -118,14 +118,14 @@ namespace MidiSharp.Audio.Vorbis
             // precalc the sort table
             for (var i = 0; i < _sortIdx.Length - 1; i++)
             {
-                for (var j = i + 1; j < _sortIdx.Length; j++)
+                for (int j = i + 1; j < _sortIdx.Length; j++)
                 {
                     if (_xList[i] == _xList[j]) throw new InvalidDataException();
 
                     if (_xList[_sortIdx[i]] > _xList[_sortIdx[j]])
                     {
                         // swap the sort indexes
-                        var temp = _sortIdx[i];
+                        int temp = _sortIdx[i];
                         _sortIdx[i] = _sortIdx[j];
                         _sortIdx[j] = temp;
                     }
@@ -146,10 +146,10 @@ namespace MidiSharp.Audio.Vorbis
 
                 for (var i = 0; i < _partitionClass.Length; i++)
                 {
-                    var clsNum = _partitionClass[i];
-                    var cdim = _classDimensions[clsNum];
-                    var cbits = _classSubclasses[clsNum];
-                    var csub = (1 << cbits) - 1;
+                    int clsNum = _partitionClass[i];
+                    int cdim = _classDimensions[clsNum];
+                    int cbits = _classSubclasses[clsNum];
+                    int csub = (1 << cbits) - 1;
                     var cval = 0U;
                     if (cbits > 0)
                     {
@@ -162,7 +162,7 @@ namespace MidiSharp.Audio.Vorbis
                     }
                     for (var j = 0; j < cdim; j++)
                     {
-                        var book = _subclassBooks[clsNum][cval & csub];
+                        ICodebook book = _subclassBooks[clsNum][cval & csub];
                         cval >>= cbits;
                         if (book != null)
                         {
@@ -188,22 +188,22 @@ namespace MidiSharp.Audio.Vorbis
         {
             if (!(floorData is Data data)) throw new ArgumentException("Incorrect packet data!", "packetData");
 
-            var n = blockSize / 2;
+            int n = blockSize / 2;
 
             if (data.PostCount > 0)
             {
-                var stepFlags = UnwrapPosts(data);
+                bool[] stepFlags = UnwrapPosts(data);
 
                 var lx = 0;
-                var ly = data.Posts[0] * _multiplier;
+                int ly = data.Posts[0] * _multiplier;
                 for (var i = 1; i < data.PostCount; i++)
                 {
-                    var idx = _sortIdx[i];
+                    int idx = _sortIdx[i];
 
                     if (stepFlags[idx])
                     {
-                        var hx = _xList[idx];
-                        var hy = data.Posts[idx] * _multiplier;
+                        int hx = _xList[idx];
+                        int hy = data.Posts[idx] * _multiplier;
                         if (lx < n) RenderLineMulti(lx, ly, Math.Min(hx, n), hy, residue);
                         lx = hx;
                         ly = hy;
@@ -234,14 +234,14 @@ namespace MidiSharp.Audio.Vorbis
 
             for (var i = 2; i < data.PostCount; i++)
             {
-                var lowOfs = _lNeigh[i];
-                var highOfs = _hNeigh[i];
+                int lowOfs = _lNeigh[i];
+                int highOfs = _hNeigh[i];
 
-                var predicted = RenderPoint(_xList[lowOfs], finalY[lowOfs], _xList[highOfs], finalY[highOfs], _xList[i]);
+                int predicted = RenderPoint(_xList[lowOfs], finalY[lowOfs], _xList[highOfs], finalY[highOfs], _xList[i]);
 
-                var val = data.Posts[i];
-                var highroom = _range - predicted;
-                var lowroom = predicted;
+                int val = data.Posts[i];
+                int highroom = _range - predicted;
+                int lowroom = predicted;
                 int room;
                 if (highroom < lowroom)
                 {
@@ -299,11 +299,11 @@ namespace MidiSharp.Audio.Vorbis
 
         int RenderPoint(int x0, int y0, int x1, int y1, int X)
         {
-            var dy = y1 - y0;
-            var adx = x1 - x0;
-            var ady = Math.Abs(dy);
-            var err = ady * (X - x0);
-            var off = err / adx;
+            int dy = y1 - y0;
+            int adx = x1 - x0;
+            int ady = Math.Abs(dy);
+            int err = ady * (X - x0);
+            int off = err / adx;
             if (dy < 0)
             {
                 return y0 - off;
@@ -314,14 +314,14 @@ namespace MidiSharp.Audio.Vorbis
 
         void RenderLineMulti(int x0, int y0, int x1, int y1, float[] v)
         {
-            var dy = y1 - y0;
-            var adx = x1 - x0;
-            var ady = Math.Abs(dy);
-            var sy = 1 - (((dy >> 31) & 1) * 2);
-            var b = dy / adx;
-            var x = x0;
-            var y = y0;
-            var err = -adx;
+            int dy = y1 - y0;
+            int adx = x1 - x0;
+            int ady = Math.Abs(dy);
+            int sy = 1 - (((dy >> 31) & 1) * 2);
+            int b = dy / adx;
+            int x = x0;
+            int y = y0;
+            int err = -adx;
 
             v[x0] *= inverse_dB_table[y0];
             ady -= Math.Abs(b) * adx;

@@ -97,7 +97,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
                 return _cachedPagePackets;
             }
 
-            var pageOffset = _pageOffsets[pageIndex];
+            long pageOffset = _pageOffsets[pageIndex];
             if (pageOffset < 0)
             {
                 pageOffset = -pageOffset;
@@ -107,7 +107,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
             try
             {
                 _reader.ReadPageAt(pageOffset);
-                var packets = _reader.GetPackets();
+                Memory<byte>[] packets = _reader.GetPackets();
                 if (pageIndex == _lastPageIndex)
                 {
                     _cachedPagePackets = packets;
@@ -123,7 +123,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
         public int FindPage(long granulePos)
         {
             // if we're being asked for the first granule, just grab the very first data page
-            var pageIndex = -1;
+            int pageIndex = -1;
             if (granulePos == 0)
             {
                 pageIndex = FindFirstDataPage();
@@ -131,8 +131,8 @@ namespace MidiSharp.Audio.Vorbis.Ogg
             else
             {
                 // start by looking at the last read page's position...
-                var lastPageIndex = _pageOffsets.Count - 1;
-                if (GetPageRaw(lastPageIndex, out var pageGP))
+                int lastPageIndex = _pageOffsets.Count - 1;
+                if (GetPageRaw(lastPageIndex, out long pageGP))
                 {
                     // most likely, we can look at previous pages for the appropriate one...
                     if (granulePos < pageGP)
@@ -200,7 +200,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
 
         private bool GetNextPageGranulePos(out long granulePos)
         {
-            var pageCount = _pageOffsets.Count;
+            int pageCount = _pageOffsets.Count;
             while (pageCount == _pageOffsets.Count && !HasAllPages)
             {
                 _reader.Lock();
@@ -235,10 +235,10 @@ namespace MidiSharp.Audio.Vorbis.Ogg
             while ((dist = high - low) > 0)
             {
                 // try to find the right page by assumming they are all about the same size
-                var index = low + (int)(dist * ((granulePos - lowGranulePos) / (double)(highGranulePos - lowGranulePos)));
+                int index = low + (int)(dist * ((granulePos - lowGranulePos) / (double)(highGranulePos - lowGranulePos)));
 
                 // go get the actual position of the selected page
-                if (!GetPageRaw(index, out var idxGranulePos))
+                if (!GetPageRaw(index, out long idxGranulePos))
                 {
                     return -1;
                 }
@@ -267,7 +267,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
 
         private bool GetPageRaw(int pageIndex, out long pageGranulePos)
         {
-            var offset = _pageOffsets[pageIndex];
+            long offset = _pageOffsets[pageIndex];
             if (offset < 0)
             {
                 offset = -offset;
@@ -331,7 +331,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
 
             if (pageIndex < _pageOffsets.Count)
             {
-                var offset = _pageOffsets[pageIndex];
+                long offset = _pageOffsets[pageIndex];
                 if (offset < 0)
                 {
                     isResync = true;

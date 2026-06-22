@@ -41,7 +41,7 @@ public class PatchMapSessionTests
         var baseSrc = new FlagSource();
         var session = new PatchMapSession(BankWith(baseSrc, "base"));
 
-        var composite = session.BuildComposite();
+        IRBank composite = session.BuildComposite();
         composite.Dispose();                 // a borrowed view — must not kill the font...
 
         Assert.False(baseSrc.Disposed);      // ...so it survives for the next playback

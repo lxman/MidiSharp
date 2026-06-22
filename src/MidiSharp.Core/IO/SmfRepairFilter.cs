@@ -64,7 +64,7 @@ public sealed record SmfRepairResult(byte[] Data, bool Modified, IReadOnlyList<S
         get
         {
             var n = 0;
-            foreach (var d in Defects)
+            foreach (SmfDefect? d in Defects)
                 if (d.Action == SmfDefectAction.Corrected) n++;
             return n;
         }
@@ -103,7 +103,7 @@ public static class SmfRepairFilter
     /// <summary>Scan and repair a MIDI byte stream.</summary>
     public static SmfRepairResult Scan(ReadOnlySpan<byte> raw)
     {
-        var src = raw.ToArray();
+        byte[]? src = raw.ToArray();
         var defects = new List<SmfDefect>();
 
         // ── Header ──────────────────────────────────────────────────────
@@ -115,7 +115,7 @@ public static class SmfRepairFilter
         }
 
         var headerLen = (int)U32(src, 4);
-        var headerEnd = 8 + headerLen;
+        int headerEnd = 8 + headerLen;
         if (headerLen < 6 || headerEnd > src.Length)
         {
             defects.Add(new SmfDefect(4, null, SmfDefectKind.HeaderAnomaly, SmfDefectAction.Uncorrectable,
@@ -123,19 +123,19 @@ public static class SmfRepairFilter
             return new SmfRepairResult(src, false, defects);
         }
 
-        var declaredTracks = U16(src, 10);
+        ushort declaredTracks = U16(src, 10);
 
         var output = new List<byte>(src.Length);
         for (var i = 0; i < headerEnd; i++) output.Add(src[i]); // header copied verbatim
 
         long totalMusical0D = 0;
-        var pos = headerEnd;
+        int pos = headerEnd;
         var written = 0;
 
         // ── Tracks ──────────────────────────────────────────────────────
         for (var t = 0; t < declaredTracks; t++)
         {
-            var marker = LocateMtrk(src, pos);
+            int marker = LocateMtrk(src, pos);
             if (marker < 0) break;
             if (marker > pos)
                 defects.Add(new SmfDefect(pos, t, SmfDefectKind.TrailingBytes, SmfDefectAction.Corrected,
@@ -143,11 +143,11 @@ public static class SmfRepairFilter
             if (marker + 8 > src.Length) break;
 
             var declaredLen = (int)U32(src, marker + 4);
-            var dataStart = marker + 8;
+            int dataStart = marker + 8;
             var maxEnd = (int)Math.Min((long)dataStart + declaredLen, src.Length);
             if (maxEnd <= dataStart) maxEnd = src.Length;
 
-            var (data, rawConsumed, eot, musical0D) = RepairTrack(src, dataStart, maxEnd, t, defects);
+            (List<byte> data, int rawConsumed, bool eot, int musical0D) = RepairTrack(src, dataStart, maxEnd, t, defects);
             totalMusical0D += musical0D;
 
             // Distinguish a wrong length field from legitimate post-EndOfTrack
@@ -155,20 +155,20 @@ public static class SmfRepairFilter
             // after the EoT), the length was fine and the gap is intentional.
             if (rawConsumed < declaredLen && eot)
             {
-                var afterEot = dataStart + rawConsumed;
-                var declaredEndPos = dataStart + declaredLen;
-                var paddingNotChunk = !IsMtrkAt(src, afterEot)
-                    && (declaredEndPos == src.Length || IsMtrkAt(src, declaredEndPos));
+                int afterEot = dataStart + rawConsumed;
+                int declaredEndPos = dataStart + declaredLen;
+                bool paddingNotChunk = !IsMtrkAt(src, afterEot)
+                                       && (declaredEndPos == src.Length || IsMtrkAt(src, declaredEndPos));
                 if (paddingNotChunk)
                 {
-                    for (var i = afterEot; i < declaredEndPos && i < src.Length; i++) data.Add(src[i]);
+                    for (int i = afterEot; i < declaredEndPos && i < src.Length; i++) data.Add(src[i]);
                     rawConsumed = declaredLen;
                 }
             }
 
             if (declaredLen != data.Count)
             {
-                var note = declaredLen - data.Count == 768
+                string note = declaredLen - data.Count == 768
                     ? " (0x0A→0x0D in length byte[2]; newline-translation)"
                     : "";
                 defects.Add(new SmfDefect(marker + 4, t, SmfDefectKind.ChunkLengthCorrupted, SmfDefectAction.Corrected,
@@ -205,8 +205,8 @@ public static class SmfRepairFilter
                 $"newline-translation signature (no 0x0A bytes); {totalMusical0D} ambiguous musical byte(s) " +
                 "(a 0x0D that may have been 0x0A) — unrecoverable from this file alone"));
 
-        var outArray = output.ToArray();
-        var modified = !SequenceEqual(outArray, src);
+        byte[] outArray = output.ToArray();
+        bool modified = !SequenceEqual(outArray, src);
         return new SmfRepairResult(outArray, modified, defects);
     }
 
@@ -242,7 +242,7 @@ public static class SmfRepairFilter
                     insertTried = true;
                     var w2 = new byte[work.Length + 1];
                     Array.Copy(work, 0, w2, 1, work.Length); // w2[0] == 0x00
-                    var (s2, e2, _) = ScanEvents(w2, w2.Length);
+                    (ParseStop s2, int e2, _) = ScanEvents(w2, w2.Length);
                     if (s2 == ParseStop.EndOfTrack || e2 > endOff)
                     {
                         defects.Add(new SmfDefect(dataStart, trackIndex, SmfDefectKind.DroppedLeadingDelta,
@@ -257,11 +257,11 @@ public static class SmfRepairFilter
                 // (b) Meta-length overshoot: a meta length byte flipped 0x0A→0x0D.
                 if (!progressed)
                 {
-                    for (var c = Math.Min(endOff, work.Length - 3); c >= 0; c--)
+                    for (int c = Math.Min(endOff, work.Length - 3); c >= 0; c--)
                     {
                         if (work[c] != 0xFF || work[c + 1] >= 0x80 || work[c + 2] != 0x0D) continue;
                         work[c + 2] = 0x0A;
-                        var (s3, e3, _) = ScanEvents(work, work.Length);
+                        (ParseStop s3, int e3, _) = ScanEvents(work, work.Length);
                         if (s3 == ParseStop.EndOfTrack || e3 > endOff)
                         {
                             defects.Add(new SmfDefect(dataStart + c + 2, trackIndex, SmfDefectKind.MetaLengthOvershoot,
@@ -284,8 +284,8 @@ public static class SmfRepairFilter
             }
         }
 
-        var trueLen = endOff;
-        var (_, _, musical) = ScanEvents(work, trueLen);
+        int trueLen = endOff;
+        (_, _, int musical) = ScanEvents(work, trueLen);
 
         var data = new List<byte>(trueLen);
         for (var i = 0; i < trueLen; i++) data.Add(work[i]);
@@ -306,7 +306,7 @@ public static class SmfRepairFilter
 
         while (q < end)
         {
-            var eventStart = q;
+            int eventStart = q;
 
             // Delta-time (a VLQ; its bytes are musical timing).
             if (!TryReadVlq(buf, ref q, end, countMusical: true, ref mus, out _))
@@ -314,15 +314,15 @@ public static class SmfRepairFilter
             if (q >= end)
                 return (ParseStop.EndOfData, q, mus); // trailing delta, no event
 
-            var st = buf[q];
+            byte st = buf[q];
             if ((st & 0x80) != 0)
             {
                 q++;
                 if (st == 0xFF) // meta
                 {
                     if (q >= end) return (ParseStop.Overrun, eventStart, mus);
-                    var type = buf[q]; q++;
-                    if (!TryReadVlq(buf, ref q, end, countMusical: false, ref mus, out var mlen))
+                    byte type = buf[q]; q++;
+                    if (!TryReadVlq(buf, ref q, end, countMusical: false, ref mus, out int mlen))
                         return (ParseStop.Overrun, eventStart, mus);
                     if (q + mlen > end) return (ParseStop.Overrun, eventStart, mus);
                     q += mlen;
@@ -331,7 +331,7 @@ public static class SmfRepairFilter
                 }
                 if (st is 0xF0 or 0xF7) // sysex
                 {
-                    if (!TryReadVlq(buf, ref q, end, countMusical: false, ref mus, out var slen))
+                    if (!TryReadVlq(buf, ref q, end, countMusical: false, ref mus, out int slen))
                         return (ParseStop.Overrun, eventStart, mus);
                     if (q + slen > end) return (ParseStop.Overrun, eventStart, mus);
                     q += slen;
@@ -347,9 +347,9 @@ public static class SmfRepairFilter
                 st = rs;
             }
 
-            var nb = (st & 0xF0) is 0xC0 or 0xD0 ? 1 : 2;
+            int nb = (st & 0xF0) is 0xC0 or 0xD0 ? 1 : 2;
             if (q + nb > end) return (ParseStop.Overrun, eventStart, mus);
-            for (var j = q; j < q + nb; j++)
+            for (int j = q; j < q + nb; j++)
                 if (buf[j] == 0x0D) mus++;
             q += nb;
         }
@@ -363,7 +363,7 @@ public static class SmfRepairFilter
         while (true)
         {
             if (q >= end) return false;
-            var b = buf[q];
+            byte b = buf[q];
             if (countMusical && b == 0x0D) mus++;
             q++;
             value = (value << 7) | (b & 0x7F);
@@ -375,7 +375,7 @@ public static class SmfRepairFilter
     private static int LocateMtrk(byte[] d, int pos)
     {
         if (IsMtrkAt(d, pos)) return pos;
-        for (var i = pos; i + 4 <= d.Length; i++)
+        for (int i = pos; i + 4 <= d.Length; i++)
             if (d[i] == 0x4D && d[i + 1] == 0x54 && d[i + 2] == 0x72 && d[i + 3] == 0x6B)
                 return i;
         return -1;
@@ -401,7 +401,7 @@ public static class SmfRepairFilter
     private static int CountByte(byte[] d, byte b)
     {
         var n = 0;
-        foreach (var x in d)
+        foreach (byte x in d)
             if (x == b) n++;
         return n;
     }

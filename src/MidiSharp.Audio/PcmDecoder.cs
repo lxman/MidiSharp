@@ -20,8 +20,8 @@ public static class PcmDecoder
         ReadOnlySpan<byte> bytes, int channels, int bitsPerSample, bool isFloat)
     {
         if (channels < 1) channels = 1;
-        var bytesPerSample = (bitsPerSample + 7) / 8;
-        var bytesPerFrame = bytesPerSample * channels;
+        int bytesPerSample = (bitsPerSample + 7) / 8;
+        int bytesPerFrame = bytesPerSample * channels;
         if (bytesPerFrame <= 0 || bytes.Length < bytesPerFrame)
             return ([], 0);
 
@@ -34,7 +34,7 @@ public static class PcmDecoder
             // BinaryPrimitives.ReadSingleLittleEndian doesn't exist on netstandard2.1.
             for (var i = 0; i < totalSamples; i++)
             {
-                var bits = BinaryPrimitives.ReadInt32LittleEndian(bytes.Slice(i * 4, 4));
+                int bits = BinaryPrimitives.ReadInt32LittleEndian(bytes.Slice(i * 4, 4));
                 output[i] = BitConverter.Int32BitsToSingle(bits);
             }
         }
@@ -42,7 +42,7 @@ public static class PcmDecoder
         {
             for (var i = 0; i < totalSamples; i++)
             {
-                var bits = BinaryPrimitives.ReadInt64LittleEndian(bytes.Slice(i * 8, 8));
+                long bits = BinaryPrimitives.ReadInt64LittleEndian(bytes.Slice(i * 8, 8));
                 output[i] = (float)BitConverter.Int64BitsToDouble(bits);
             }
         }
@@ -74,7 +74,7 @@ public static class PcmDecoder
                     int b0 = bytes[i * 3];
                     int b1 = bytes[i * 3 + 1];
                     int b2 = (sbyte)bytes[i * 3 + 2]; // sign-extend high byte
-                    var v = (b2 << 16) | (b1 << 8) | b0;
+                    int v = (b2 << 16) | (b1 << 8) | b0;
                     output[i] = v * Scale;
                 }
                 break;
@@ -93,14 +93,14 @@ public static class PcmDecoder
                 // container. Normalised by the container's full range, so a byte-aligned depth is exact;
                 // a sub-byte depth left-justified in the container reads correctly too. >64-bit is bogus.
                 if (bytesPerSample is < 1 or > 8) return ([], 0);
-                var containerBits = bytesPerSample * 8;
-                var full64 = containerBits >= 64;
-                var scale = full64 ? 1.0 / 9223372036854775808.0 : 1.0 / (1L << (containerBits - 1));
-                var signMask = full64 ? 0 : 1L << (containerBits - 1);
-                var extend = full64 ? 0 : 1L << containerBits;
+                int containerBits = bytesPerSample * 8;
+                bool full64 = containerBits >= 64;
+                double scale = full64 ? 1.0 / 9223372036854775808.0 : 1.0 / (1L << (containerBits - 1));
+                long signMask = full64 ? 0 : 1L << (containerBits - 1);
+                long extend = full64 ? 0 : 1L << containerBits;
                 for (var i = 0; i < totalSamples; i++)
                 {
-                    var off = i * bytesPerSample;
+                    int off = i * bytesPerSample;
                     long v = 0;
                     for (var b = 0; b < bytesPerSample; b++)
                         v |= (long)bytes[off + b] << (8 * b);
@@ -121,7 +121,7 @@ public static class PcmDecoder
     /// </summary>
     public static float NormalizeInt(int sample, int bitsPerSample)
     {
-        var scale = 1.0f / (1 << (bitsPerSample - 1));
+        float scale = 1.0f / (1 << (bitsPerSample - 1));
         return sample * scale;
     }
 }

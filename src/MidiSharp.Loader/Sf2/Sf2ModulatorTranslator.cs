@@ -44,7 +44,7 @@ internal static class Sf2ModulatorTranslator
         }
 
         var entries = new List<Entry>(Sf2DefaultModulators.Defaults.Length + 8);
-        foreach (var d in Sf2DefaultModulators.Defaults)
+        foreach (Sf2DefaultModulators.DefaultModulator d in Sf2DefaultModulators.Defaults)
             entries.Add(new Entry(d.Identity, d.Route));
 
         // Instrument level: global first, then local — each overwrites on identity.
@@ -72,12 +72,12 @@ internal static class Sf2ModulatorTranslator
     private static void ApplyOverwrite(List<Entry> entries, IReadOnlyList<Modulator>? mods)
     {
         if (mods == null) return;
-        foreach (var m in mods)
+        foreach (Modulator? m in mods)
         {
-            var route = TryTranslate(m);
+            ModulationRoute? route = TryTranslate(m);
             if (route == null) continue;
-            var id = IdentityOf(m);
-            var idx = IndexOf(entries, id);
+            ulong id = IdentityOf(m);
+            int idx = IndexOf(entries, id);
             if (idx >= 0) entries[idx] = new Entry(id, route);
             else entries.Add(new Entry(id, route));
         }
@@ -86,17 +86,17 @@ internal static class Sf2ModulatorTranslator
     private static void ApplyAdd(List<Entry> entries, IReadOnlyList<Modulator>? mods)
     {
         if (mods == null) return;
-        foreach (var m in mods)
+        foreach (Modulator? m in mods)
         {
-            var route = TryTranslate(m);
+            ModulationRoute? route = TryTranslate(m);
             if (route == null) continue;
-            var id = IdentityOf(m);
-            var idx = IndexOf(entries, id);
+            ulong id = IdentityOf(m);
+            int idx = IndexOf(entries, id);
             if (idx < 0) { entries.Add(new Entry(id, route)); continue; }
 
             // Identical modulator already present (a default or an instrument mod):
             // sum the amounts. Source/transform are identical by definition.
-            var ex = entries[idx].Route;
+            ModulationRoute ex = entries[idx].Route;
             entries[idx] = new Entry(id, new ModulationRoute
             {
                 Source = ex.Source,
@@ -129,9 +129,9 @@ internal static class Sf2ModulatorTranslator
     /// </summary>
     public static ModulationRoute? TryTranslate(Modulator m)
     {
-        var source = MapSource(m.SourceOperator);
+        ModSource? source = MapSource(m.SourceOperator);
         if (source == null) return null;
-        if (!TryMapDest(m.DestinationOperator, out var dest)) return null;
+        if (!TryMapDest(m.DestinationOperator, out ModDestination dest)) return null;
 
         return new ModulationRoute
         {
@@ -145,8 +145,8 @@ internal static class Sf2ModulatorTranslator
 
     private static ModSource? MapSource(ushort srcOp)
     {
-        var isCc = ((srcOp >> 7) & 0x1) == 1;
-        var index = srcOp & 0x7F;
+        bool isCc = ((srcOp >> 7) & 0x1) == 1;
+        int index = srcOp & 0x7F;
 
         if (isCc) return new ModSource.ChannelController((byte)index);
 
@@ -228,9 +228,9 @@ internal static class Sf2ModulatorTranslator
     /// </summary>
     private static ModTransform MapTransform(ushort srcOp)
     {
-        var type = (srcOp >> 10) & 0x3F;
-        var reverse = ((srcOp >> 8) & 0x1) == 1;   // direction D
-        var bipolar = ((srcOp >> 9) & 0x1) == 1;   // polarity P
+        int type = (srcOp >> 10) & 0x3F;
+        bool reverse = ((srcOp >> 8) & 0x1) == 1;   // direction D
+        bool bipolar = ((srcOp >> 9) & 0x1) == 1;   // polarity P
 
         return type switch
         {

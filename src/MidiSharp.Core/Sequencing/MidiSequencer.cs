@@ -67,7 +67,7 @@ public sealed class MidiSequencer
     /// <param name="end">End time (exclusive).</param>
     public IEnumerable<ScheduledEvent> GetEventsInRange(TimeSpan start, TimeSpan end)
     {
-        foreach (var evt in _events)
+        foreach (ScheduledEvent evt in _events)
         {
             if (evt.AbsoluteTime >= end) yield break;
             if (evt.AbsoluteTime >= start) yield return evt;
@@ -79,7 +79,7 @@ public sealed class MidiSequencer
     /// </summary>
     public IEnumerable<ScheduledEvent> GetEventsFrom(TimeSpan start)
     {
-        foreach (var evt in _events)
+        foreach (ScheduledEvent evt in _events)
         {
             if (evt.AbsoluteTime >= start) yield return evt;
         }
@@ -90,16 +90,16 @@ public sealed class MidiSequencer
     /// </summary>
     public int GetEventIndexAtTime(TimeSpan time)
     {
-        var targetTick = TimeToTick(time);
+        long targetTick = TimeToTick(time);
 
         // Binary search for the first event at or after the target tick
         var low = 0;
-        var high = _events.Count - 1;
-        var result = _events.Count; // Default: past end
+        int high = _events.Count - 1;
+        int result = _events.Count; // Default: past end
 
         while (low <= high)
         {
-            var mid = (low + high) / 2;
+            int mid = (low + high) / 2;
             if (_events[mid].AbsoluteTicks >= targetTick)
             {
                 result = mid;
@@ -119,7 +119,7 @@ public sealed class MidiSequencer
     /// </summary>
     public IEnumerable<ScheduledEvent> GetPlayableEvents()
     {
-        foreach (var evt in _events)
+        foreach (ScheduledEvent evt in _events)
         {
             // Include channel events and sysex
             if (evt.Event is ChannelEvent or SysExEvent)
@@ -144,7 +144,7 @@ public sealed class MidiSequencer
 
         for (var trackIndex = 0; trackIndex < _file.Tracks.Count; trackIndex++)
         {
-            var track = _file.Tracks[trackIndex];
+            MidiTrack? track = _file.Tracks[trackIndex];
 
             allEvents.AddRange(from evt in track.Events let time =
                 _tempoMap.TickToTime(evt.AbsoluteTicks) select new ScheduledEvent(evt.AbsoluteTicks, time, evt, trackIndex, sequenceIndex++));
@@ -170,7 +170,7 @@ public sealed class MidiSequencer
         long maxTick = 0;
         long lastNoteTick = 0;
         var anyNote = false;
-        foreach (var evt in _events)
+        foreach (ScheduledEvent evt in _events)
         {
             if (evt.AbsoluteTicks > maxTick) maxTick = evt.AbsoluteTicks;
             if (evt.Event is NoteOnEvent or NoteOffEvent)

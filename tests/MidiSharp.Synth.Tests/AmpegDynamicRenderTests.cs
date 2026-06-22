@@ -28,8 +28,8 @@ public sealed class AmpegDynamicRenderTests
             CcMods = [new EnvCcMod(EnvStage.Attack, 1, 0.5, 0)],
         };
 
-        var fast = PeakOver45ms(env, cc1: 0);     // ~5 ms attack → near full within the window
-        var slow = PeakOver45ms(env, cc1: 127);   // ~505 ms attack → barely begun within the window
+        float fast = PeakOver45ms(env, cc1: 0);     // ~5 ms attack → near full within the window
+        float slow = PeakOver45ms(env, cc1: 127);   // ~505 ms attack → barely begun within the window
         Assert.True(fast > slow * 2.0, $"live CC1 should slow the attack (fast {fast}, slow {slow})");
     }
 
@@ -60,7 +60,7 @@ public sealed class AmpegDynamicRenderTests
             Sample = new SampleRef { SampleId = 0, OverridingRootKey = 60 },
             VolumeEnvelope = env,
         };
-        var data = new[] { Constant(0.5f, 4000) };
+        float[][] data = new[] { Constant(0.5f, 4000) };
         var meta = new[] { new SampleMetadata { SampleRate = Rate, Channels = 1, LengthFrames = 4000, RootKey = 60 } };
         return new IRBank
         {

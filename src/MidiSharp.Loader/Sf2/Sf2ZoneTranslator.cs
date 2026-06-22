@@ -45,7 +45,7 @@ internal static class Sf2ZoneTranslator
 
     private static SampleRef BuildSampleRef(Sf2GeneratorState state, int sampleId)
     {
-        var loopMode = (state.SampleModes & 0x3) switch
+        LoopMode loopMode = (state.SampleModes & 0x3) switch
         {
             1 => LoopMode.Continuous,
             3 => LoopMode.UntilRelease,

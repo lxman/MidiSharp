@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using MidiSharp.Hosting;
 using static MidiSharp.Hosting.Vst3.Vst3Abi;
 
 namespace MidiSharp.Hosting.Vst3;
@@ -53,7 +52,7 @@ internal sealed unsafe class Vst3PlugFrame : IDisposable
     // Invoke a native FUnknown-derived handler's first defined method (vtable slot 3): onFDIsSet(fd) / onTimer().
     private static void CallSlot3(void* handler, int fdOrNone)
     {
-        var vtbl = *(IntPtr**)handler;
+        IntPtr* vtbl = *(IntPtr**)handler;
         if (fdOrNone >= 0) ((delegate* unmanaged[Cdecl]<void*, int, void>)vtbl[3])(handler, fdOrNone);
         else ((delegate* unmanaged[Cdecl]<void*, void>)vtbl[3])(handler);
     }
@@ -62,7 +61,7 @@ internal sealed unsafe class Vst3PlugFrame : IDisposable
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static int FrameQueryInterface(void* self, byte* iid, void** obj)
     {
-        var f = Self(self);
+        Vst3PlugFrame f = Self(self);
         if (IidEq(iid, IidPlugFrame) || IidEq(iid, IidFUnknown)) { *obj = self; return ResultOk; }
         // Steinberg::Linux::IRunLoop is X11-only; on Windows the editor drives itself via the Win32 message
         // pump, so we must not advertise a run loop there.
@@ -87,7 +86,7 @@ internal sealed unsafe class Vst3PlugFrame : IDisposable
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static int RegisterEventHandler(void* self, void* handler, int fd)
     {
-        var f = Self(self);
+        Vst3PlugFrame f = Self(self);
         f._handlerFds[(IntPtr)handler] = fd;
         f._loop.RegisterFd(fd, () => CallSlot3(handler, fd));
         return ResultOk;
@@ -96,8 +95,8 @@ internal sealed unsafe class Vst3PlugFrame : IDisposable
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static int UnregisterEventHandler(void* self, void* handler)
     {
-        var f = Self(self);
-        if (f._handlerFds.Remove((IntPtr)handler, out var fd)) f._loop.UnregisterFd(fd);
+        Vst3PlugFrame f = Self(self);
+        if (f._handlerFds.Remove((IntPtr)handler, out int fd)) f._loop.UnregisterFd(fd);
         return ResultOk;
     }
 

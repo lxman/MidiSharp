@@ -63,7 +63,7 @@ internal sealed class SfzSampleSource : ISampleSource
     public int ReadFrames(int sampleId, long frameOffset, Span<float> dest)
     {
         lock (_cacheLock)
-            if (_cache.TryGetValue(sampleId, out var hit))
+            if (_cache.TryGetValue(sampleId, out CacheNode? hit))
                 return CopyFromNode(hit, sampleId, frameOffset, dest, refreshLru: true);
 
         if (!_blockingDecode)
@@ -79,11 +79,11 @@ internal sealed class SfzSampleSource : ISampleSource
         // note that out-runs the background decoder lose its attack (the per-run non-determinism that
         // shows up as "dropped notes" in a fast passage). Decode happens outside the lock; insert and
         // copy happen under it so the rented buffer can't be evicted/returned mid-copy.
-        var (data, length, pooled) = Decode(sampleId);
+        (float[] data, int length, bool pooled) = Decode(sampleId);
         lock (_cacheLock)
         {
             if (_disposed) { if (pooled) ArrayPool<float>.Shared.Return(data); return 0; }
-            if (!_cache.TryGetValue(sampleId, out var node))
+            if (!_cache.TryGetValue(sampleId, out CacheNode? node))
             {
                 if (length <= 0) return 0;   // unreadable/corrupt at play time → silence
                 EvictUntilBudgetFits(length * 4L);
@@ -105,7 +105,7 @@ internal sealed class SfzSampleSource : ISampleSource
             _lru.Remove(node.LruNode);
             node.LruNode = _lru.AddLast(sampleId);
         }
-        var ch = _metadata[sampleId].Channels;
+        int ch = _metadata[sampleId].Channels;
         long frameCount = node.Length / ch;
         if (frameOffset < 0 || frameOffset >= frameCount) return 0;
         var framesToCopy = (int)Math.Min(frameCount - frameOffset, dest.Length / ch);
@@ -130,7 +130,7 @@ internal sealed class SfzSampleSource : ISampleSource
 
         Task.Run(() =>
         {
-            var (data, length, pooled) = Decode(sampleId);   // off the audio thread
+            (float[] data, int length, bool pooled) = Decode(sampleId);   // off the audio thread
             lock (_cacheLock)
             {
                 _decoding.Remove(sampleId);
@@ -150,9 +150,9 @@ internal sealed class SfzSampleSource : ISampleSource
     {
         while (_cachedBytes + incoming > _cacheBudgetBytes && _lru.Count > 0)
         {
-            var victim = _lru.First!.Value;
+            int victim = _lru.First!.Value;
             _lru.RemoveFirst();
-            if (_cache.TryGetValue(victim, out var v))
+            if (_cache.TryGetValue(victim, out CacheNode? v))
             {
                 _cachedBytes -= v.Length * 4L;
                 _cache.Remove(victim);
@@ -169,7 +169,7 @@ internal sealed class SfzSampleSource : ISampleSource
         {
             var n = (int)Math.Min(_metadata[sampleId].LengthFrames, int.MaxValue);
             if (n <= 0) return ([], 0, false);
-            var silence = ArrayPool<float>.Shared.Rent(n);
+            float[]? silence = ArrayPool<float>.Shared.Rent(n);
             Array.Clear(silence, 0, n);
             return (silence, n, true);
         }
@@ -181,24 +181,24 @@ internal sealed class SfzSampleSource : ISampleSource
         var frames = (int)Math.Min(audio.FrameCount, int.MaxValue);
         if (frames <= 0) return ([], 0, false);
 
-        var srcCh = audio.Channels;
-        var src = audio.Samples;
+        int srcCh = audio.Channels;
+        float[] src = audio.Samples;
         // Output channel count was decided at load from the header (1 or 2). `length` is the TOTAL
         // float count (frames × outCh) so the LRU budget — bytes = length × 4 — is correct for stereo.
-        var outCh = _metadata[sampleId].Channels;
+        int outCh = _metadata[sampleId].Channels;
 
         if (outCh == 2)
         {
             // Keep L/R interleaved. Source is normally exactly stereo; if it has more channels, take
             // the first two; if it somehow decoded to mono, duplicate it to both sides.
-            var buf2 = ArrayPool<float>.Shared.Rent(frames * 2);
+            float[]? buf2 = ArrayPool<float>.Shared.Rent(frames * 2);
             if (srcCh == 2)
             {
                 src.AsSpan(0, frames * 2).CopyTo(buf2);
             }
             else if (srcCh > 2)
             {
-                for (var f = 0; f < frames; f++) { var b = f * srcCh; buf2[f * 2] = src[b]; buf2[f * 2 + 1] = src[b + 1]; }
+                for (var f = 0; f < frames; f++) { int b = f * srcCh; buf2[f * 2] = src[b]; buf2[f * 2 + 1] = src[b + 1]; }
             }
             else
             {
@@ -208,17 +208,17 @@ internal sealed class SfzSampleSource : ISampleSource
         }
 
         // Mono target: copy a mono source straight through, or fold a multi-channel one down.
-        var buf = ArrayPool<float>.Shared.Rent(frames);
+        float[]? buf = ArrayPool<float>.Shared.Rent(frames);
         if (srcCh <= 1)
         {
             src.AsSpan(0, frames).CopyTo(buf);
         }
         else
         {
-            var inv = 1f / srcCh;
+            float inv = 1f / srcCh;
             for (var f = 0; f < frames; f++)
             {
-                var sum = 0f; var b = f * srcCh;
+                var sum = 0f; int b = f * srcCh;
                 for (var c = 0; c < srcCh; c++) sum += src[b + c];
                 buf[f] = sum * inv;
             }
@@ -232,7 +232,7 @@ internal sealed class SfzSampleSource : ISampleSource
         {
             if (_disposed) return;
             _disposed = true;   // set under the lock so any in-flight decode no-ops on completion
-            foreach (var kv in _cache)
+            foreach (KeyValuePair<int, CacheNode> kv in _cache)
                 if (kv.Value.Pooled) ArrayPool<float>.Shared.Return(kv.Value.Data);
             _cache.Clear();
             _lru.Clear();

@@ -1,5 +1,4 @@
 using System;
-using MidiSharp.Hosting;
 using Xunit;
 
 namespace MidiSharp.Hosting.Tests;
@@ -20,7 +19,7 @@ public sealed class StereoTrimTests
 
     private static (double l, double r) Rms(ReadOnlySpan<float> interleaved)
     {
-        double sl = 0, sr = 0; var frames = interleaved.Length / 2;
+        double sl = 0, sr = 0; int frames = interleaved.Length / 2;
         for (var i = 0; i < frames; i++) { sl += (double)interleaved[2 * i] * interleaved[2 * i]; sr += (double)interleaved[2 * i + 1] * interleaved[2 * i + 1]; }
         return (Math.Sqrt(sl / frames), Math.Sqrt(sr / frames));
     }
@@ -28,8 +27,8 @@ public sealed class StereoTrimTests
     [Fact]
     public void Unity_trim_is_a_bit_identical_plain_add()
     {
-        var dst = Stereo(0.1f, -0.2f, 256);
-        var src = Stereo(0.3f, 0.4f, 256);
+        float[] dst = Stereo(0.1f, -0.2f, 256);
+        float[] src = Stereo(0.3f, 0.4f, 256);
         StereoTrim.Add(dst, src, gainDb: 0.0, pan: 0.0);
         for (var i = 0; i < 256; i++)
         {
@@ -45,9 +44,9 @@ public sealed class StereoTrimTests
     public void Gain_scales_proportionally(double gainDb, double factor)
     {
         var dst = new float[256 * 2];
-        var src = Stereo(0.25f, 0.25f, 256);
+        float[] src = Stereo(0.25f, 0.25f, 256);
         StereoTrim.Add(dst, src, gainDb, pan: 0.0);
-        var (l, r) = Rms(dst);
+        (double l, double r) = Rms(dst);
         Assert.Equal(0.25 * factor, l, 3);
         Assert.Equal(0.25 * factor, r, 3);
     }
@@ -56,9 +55,9 @@ public sealed class StereoTrimTests
     public void Hard_pan_right_silences_the_left_channel()
     {
         var dst = new float[256 * 2];
-        var src = Stereo(0.3f, 0.3f, 256);
+        float[] src = Stereo(0.3f, 0.3f, 256);
         StereoTrim.Add(dst, src, gainDb: 0.0, pan: 1.0);
-        var (l, r) = Rms(dst);
+        (double l, double r) = Rms(dst);
         Assert.Equal(0.0, l, 6);
         Assert.Equal(0.3, r, 6);
     }
@@ -67,9 +66,9 @@ public sealed class StereoTrimTests
     public void Hard_pan_left_silences_the_right_channel()
     {
         var dst = new float[256 * 2];
-        var src = Stereo(0.3f, 0.3f, 256);
+        float[] src = Stereo(0.3f, 0.3f, 256);
         StereoTrim.Add(dst, src, gainDb: 0.0, pan: -1.0);
-        var (l, r) = Rms(dst);
+        (double l, double r) = Rms(dst);
         Assert.Equal(0.3, l, 6);
         Assert.Equal(0.0, r, 6);
     }
@@ -78,7 +77,7 @@ public sealed class StereoTrimTests
     [Fact]
     public void Apply_unity_leaves_the_buffer_untouched()
     {
-        var buf = Stereo(0.3f, -0.4f, 256);
+        float[] buf = Stereo(0.3f, -0.4f, 256);
         StereoTrim.Apply(buf, gainDb: 0.0, pan: 0.0);
         for (var i = 0; i < 256; i++)
         {
@@ -92,9 +91,9 @@ public sealed class StereoTrimTests
     [InlineData(6.0206, 2.0)]
     public void Apply_scales_in_place_by_gain(double gainDb, double factor)
     {
-        var buf = Stereo(0.25f, 0.25f, 256);
+        float[] buf = Stereo(0.25f, 0.25f, 256);
         StereoTrim.Apply(buf, gainDb, pan: 0.0);
-        var (l, r) = Rms(buf);
+        (double l, double r) = Rms(buf);
         Assert.Equal(0.25 * factor, l, 3);
         Assert.Equal(0.25 * factor, r, 3);
     }
@@ -102,9 +101,9 @@ public sealed class StereoTrimTests
     [Fact]
     public void Apply_hard_pan_right_zeros_the_left_channel_in_place()
     {
-        var buf = Stereo(0.3f, 0.3f, 256);
+        float[] buf = Stereo(0.3f, 0.3f, 256);
         StereoTrim.Apply(buf, gainDb: 0.0, pan: 1.0);
-        var (l, r) = Rms(buf);
+        (double l, double r) = Rms(buf);
         Assert.Equal(0.0, l, 6);
         Assert.Equal(0.3, r, 6);
     }

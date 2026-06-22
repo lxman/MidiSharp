@@ -43,9 +43,9 @@ public static class SfzDiagnostics
     /// <summary>Parse <paramref name="path"/> (resolving <c>#include</c>s) and report what it drops. No samples decoded.</summary>
     public static SfzLoadReport Scan(string path)
     {
-        var text = File.ReadAllText(path);
-        var baseDir = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".";
-        var instrument = SfzParser.Parse(text, inc => SfzBankLoader.ReadInclude(baseDir, inc));
+        string text = File.ReadAllText(path);
+        string baseDir = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".";
+        SfzInstrument instrument = SfzParser.Parse(text, inc => SfzBankLoader.ReadInclude(baseDir, inc));
         return Analyze(instrument, Path.GetFileNameWithoutExtension(path));
     }
 
@@ -54,30 +54,30 @@ public static class SfzDiagnostics
         // Count by region carrying the opcode (impact = zones affected), aggregating numbered
         // families so per-CC variants don't each take a row.
         var counts = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var region in instrument.Regions)
-            foreach (var kv in region.Opcodes)
+        foreach (SfzRegion? region in instrument.Regions)
+            foreach (KeyValuePair<string, string> kv in region.Opcodes)
             {
                 if (SfzOpcodes.IsHandled(kv.Key)) continue;
-                var family = SfzOpcodes.Family(kv.Key);
-                counts.TryGetValue(family, out var c);
+                string family = SfzOpcodes.Family(kv.Key);
+                counts.TryGetValue(family, out int c);
                 counts[family] = c + 1;
             }
 
         // <control>-scope opcodes never reach a region; fold them in (once each).
-        foreach (var kv in instrument.ControlIgnored)
+        foreach (KeyValuePair<string, int> kv in instrument.ControlIgnored)
         {
             if (SfzOpcodes.IsHandled(kv.Key)) continue;
-            var family = SfzOpcodes.Family(kv.Key);
-            counts.TryGetValue(family, out var c);
+            string family = SfzOpcodes.Family(kv.Key);
+            counts.TryGetValue(family, out int c);
             counts[family] = c + kv.Value;
         }
 
-        var unsupported = counts
+        List<SfzOpcodeStat> unsupported = counts
             .OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key, StringComparer.Ordinal)
             .Select(kv => new SfzOpcodeStat(kv.Key, kv.Value, SfzOpcodes.Describe(kv.Key)))
             .ToList();
 
-        var headers = instrument.IgnoredHeaders
+        List<SfzHeaderStat> headers = instrument.IgnoredHeaders
             .OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key, StringComparer.Ordinal)
             .Select(kv => new SfzHeaderStat(kv.Key, kv.Value))
             .ToList();

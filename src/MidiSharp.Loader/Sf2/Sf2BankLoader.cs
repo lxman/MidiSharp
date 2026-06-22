@@ -17,8 +17,8 @@ internal static class Sf2BankLoader
     public static IRBank Load(SoundFont sf, SoundBankLoadOptions options,
         IDisposable? sampleMemoryOwner = null)
     {
-        var samples = BuildSampleSource(sf, sampleMemoryOwner);
-        var patches = BuildPatches(sf);
+        MemoryMappedSf2SampleSource samples = BuildSampleSource(sf, sampleMemoryOwner);
+        IReadOnlyList<Patch> patches = BuildPatches(sf);
 
         return new IRBank
         {
@@ -50,9 +50,9 @@ internal static class Sf2BankLoader
             sampleIdByHeader[sf.SampleHeaders[i]] = i;
 
         var patches = new List<Patch>(sf.Presets.Count);
-        foreach (var preset in sf.Presets)
+        foreach (Preset? preset in sf.Presets)
         {
-            var patch = BuildPatch(preset, instrumentsByIndex, sampleIdByHeader);
+            Patch patch = BuildPatch(preset, instrumentsByIndex, sampleIdByHeader);
             // A zero-zone patch can never sound, and a stray empty preset sharing a
             // (bank, program) with a real one would shadow it in FindPatch's
             // last-wins lookup. Drop them.
@@ -67,14 +67,14 @@ internal static class Sf2BankLoader
         Dictionary<int, Instrument> instrumentsByIndex,
         Dictionary<SampleHeader, int> sampleIdByHeader)
     {
-        var presetGlobal = preset.GlobalZone;
+        Zone? presetGlobal = preset.GlobalZone;
         var zones = new List<PatchZone>();
 
-        foreach (var presetZone in preset.Zones)
+        foreach (Zone? presetZone in preset.Zones)
         {
             if (ReferenceEquals(presetZone, presetGlobal)) continue;
             if (presetZone.InstrumentIndex < 0) continue;
-            if (!instrumentsByIndex.TryGetValue(presetZone.InstrumentIndex, out var instrument)) continue;
+            if (!instrumentsByIndex.TryGetValue(presetZone.InstrumentIndex, out Instrument? instrument)) continue;
 
             ExpandInstrumentZones(presetGlobal, presetZone, instrument, sampleIdByHeader, zones);
         }
@@ -95,13 +95,13 @@ internal static class Sf2BankLoader
         Dictionary<SampleHeader, int> sampleIdByHeader,
         List<PatchZone> output)
     {
-        var instrumentGlobal = instrument.GlobalZone;
+        Zone? instrumentGlobal = instrument.GlobalZone;
 
-        foreach (var instZone in instrument.Zones)
+        foreach (Zone? instZone in instrument.Zones)
         {
             if (ReferenceEquals(instZone, instrumentGlobal)) continue;
             if (instZone.Sample is null) continue;
-            if (!sampleIdByHeader.TryGetValue(instZone.Sample, out var sampleId)) continue;
+            if (!sampleIdByHeader.TryGetValue(instZone.Sample, out int sampleId)) continue;
 
             var state = new Sf2GeneratorState();
 
@@ -119,7 +119,7 @@ internal static class Sf2BankLoader
 
             // Combine this zone's explicit modulators with the 10 defaults
             // (instrument modulators overwrite, preset modulators sum — SF2 §9.5).
-            var routes = Sf2ModulatorTranslator.Combine(
+            IReadOnlyList<ModulationRoute> routes = Sf2ModulatorTranslator.Combine(
                 instrumentGlobal?.Modulators,
                 instZone.Modulators,
                 presetGlobal?.Modulators,
@@ -137,20 +137,20 @@ internal static class Sf2BankLoader
         // pool into a fresh short[] — a large font no longer costs ~2× its sample size on the heap.
         // The ReadOnlyMemory roots its backing (a managed byte[], or an mmap view owned by
         // sampleMemoryOwner), so it outlives this SoundFont safely.
-        var smplBytes = sf.RawSampleBytes;
+        ReadOnlyMemory<byte> smplBytes = sf.RawSampleBytes;
         // Optional 24-bit extension (sm24). Empty for 16-bit fonts → the source keeps the 16-bit fast path.
-        var sm24Bytes = sf.RawSample24Bytes;
+        ReadOnlyMemory<byte> sm24Bytes = sf.RawSample24Bytes;
 
         var metadata = new SampleMetadata[sf.SampleHeaders.Count];
         var entries = new (long AbsoluteStart, long LengthFrames)[sf.SampleHeaders.Count];
 
         for (var i = 0; i < sf.SampleHeaders.Count; i++)
         {
-            var hdr = sf.SampleHeaders[i];
+            SampleHeader? hdr = sf.SampleHeaders[i];
             long absStart = hdr.Start;
-            var length = (long)hdr.End - hdr.Start;
-            var loopStart = (long)hdr.StartLoop - hdr.Start;
-            var loopEnd = (long)hdr.EndLoop - hdr.Start;
+            long length = (long)hdr.End - hdr.Start;
+            long loopStart = (long)hdr.StartLoop - hdr.Start;
+            long loopEnd = (long)hdr.EndLoop - hdr.Start;
 
             entries[i] = (absStart, length);
 

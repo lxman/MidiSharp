@@ -141,7 +141,7 @@ public sealed class LowFrequencyOscillator
 
         // Triangle wave LFO (standard for SF2)
         // Convert sine phase to triangle: 4 * |((phase/2π + 0.25) % 1) - 0.5| - 1
-        var normalizedPhase = (_phase / (2.0 * Math.PI) + 0.25) % 1.0;
+        double normalizedPhase = (_phase / (2.0 * Math.PI) + 0.25) % 1.0;
         Value = 4.0 * Math.Abs(normalizedPhase - 0.5) - 1.0;
 
         // Fade-in: ramp depth 0→1 linearly over the fade window after the delay (SFZ *_fade).
@@ -167,7 +167,7 @@ public sealed class LowFrequencyOscillator
         if (timecents <= -12000)
             return 0;
 
-        var seconds = Math.Pow(2.0, timecents / 1200.0);
+        double seconds = Math.Pow(2.0, timecents / 1200.0);
         return (int)(seconds * _sampleRate);
     }
 

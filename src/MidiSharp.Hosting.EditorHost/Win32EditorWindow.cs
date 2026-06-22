@@ -1,6 +1,5 @@
 using System;
 using System.Threading;
-using MidiSharp.Hosting;
 using static MidiSharp.Hosting.EditorHost.Win32;
 
 namespace MidiSharp.Hosting.EditorHost;
@@ -34,7 +33,7 @@ internal sealed class Win32Platform : IEditorPlatform
         EnsureDpiAware();
         try
         {
-            var hwnd = CreateWindowExW(0, "STATIC", null, 0, IntPtr.Zero, IntPtr.Zero, 0, 0,
+            IntPtr hwnd = CreateWindowExW(0, "STATIC", null, 0, IntPtr.Zero, IntPtr.Zero, 0, 0,
                 IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
             if (hwnd == IntPtr.Zero) return false;
             DestroyWindow(hwnd);
@@ -79,7 +78,7 @@ internal sealed class Win32EditorWindow : INativeEditorWindow
         {
             if (_hwnd == IntPtr.Zero) return 0;
             uint n = 0;
-            for (var c = GetWindow(_hwnd, GW_CHILD); c != IntPtr.Zero; c = GetWindow(c, GW_HWNDNEXT)) n++;
+            for (IntPtr c = GetWindow(_hwnd, GW_CHILD); c != IntPtr.Zero; c = GetWindow(c, GW_HWNDNEXT)) n++;
             return n;
         }
     }
@@ -101,7 +100,7 @@ internal sealed class Win32EditorWindow : INativeEditorWindow
         };
         if (RegisterClassExW(ref wc) == 0) { _hInstance = IntPtr.Zero; return false; }
 
-        var (winW, winH) = WindowSizeForClient(width, height);
+        (int winW, int winH) = WindowSizeForClient(width, height);
         _hwnd = CreateWindowExW(0, _className, title, WS_OVERLAPPEDWINDOW,
             CW_USEDEFAULT, CW_USEDEFAULT, winW, winH, IntPtr.Zero, IntPtr.Zero, _hInstance, IntPtr.Zero);
         if (_hwnd == IntPtr.Zero) { UnregisterClassW(_className, _hInstance); _hInstance = IntPtr.Zero; return false; }
@@ -111,9 +110,9 @@ internal sealed class Win32EditorWindow : INativeEditorWindow
     public void Resize(int width, int height)
     {
         if (_hwnd == IntPtr.Zero || width <= 0 || height <= 0) return;
-        var (winW, winH) = WindowSizeForClient(width, height);
+        (int winW, int winH) = WindowSizeForClient(width, height);
         SetWindowPos(_hwnd, IntPtr.Zero, 0, 0, winW, winH, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
-        var child = GetWindow(_hwnd, GW_CHILD);
+        IntPtr child = GetWindow(_hwnd, GW_CHILD);
         if (child != IntPtr.Zero)
             SetWindowPos(child, IntPtr.Zero, 0, 0, width, height, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     }

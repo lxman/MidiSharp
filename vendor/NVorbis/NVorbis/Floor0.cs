@@ -43,7 +43,7 @@ namespace MidiSharp.Audio.Vorbis
             {
                 var num = (int)packet.ReadBits(8);
                 if (num < 0 || num >= codebooks.Length) throw new InvalidDataException();
-                var book = codebooks[num];
+                ICodebook book = codebooks[num];
 
                 if (book.MapType == 0 || book.Dimensions < 1) throw new InvalidDataException();
 
@@ -66,7 +66,7 @@ namespace MidiSharp.Audio.Vorbis
 
         int[] SynthesizeBarkCurve(int n)
         {
-            var scale = _bark_map_size / toBARK(_rate / 2);
+            float scale = _bark_map_size / toBARK(_rate / 2);
 
             var map = new int[n + 1];
 
@@ -117,12 +117,12 @@ namespace MidiSharp.Audio.Vorbis
                     data.Amp = 0;
                     return data;
                 }
-                var book = _books[bookNum];
+                ICodebook book = _books[bookNum];
 
                 // first, the book decode...
                 for (var i = 0; i < _order;)
                 {
-                    var entry = book.DecodeScalar(packet);
+                    int entry = book.DecodeScalar(packet);
                     if (entry == -1)
                     {
                         // we ran out of data or the packet is corrupt...  0 the floor and return
@@ -153,13 +153,13 @@ namespace MidiSharp.Audio.Vorbis
         {
             if (!(floorData is Data data)) throw new ArgumentException("Incorrect packet data!");
 
-            var n = blockSize / 2;
+            int n = blockSize / 2;
 
             if (data.Amp > 0f)
             {
                 // this is pretty well stolen directly from libvorbis...  BSD license
-                var barkMap = _barkMaps[blockSize];
-                var wMap = _wMap[blockSize];
+                int[] barkMap = _barkMaps[blockSize];
+                float[] wMap = _wMap[blockSize];
 
                 var i = 0;
                 for (i = 0; i < _order; i++)
@@ -171,10 +171,10 @@ namespace MidiSharp.Audio.Vorbis
                 while (i < n)
                 {
                     int j;
-                    var k = barkMap[i];
+                    int k = barkMap[i];
                     var p = .5f;
                     var q = .5f;
-                    var w = wMap[k];
+                    float w = wMap[k];
                     for (j = 1; j < _order; j += 2)
                     {
                         q *= w - data.Coeff[j - 1];

@@ -71,12 +71,12 @@ namespace MidiSharp.Audio.Vorbis
         {
             var array = new float[blockSize];
 
-            var left = prevBlockSize / 2;
-            var wnd = blockSize;
-            var right = nextBlockSize / 2;
+            int left = prevBlockSize / 2;
+            int wnd = blockSize;
+            int right = nextBlockSize / 2;
 
-            var leftbegin = wnd / 4 - left / 2;
-            var rightbegin = wnd - wnd / 4 - right / 2;
+            int leftbegin = wnd / 4 - left / 2;
+            int rightbegin = wnd - wnd / 4 - right / 2;
 
             for (var i = 0; i < left; i++)
             {
@@ -85,7 +85,7 @@ namespace MidiSharp.Audio.Vorbis
                 array[leftbegin + i] = (float)Math.Sin(x * M_PI2);
             }
 
-            for (var i = leftbegin + left; i < rightbegin; i++)
+            for (int i = leftbegin + left; i < rightbegin; i++)
             {
                 array[i] = 1.0f;
             }
@@ -102,12 +102,12 @@ namespace MidiSharp.Audio.Vorbis
 
         private static OverlapInfo CalcOverlap(int prevBlockSize, int blockSize, int nextBlockSize)
         {
-            var leftOverlapHalfSize = prevBlockSize / 4;
-            var rightOverlapHalfSize = nextBlockSize / 4;
+            int leftOverlapHalfSize = prevBlockSize / 4;
+            int rightOverlapHalfSize = nextBlockSize / 4;
 
-            var packetStartIndex = blockSize / 4 - leftOverlapHalfSize;
-            var packetTotalLength = blockSize / 4 * 3 + rightOverlapHalfSize;
-            var packetValidLength = packetTotalLength - rightOverlapHalfSize * 2;
+            int packetStartIndex = blockSize / 4 - leftOverlapHalfSize;
+            int packetTotalLength = blockSize / 4 * 3 + rightOverlapHalfSize;
+            int packetValidLength = packetTotalLength - rightOverlapHalfSize * 2;
         
             return new OverlapInfo
             {
@@ -130,12 +130,12 @@ namespace MidiSharp.Audio.Vorbis
 
             if (_blockFlag)
             {
-                var prevFlag = packet.ReadBit();
-                var nextFlag = packet.ReadBit();
+                bool prevFlag = packet.ReadBit();
+                bool nextFlag = packet.ReadBit();
 
                 windowIndex = (prevFlag ? 1 : 0) + (nextFlag ? 2 : 0);
 
-                var overlapInfo = _overlapInfo[windowIndex];
+                OverlapInfo overlapInfo = _overlapInfo[windowIndex];
                 packetStartIndex = overlapInfo.PacketStartIndex;
                 packetValidLength = overlapInfo.PacketValidLength;
                 packetTotalLength = overlapInfo.PacketTotalLength;
@@ -153,11 +153,11 @@ namespace MidiSharp.Audio.Vorbis
 
         public bool Decode(IPacket packet, float[][] buffer, out int packetStartindex, out int packetValidLength, out int packetTotalLength)
         {
-            if (GetPacketInfo(packet, out var windowIndex, out packetStartindex, out packetValidLength, out packetTotalLength))
+            if (GetPacketInfo(packet, out int windowIndex, out packetStartindex, out packetValidLength, out packetTotalLength))
             {
                 _mapping.DecodePacket(packet, _blockSize, _channels, buffer);
 
-                var window = _windows[windowIndex];
+                float[] window = _windows[windowIndex];
                 for (var i = 0; i < _blockSize; i++)
                 {
                     for (var ch = 0; ch < _channels; ch++)
@@ -172,7 +172,7 @@ namespace MidiSharp.Audio.Vorbis
 
         public int GetPacketSampleCount(IPacket packet)
         {
-            GetPacketInfo(packet, out _, out var packetStartIndex, out var packetValidLength, out _);
+            GetPacketInfo(packet, out _, out int packetStartIndex, out int packetValidLength, out _);
             return packetValidLength - packetStartIndex;
         }
     }

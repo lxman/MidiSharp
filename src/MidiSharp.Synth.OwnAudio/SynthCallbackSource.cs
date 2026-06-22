@@ -38,8 +38,8 @@ internal sealed class SynthCallbackSource(int sampleRate, int channels) : BaseAu
 
     public override int ReadSamples(Span<float> buffer, int frameCount)
     {
-        var sampleCount = frameCount * _config.Channels;
-        var output = buffer.Slice(0, sampleCount);
+        int sampleCount = frameCount * _config.Channels;
+        Span<float> output = buffer.Slice(0, sampleCount);
 
         if (State != AudioState.Playing || Callback is null)
         {

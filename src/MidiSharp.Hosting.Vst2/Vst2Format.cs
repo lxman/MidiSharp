@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using MidiSharp.Hosting;
 using static MidiSharp.Hosting.Vst2.Vst2Abi;
 
 namespace MidiSharp.Hosting.Vst2;
@@ -21,19 +20,19 @@ public sealed unsafe class Vst2Format : IPluginFormat
     {
         get
         {
-            var env = Environment.GetEnvironmentVariable("VST_PATH");
+            string? env = Environment.GetEnvironmentVariable("VST_PATH");
             if (!string.IsNullOrEmpty(env))
             {
-                foreach (var p in env.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+                foreach (string p in env.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
                     yield return p;
                 yield break;
             }
-            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             yield return Path.Combine(home, ".vst");
             yield return "/usr/lib/vst";
             yield return "/usr/lib/lxvst";
             yield return "/usr/local/lib/vst";
-            var common = Environment.GetEnvironmentVariable("CommonProgramFiles");
+            string? common = Environment.GetEnvironmentVariable("CommonProgramFiles");
             if (!string.IsNullOrEmpty(common)) yield return Path.Combine(common, "VST2");
         }
     }
@@ -42,11 +41,11 @@ public sealed unsafe class Vst2Format : IPluginFormat
 
     public IEnumerable<string> EnumerateFiles(IEnumerable<string> searchPaths)
     {
-        foreach (var dir in searchPaths)
+        foreach (string dir in searchPaths)
         {
             if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) continue;
-            foreach (var ext in Extensions)
-                foreach (var file in Directory.EnumerateFiles(dir, ext).OrderBy(f => f, StringComparer.Ordinal))
+            foreach (string ext in Extensions)
+                foreach (string file in Directory.EnumerateFiles(dir, ext).OrderBy(f => f, StringComparer.Ordinal))
                     yield return file;
         }
     }
@@ -57,16 +56,16 @@ public sealed unsafe class Vst2Format : IPluginFormat
 
     public IEnumerable<PluginDescriptor> ScanFile(string file)
     {
-        var d = ScanOne(file);
+        PluginDescriptor? d = ScanOne(file);
         if (d != null) yield return d;
     }
 
     private static PluginDescriptor? ScanOne(string file)
     {
-        if (!NativeLibrary.TryLoad(file, out var lib)) return null;
+        if (!NativeLibrary.TryLoad(file, out IntPtr lib)) return null;
         try
         {
-            var eff = Instantiate(lib);
+            AEffect* eff = Instantiate(lib);
             if (eff == null || eff->Magic != EffectMagic) return null;
             try
             {
@@ -91,10 +90,10 @@ public sealed unsafe class Vst2Format : IPluginFormat
         Vst2Host.SampleRate = config.SampleRate;
         Vst2Host.BlockSize = config.MaxBlockFrames;
 
-        var lib = NativeLibrary.Load(descriptor.Path);
+        IntPtr lib = NativeLibrary.Load(descriptor.Path);
         try
         {
-            var eff = Instantiate(lib);
+            AEffect* eff = Instantiate(lib);
             if (eff == null || eff->Magic != EffectMagic)
                 throw new InvalidOperationException($"'{descriptor.Path}' is not a valid VST2 plugin.");
             if (eff->UniqueID.ToString() != descriptor.Id)
@@ -115,12 +114,12 @@ public sealed unsafe class Vst2Format : IPluginFormat
     private static AEffect* Instantiate(IntPtr lib)
     {
         IntPtr export = IntPtr.Zero;
-        foreach (var name in EntryExports)
+        foreach (string name in EntryExports)
             if (NativeLibrary.TryGetExport(lib, name, out export)) break;
         if (export == IntPtr.Zero) return null;
 
         var main = (delegate* unmanaged[Cdecl]<IntPtr, AEffect*>)export;
-        var eff = main(Vst2Host.Callback);
+        AEffect* eff = main(Vst2Host.Callback);
         if (eff == null || eff->Magic != EffectMagic) return eff;
         eff->Dispatcher(eff, EffOpen, 0, IntPtr.Zero, null, 0);
         return eff;

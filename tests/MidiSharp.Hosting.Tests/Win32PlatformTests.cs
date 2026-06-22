@@ -19,7 +19,7 @@ public sealed class Win32PlatformTests
         Assert.SkipWhen(!OperatingSystem.IsWindows(), "Win32 backend is Windows-only.");
         Assert.SkipWhen(!EditorPlatform.Current.IsAvailable, "no interactive desktop.");
 
-        using var window = EditorPlatform.Current.CreateWindow("Win32 platform test", 320, 240);
+        using INativeEditorWindow? window = EditorPlatform.Current.CreateWindow("Win32 platform test", 320, 240);
         Assert.NotNull(window);
         Assert.Equal("win32", window!.WindowApi);
         Assert.NotEqual(0UL, window.Handle);
@@ -47,7 +47,7 @@ public sealed class Win32PlatformTests
         Assert.SkipWhen(!OperatingSystem.IsWindows(), "Win32 backend is Windows-only.");
         Assert.SkipWhen(!EditorPlatform.Current.IsAvailable, "no interactive desktop.");
 
-        using var window = EditorPlatform.Current.CreateWindow("Win32 close test", 320, 240);
+        using INativeEditorWindow? window = EditorPlatform.Current.CreateWindow("Win32 close test", 320, 240);
         Assert.NotNull(window);
         window!.Map();
         Assert.False(window.ShouldClose);
@@ -63,19 +63,19 @@ public sealed class Win32PlatformTests
         Assert.SkipWhen(!OperatingSystem.IsWindows(), "Win32 backend is Windows-only.");
         Assert.SkipWhen(!EditorPlatform.Current.IsAvailable, "no interactive desktop.");
 
-        using var window = EditorPlatform.Current.CreateWindow("Win32 resize test", 320, 240);
+        using INativeEditorWindow? window = EditorPlatform.Current.CreateWindow("Win32 resize test", 320, 240);
         Assert.NotNull(window);
         window!.Map();
 
         // Embed a child the way a plugin would, then resize the host and confirm the child tracks it.
-        var child = CreateWindowExW(0, "STATIC", null, WS_CHILD | WS_VISIBLE, 0, 0, 100, 100,
+        IntPtr child = CreateWindowExW(0, "STATIC", null, WS_CHILD | WS_VISIBLE, 0, 0, 100, 100,
             (IntPtr)window.Handle, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
         Assert.NotEqual(IntPtr.Zero, child);
         try
         {
             window.Resize(500, 400);
             window.PumpOnce(10);
-            Assert.True(GetClientRect(child, out var r));
+            Assert.True(GetClientRect(child, out TestRect r));
             Assert.Equal(500, r.Right - r.Left);
             Assert.Equal(400, r.Bottom - r.Top);
         }

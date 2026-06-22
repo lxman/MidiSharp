@@ -21,8 +21,8 @@ public sealed class SteppedAndSampleHoldLfoTests
     public void Stepped_lfo_walks_its_step_table_as_held_levels()
     {
         // Two steps: +1 (loud) for the first half-period, -1 (quiet) for the second, held flat within each.
-        var lfo = VolumeLfo(wave: 13, steps: [1.0, -1.0]);
-        var amp = RenderAmplitude(lfo, Period * 2);
+        GenericLfo lfo = VolumeLfo(wave: 13, steps: [1.0, -1.0]);
+        float[] amp = RenderAmplitude(lfo, Period * 2);
 
         double early0 = amp[Period / 8], late0 = amp[3 * Period / 8];     // two points inside step 0
         double early1 = amp[5 * Period / 8], late1 = amp[7 * Period / 8]; // two points inside step 1
@@ -37,11 +37,11 @@ public sealed class SteppedAndSampleHoldLfoTests
     [Fact]
     public void Sample_hold_is_held_random_and_deterministic()
     {
-        var lfo = VolumeLfo(wave: 12, steps: null);
+        GenericLfo lfo = VolumeLfo(wave: 12, steps: null);
 
         // Deterministic: two independent renders are identical (S&H is hashed, not RNG-stream coupled).
-        var a = RenderAmplitude(lfo, Period * 3);
-        var b = RenderAmplitude(lfo, Period * 3);
+        float[] a = RenderAmplitude(lfo, Period * 3);
+        float[] b = RenderAmplitude(lfo, Period * 3);
         Assert.Equal(a, b);
 
         // Held within each half-period: S&H samples a new value twice per period and holds it.
@@ -50,7 +50,7 @@ public sealed class SteppedAndSampleHoldLfoTests
 
         // Random, not a fixed 2-level square: sample the centre of six successive half-periods and expect
         // several distinct held levels.
-        var centres = Enumerable.Range(0, 6)
+        int centres = Enumerable.Range(0, 6)
             .Select(h => Math.Round(a[(int)((h + 0.5) * Period / 2)], 4))
             .Distinct().Count();
         Assert.True(centres >= 3, $"expected varied S&H levels, got {centres} distinct");

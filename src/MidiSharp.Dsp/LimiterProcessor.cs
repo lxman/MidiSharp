@@ -54,23 +54,23 @@ public sealed class LimiterProcessor : IAudioProcessor
     private void Recompute()
     {
         _ceilingLinear = Math.Pow(10.0, _ceilingDb / 20.0);
-        var tau = _releaseMs / 1000.0;
+        double tau = _releaseMs / 1000.0;
         _releaseCoef = Math.Exp(-1.0 / (tau * _sampleRate));
     }
 
     public void Process(Span<float> interleavedStereo)
     {
         if (!Enabled) return;
-        var frames = interleavedStereo.Length / 2;
+        int frames = interleavedStereo.Length / 2;
         double ceiling = _ceilingLinear, releaseCoef = _releaseCoef, gain = _gain;
         for (var f = 0; f < frames; f++)
         {
             int li = f * 2, ri = li + 1;
             double l = interleavedStereo[li], r = interleavedStereo[ri];
-            var level = Math.Max(Math.Abs(l), Math.Abs(r));
+            double level = Math.Max(Math.Abs(l), Math.Abs(r));
 
             // Gain that would put this sample exactly at the ceiling (1.0 when already under it).
-            var required = level > ceiling ? ceiling / level : 1.0;
+            double required = level > ceiling ? ceiling / level : 1.0;
 
             // Instant attack: clamp down the moment a peak would overshoot. Otherwise release toward
             // unity, but never above what this sample allows — so the ceiling is never exceeded.

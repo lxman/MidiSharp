@@ -33,7 +33,7 @@ public readonly struct TimeDivision
     public static TimeDivision FromSmpte(int framesPerSecond, int ticksPerFrame)
     {
         // SMPTE format: bit 15 = 1, bits 14-8 = negative frames/sec, bits 7-0 = ticks/frame
-        var negFps = -framesPerSecond;
+        int negFps = -framesPerSecond;
         var raw = (short)((negFps << 8) | (ticksPerFrame & 0xFF));
         return new TimeDivision(raw);
     }

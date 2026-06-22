@@ -24,7 +24,7 @@ public class MidiSequencerDurationTests
 
     private static MidiSequencer Seq(params MidiTrack[] tracks)
     {
-        var fmt = tracks.Length > 1 ? MidiFormat.MultiTrack : MidiFormat.SingleTrack;
+        MidiFormat fmt = tracks.Length > 1 ? MidiFormat.MultiTrack : MidiFormat.SingleTrack;
         var header = new MidiHeader(fmt, (short)tracks.Length, TimeDivision.FromTicksPerQuarterNote(Ppq));
         return new MidiSequencer(new MidiFile(header, tracks));
     }
@@ -33,7 +33,7 @@ public class MidiSequencerDurationTests
     public void PaddedEndOfTrack_DurationAnchorsOnLastNote()
     {
         // Note ends at tick 960; EndOfTrack jammed out at tick 100000 (the bug pattern).
-        var seq = Seq(new MidiTrack([
+        MidiSequencer seq = Seq(new MidiTrack([
             Tempo120(),
             At(new NoteOnEvent { Channel = 0, Note = 60, Velocity = 100 }, 0),
             At(new NoteOffEvent { Channel = 0, Note = 60, Velocity = 0 }, 960),
@@ -49,7 +49,7 @@ public class MidiSequencerDurationTests
     {
         // Last note-ON is early (tick 480) but it's held until note-OFF at tick 3840.
         // Duration must reach the note-off, never the note-on.
-        var seq = Seq(new MidiTrack([
+        MidiSequencer seq = Seq(new MidiTrack([
             Tempo120(),
             At(new NoteOnEvent { Channel = 0, Note = 60, Velocity = 100 }, 480),
             At(new NoteOffEvent { Channel = 0, Note = 60, Velocity = 0 }, 3840),
@@ -64,7 +64,7 @@ public class MidiSequencerDurationTests
     {
         // The common, well-formed case: EndOfTrack sits at the same tick as the final note-off.
         // New and old behaviour must agree exactly — no change for normal files.
-        var seq = Seq(new MidiTrack([
+        MidiSequencer seq = Seq(new MidiTrack([
             Tempo120(),
             At(new NoteOnEvent { Channel = 0, Note = 60, Velocity = 100 }, 0),
             At(new NoteOffEvent { Channel = 0, Note = 60, Velocity = 0 }, 960),
@@ -79,7 +79,7 @@ public class MidiSequencerDurationTests
     {
         // No notes anywhere (a tempo/automation/lyric-only track): nothing to anchor on, so the
         // nominal end (last event) is kept rather than collapsing to zero.
-        var seq = Seq(new MidiTrack([
+        MidiSequencer seq = Seq(new MidiTrack([
             Tempo120(),
             At(new ControlChangeEvent { Channel = 0, Controller = 7, Value = 100 }, 480),
             EndOfTrack(2000)
@@ -99,7 +99,7 @@ public class MidiSequencerDurationTests
             At(new NoteOffEvent { Channel = 0, Note = 60, Velocity = 0 }, 960),
             EndOfTrack(960)
         ]);
-        var seq = Seq(conductor, music);
+        MidiSequencer seq = Seq(conductor, music);
 
         Assert.Equal(seq.TickToTime(960), seq.Duration);
         Assert.True(seq.Duration < seq.TickToTime(262143));

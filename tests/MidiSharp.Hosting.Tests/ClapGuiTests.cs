@@ -1,5 +1,4 @@
 using System.Linq;
-using MidiSharp.Hosting;
 using MidiSharp.Hosting.Clap;
 using Xunit;
 
@@ -17,23 +16,23 @@ public sealed class ClapGuiTests
 
     private IHostedPlugin? Load(string id)
     {
-        var d = _format.Scan(_format.DefaultSearchPaths).FirstOrDefault(p => p.Id == id);
+        PluginDescriptor? d = _format.Scan(_format.DefaultSearchPaths).FirstOrDefault(p => p.Id == id);
         return d == null ? null : _format.Load(d, Config);
     }
 
     [Fact]
     public void Plugin_with_an_editor_reports_its_gui_capability_and_size()
     {
-        var plugin = Load("midisharp.test.gui");
+        IHostedPlugin? plugin = Load("midisharp.test.gui");
         Assert.SkipWhen(plugin == null, "CLAP gui fixture not installed.");
-        using var _ = plugin;
+        using IHostedPlugin _ = plugin;
 
-        var gui = plugin!.Gui;
+        IPluginGui? gui = plugin!.Gui;
         Assert.NotNull(gui);
         Assert.True(gui!.HasEditor);
         Assert.True(gui.IsApiSupported("x11", floating: false), "the editor should support embedded X11.");
         Assert.False(gui.IsApiSupported("win32", floating: false), "win32 isn't available on Linux.");
-        Assert.True(gui.TryGetSize(out var w, out var h));
+        Assert.True(gui.TryGetSize(out int w, out int h));
         Assert.Equal(320, w);
         Assert.Equal(240, h);
     }
@@ -41,9 +40,9 @@ public sealed class ClapGuiTests
     [Fact]
     public void Plugin_without_an_editor_exposes_no_gui()
     {
-        var plugin = Load("midisharp.test.gain");
+        IHostedPlugin? plugin = Load("midisharp.test.gain");
         Assert.SkipWhen(plugin == null, "CLAP gain fixture not installed.");
-        using var _ = plugin;
+        using IHostedPlugin _ = plugin;
         Assert.Null(plugin!.Gui);
     }
 }

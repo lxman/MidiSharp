@@ -86,18 +86,18 @@ internal sealed class Sf2GeneratorState
     /// <summary>Apply gens as SET (instrument-zone semantics: replace default).</summary>
     public void ApplySet(IReadOnlyList<Generator> generators)
     {
-        foreach (var gen in generators) ApplyOne(gen, isPresetLevel: false);
+        foreach (Generator? gen in generators) ApplyOne(gen, isPresetLevel: false);
     }
 
     /// <summary>Apply gens as ADD (preset-zone semantics: add to accumulated value).</summary>
     public void ApplyAdd(IReadOnlyList<Generator> generators)
     {
-        foreach (var gen in generators) ApplyOne(gen, isPresetLevel: true);
+        foreach (Generator? gen in generators) ApplyOne(gen, isPresetLevel: true);
     }
 
     private void ApplyOne(Generator gen, bool isPresetLevel)
     {
-        var a = gen.Amount;
+        GeneratorAmount a = gen.Amount;
         switch (gen.Operator)
         {
             // KeyRange / VelRange use intersection semantics, not SET or ADD.
@@ -177,7 +177,7 @@ internal sealed class Sf2GeneratorState
 
     private static void AddOrSet(ref short field, int delta, bool add)
     {
-        var v = add ? field + delta : delta;
+        int v = add ? field + delta : delta;
         if (v > short.MaxValue) v = short.MaxValue;
         else if (v < short.MinValue) v = short.MinValue;
         field = (short)v;

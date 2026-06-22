@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
-using MidiSharp.Hosting;
 
 namespace MidiSharp.Hosting.EditorHost;
 
@@ -73,7 +72,7 @@ internal sealed class EditorRunLoop : IEditorRunLoop
         PollFd[] set;
         Action[] readyActions;
         int timeout;
-        var now = Environment.TickCount64;
+        long now = Environment.TickCount64;
         lock (_lock)
         {
             set = new PollFd[1 + _fds.Count];
@@ -82,7 +81,7 @@ internal sealed class EditorRunLoop : IEditorRunLoop
             for (var i = 0; i < _fds.Count; i++) { set[i + 1] = new PollFd { Fd = _fds[i].fd, Events = POLLIN }; readyActions[i] = _fds[i].onReady; }
 
             timeout = maxWaitMs;
-            foreach (var t in _timers) { var d = (int)Math.Max(0, t.NextDue - now); if (d < timeout) timeout = d; }
+            foreach (Timer t in _timers) { var d = (int)Math.Max(0, t.NextDue - now); if (d < timeout) timeout = d; }
         }
 
         poll(set, (nuint)set.Length, timeout);
@@ -95,9 +94,9 @@ internal sealed class EditorRunLoop : IEditorRunLoop
         now = Environment.TickCount64;
         List<Timer> due = [];
         lock (_lock)
-            foreach (var t in _timers)
+            foreach (Timer t in _timers)
                 if (now >= t.NextDue) { due.Add(t); t.NextDue = now + t.Period; }
-        foreach (var t in due) { try { t.OnTick(); } catch { } }
+        foreach (Timer t in due) { try { t.OnTick(); } catch { } }
 
         // Posted work.
         while (true)

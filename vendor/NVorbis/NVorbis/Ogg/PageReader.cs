@@ -20,7 +20,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
 
         private ushort ParsePageHeader(byte[] pageBuf, int? streamSerial, bool? isResync)
         {
-            var segCnt = pageBuf[26];
+            byte segCnt = pageBuf[26];
             var dataLen = 0;
             var pktCnt = 0;
             var isContinued = false;
@@ -28,7 +28,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
             var size = 0;
             for (int i = 0, idx = 27; i < segCnt; i++, idx++)
             {
-                var seg = pageBuf[idx];
+                byte seg = pageBuf[idx];
                 size += seg;
                 dataLen += seg;
                 if (seg < 255)
@@ -66,7 +66,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
 
             for (var i = 0; i < segments.Length; i++)
             {
-                var seg = segments[i];
+                byte seg = segments[i];
                 size += seg;
                 if (seg < 255)
                 {
@@ -126,7 +126,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
 
             _packets = ReadPackets(PacketCount, new Span<byte>(pageBuf, 27, pageBuf[26]), new Memory<byte>(pageBuf, 27 + pageBuf[26], pageBuf.Length - 27 - pageBuf[26]));
 
-            if (_streamReaders.TryGetValue(streamSerial, out var spr))
+            if (_streamReaders.TryGetValue(streamSerial, out IStreamPageReader spr))
             {
                 spr.AddPage();
 
@@ -139,7 +139,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
             }
             else
             {
-                var streamReader = CreateStreamPageReader(this, StreamSerial);
+                IStreamPageReader streamReader = CreateStreamPageReader(this, StreamSerial);
                 streamReader.AddPage();
                 _streamReaders.Add(StreamSerial, streamReader);
                 if (!newStreamCallback(streamReader.PacketProvider))
@@ -167,7 +167,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
             var hdrBuf = new byte[282];
 
             SeekStream(offset);
-            var cnt = EnsureRead(hdrBuf, 0, 27);
+            int cnt = EnsureRead(hdrBuf, 0, 27);
 
             PageOffset = offset;
             if (VerifyHeader(hdrBuf, 0, ref cnt))
@@ -182,7 +182,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
 
         protected override void SetEndOfStreams()
         {
-            foreach (var kvp in _streamReaders)
+            foreach (KeyValuePair<int, IStreamPageReader> kvp in _streamReaders)
             {
                 kvp.Value.SetEndOfStream();
             }

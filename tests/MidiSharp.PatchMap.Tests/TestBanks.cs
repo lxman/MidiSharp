@@ -12,7 +12,7 @@ internal static class TestBanks
     /// </summary>
     public static IRBank OneSamplePatch(string name, float sampleValue, int bank, int program, string patchName)
     {
-        var data = new[] { new[] { sampleValue, sampleValue, sampleValue, sampleValue } };
+        float[][] data = new[] { new[] { sampleValue, sampleValue, sampleValue, sampleValue } };
         var meta = new[] { new SampleMetadata { SampleRate = 44100, Channels = 1, LengthFrames = 4, RootKey = 60 } };
         var zone = new PatchZone { Sample = new SampleRef { SampleId = 0 } };
         var patch = new Patch { Bank = bank, Program = program, Name = patchName, Zones = [zone] };

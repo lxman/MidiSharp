@@ -49,8 +49,8 @@ namespace MidiSharp.Audio.Vorbis.Ogg
 
         public IPacket PeekNextPacket()
         {
-            var pageIndex = _pageIndex;
-            var packetIndex = _packetIndex;
+            int pageIndex = _pageIndex;
+            int packetIndex = _packetIndex;
             return GetNextPacket(ref pageIndex, ref packetIndex);
         }
 
@@ -58,8 +58,8 @@ namespace MidiSharp.Audio.Vorbis.Ogg
         {
             if (_reader == null) throw new ObjectDisposedException(nameof(PacketProvider));
 
-            var pageIndex = _reader.FindPage(granulePos);
-            var packetIndex = FindPacket(pageIndex, preRoll, ref granulePos, getPacketGranuleCount);
+            int pageIndex = _reader.FindPage(granulePos);
+            int packetIndex = FindPacket(pageIndex, preRoll, ref granulePos, getPacketGranuleCount);
 
             if (!NormalizePacketIndex(ref pageIndex, ref packetIndex))
             {
@@ -77,15 +77,15 @@ namespace MidiSharp.Audio.Vorbis.Ogg
             if (pageIndex > 0)
             {
                 int lastPagePacketLength;
-                if (_reader.GetPage(pageIndex - 1, out var lastPageGranulePos, out _, out _, out var isContinued, out var lastPacketCount, out _))
+                if (_reader.GetPage(pageIndex - 1, out long lastPageGranulePos, out _, out _, out bool isContinued, out int lastPacketCount, out _))
                 {
                     if (pageIndex > _reader.FirstDataPageIndex)
                     {
                         --pageIndex;
-                        var lastPacketIndex = lastPacketCount - 1;
+                        int lastPacketIndex = lastPacketCount - 1;
                         // this will either be a continued packet OR the last packet of the last page
                         // in both cases that's precisely the value we need
-                        var lastPacket = CreatePacket(ref pageIndex, ref lastPacketIndex, false, 0, false, isContinued, lastPacketCount, 0);
+                        Packet lastPacket = CreatePacket(ref pageIndex, ref lastPacketIndex, false, 0, false, isContinued, lastPacketCount, 0);
                         if (lastPacket == null)
                         {
                             throw new InvalidDataException("Could not find end of continuation!");
@@ -106,7 +106,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
 
         private (long[] gps, long endGP) GetTargetPageInfo(int pageIndex, int firstRealPacket, int lastPagePacketLength, GetPacketGranuleCount getPacketGranuleCount)
         {
-            if (!_reader.GetPage(pageIndex, out var pageGranulePos, out var isResync, out var isContinuation, out var isContinued, out var packetCount, out _))
+            if (!_reader.GetPage(pageIndex, out long pageGranulePos, out bool isResync, out bool isContinuation, out bool isContinued, out int packetCount, out _))
             {
                 throw new InvalidDataException("Could not get found page?!");
             }
@@ -119,14 +119,14 @@ namespace MidiSharp.Audio.Vorbis.Ogg
 
             // get the granule positions of all packets in the page
             var gps = new long[packetCount];
-            var endGP = pageGranulePos;
-            for (var i = packetCount - 1; i >= firstRealPacket; i--)
+            long endGP = pageGranulePos;
+            for (int i = packetCount - 1; i >= firstRealPacket; i--)
             {
                 gps[i] = endGP;
 
                 // it would be nice to pass false instead of isContinued, but (hypothetically) we don't know if getPacketGranuleCount(...) needs the whole thing...
                 // Vorbis doesn't, but someone might decide to try to use us for another purpose so we'll be good here.
-                var packet = CreatePacket(ref pageIndex, ref i, false, pageGranulePos, i == 0 && isResync, isContinued, packetCount, 0);
+                Packet packet = CreatePacket(ref pageIndex, ref i, false, pageGranulePos, i == 0 && isResync, isContinued, packetCount, 0);
                 if (packet == null)
                 {
                     throw new InvalidDataException("Could not find end of continuation!");
@@ -149,7 +149,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
             // next check for a bugged vorbis encoder...
             if (endGP != lastPageGranulePos)
             {
-                var diff = endGP - lastPageGranulePos;
+                long diff = endGP - lastPageGranulePos;
                 if (GetIsVorbisBugDiff(diff))
                 {
                     if (diff > 0)
@@ -208,13 +208,13 @@ namespace MidiSharp.Audio.Vorbis.Ogg
             // We check for this by looking for a difference in the previous page's granulePos vs. the calculated value
 
             // first we look at the page info to see how it is set up
-            var (lastPageGranulePos, lastPagePacketLength, firstRealPacket) = GetPreviousPageInfo(pageIndex, getPacketGranuleCount);
+            (long lastPageGranulePos, int lastPagePacketLength, int firstRealPacket) = GetPreviousPageInfo(pageIndex, getPacketGranuleCount);
 
             // now get the info on the target page
-            var (gps, endGP) = GetTargetPageInfo(pageIndex, firstRealPacket, lastPagePacketLength, getPacketGranuleCount);
+            (long[] gps, long endGP) = GetTargetPageInfo(pageIndex, firstRealPacket, lastPagePacketLength, getPacketGranuleCount);
 
             // finally figure out which packet in our known info we need to use
-            var packetIndex = FindPacket(pageIndex, gps, endGP, lastPageGranulePos, lastPagePacketLength, ref granulePos);
+            int packetIndex = FindPacket(pageIndex, gps, endGP, lastPageGranulePos, lastPagePacketLength, ref granulePos);
 
             // then apply the preRoll (but only if we're not seeking into the first packet, which is its own preRoll)
             if (endGP > 0 || packetIndex > 1)
@@ -238,7 +238,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
             diff = Math.Abs(diff);
 
             // find the count for y
-            var temp = diff;
+            long temp = diff;
             var shortBlockBits = 0;
             while (temp > 0 && (temp & 1) == 0)
             {
@@ -247,7 +247,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
             }
 
             // find the count for x (shortcut: start from shortBlockBits since this is really an offset from there)
-            var longBlockBits = shortBlockBits;
+            int longBlockBits = shortBlockBits;
             while ((temp & 1) == 1)
             {
                 ++longBlockBits;
@@ -262,13 +262,13 @@ namespace MidiSharp.Audio.Vorbis.Ogg
         // if packet index is larger than the current page allows, we just return it as-is
         private bool NormalizePacketIndex(ref int pageIndex, ref int packetIndex)
         {
-            if (!_reader.GetPage(pageIndex, out _, out var isResync, out var isContinuation, out _, out _, out _))
+            if (!_reader.GetPage(pageIndex, out _, out bool isResync, out bool isContinuation, out _, out _, out _))
             {
                 return false;
             }
 
-            var pgIdx = pageIndex;
-            var pktIdx = packetIndex;
+            int pgIdx = pageIndex;
+            int pktIdx = packetIndex;
 
             while (pktIdx < (isContinuation ? 1: 0))
             {
@@ -276,8 +276,8 @@ namespace MidiSharp.Audio.Vorbis.Ogg
                 if (isContinuation && isResync) return false;
 
                 // get the previous packet
-                var wasContinuation = isContinuation;
-                if (!_reader.GetPage(--pgIdx, out _, out isResync, out isContinuation, out var isContinued, out var packetCount, out _))
+                bool wasContinuation = isContinuation;
+                if (!_reader.GetPage(--pgIdx, out _, out isResync, out isContinuation, out bool isContinued, out int packetCount, out _))
                 {
                     return false;
                 }
@@ -302,7 +302,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
             {
                 _lastPacket = null;
 
-                while (_reader.GetPage(pageIndex, out var granulePos, out var isResync, out _, out var isContinued, out var packetCount, out var pageOverhead))
+                while (_reader.GetPage(pageIndex, out long granulePos, out bool isResync, out _, out bool isContinued, out int packetCount, out int pageOverhead))
                 {
                     _lastPacketPageIndex = pageIndex;
                     _lastPacketPacketIndex = packetIndex;
@@ -323,7 +323,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
         private Packet CreatePacket(ref int pageIndex, ref int packetIndex, bool advance, long granulePos, bool isResync, bool isContinued, int packetCount, int pageOverhead)
         {
             // save off the packet data for the initial packet
-            var firstPacketData = _reader.GetPagePackets(pageIndex)[packetIndex];
+            Memory<byte> firstPacketData = _reader.GetPagePackets(pageIndex)[packetIndex];
 
             // create the packet list and add the item to it
             var pktList = new List<int>(2) { (pageIndex << 8) | packetIndex };
@@ -331,7 +331,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
             // make sure we handle continuations
             bool isLastPacket;
             bool isFirstPacket;
-            var finalPage = pageIndex;
+            int finalPage = pageIndex;
             if (isContinued && packetIndex == packetCount - 1)
             {
                 // by definition, it's the first packet in the page it ends on
@@ -344,10 +344,10 @@ namespace MidiSharp.Audio.Vorbis.Ogg
                 }
 
                 // go read the next page(s) that include this packet
-                var contPageIdx = pageIndex;
+                int contPageIdx = pageIndex;
                 while (isContinued)
                 {
-                    if (!_reader.GetPage(++contPageIdx, out granulePos, out isResync, out var isContinuation, out isContinued, out packetCount, out var contPageOverhead))
+                    if (!_reader.GetPage(++contPageIdx, out granulePos, out isResync, out bool isContinuation, out isContinued, out packetCount, out int contPageOverhead))
                     {
                         // no more pages?  In any case, we can't satify the request
                         return null;
@@ -438,10 +438,10 @@ namespace MidiSharp.Audio.Vorbis.Ogg
 
         Memory<byte> IPacketReader.GetPacketData(int pagePacketIndex)
         {
-            var pageIndex = (pagePacketIndex >> 8) & 0xFFFFFF;
-            var packetIndex = pagePacketIndex & 0xFF;
+            int pageIndex = (pagePacketIndex >> 8) & 0xFFFFFF;
+            int packetIndex = pagePacketIndex & 0xFF;
 
-            var packets = _reader.GetPagePackets(pageIndex);
+            Memory<byte>[] packets = _reader.GetPagePackets(pageIndex);
             if (packetIndex < packets.Length)
             {
                 return packets[packetIndex];

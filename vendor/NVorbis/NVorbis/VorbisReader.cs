@@ -44,7 +44,7 @@ namespace MidiSharp.Audio.Vorbis
         {
             _decoders = [];
 
-            var containerReader = CreateContainerReader(stream, closeOnDispose);
+            Contracts.IContainerReader containerReader = CreateContainerReader(stream, closeOnDispose);
             containerReader.NewStreamCallback = ProcessNewStream;
 
             if (!containerReader.TryInit() || _decoders.Count == 0)
@@ -74,7 +74,7 @@ namespace MidiSharp.Audio.Vorbis
 
         private bool ProcessNewStream(Contracts.IPacketProvider packetProvider)
         {
-            var decoder = CreateStreamDecoder(packetProvider);
+            IStreamDecoder decoder = CreateStreamDecoder(packetProvider);
             decoder.ClipSamples = true;
 
             var ea = new NewStreamEventArgs(decoder);
@@ -94,7 +94,7 @@ namespace MidiSharp.Audio.Vorbis
         {
             if (_decoders != null)
             {
-                foreach (var decoder in _decoders)
+                foreach (IStreamDecoder decoder in _decoders)
                 {
                     decoder.Dispose();
                 }
@@ -293,8 +293,8 @@ namespace MidiSharp.Audio.Vorbis
         {
             if (index < 0 || index >= _decoders.Count) throw new ArgumentOutOfRangeException(nameof(index));
 
-            var newDecoder = _decoders[index];
-            var oldDecoder = _streamDecoder;
+            IStreamDecoder newDecoder = _decoders[index];
+            IStreamDecoder oldDecoder = _streamDecoder;
             if (newDecoder == oldDecoder) return false;
 
             // carry-through the clipping setting
@@ -355,7 +355,7 @@ namespace MidiSharp.Audio.Vorbis
         public int ReadSamples(Span<float> buffer)
         {
             // don't allow non-aligned reads (always on a full sample boundary!)
-            var count = buffer.Length - buffer.Length % _streamDecoder.Channels;
+            int count = buffer.Length - buffer.Length % _streamDecoder.Channels;
             if (!buffer.IsEmpty)
             {
                 return _streamDecoder.Read(buffer, 0, count);

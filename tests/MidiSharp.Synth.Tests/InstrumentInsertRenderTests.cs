@@ -28,9 +28,9 @@ public sealed class InstrumentInsertRenderTests
     [Fact]
     public void No_inserts_is_bit_identical()
     {
-        var baseline = RenderProgram0(null);
+        (float[] left, float[] right) baseline = RenderProgram0(null);
         // Register then clear an insert — the snapshot is empty again, so the pre-Tier-2 path runs.
-        var cleared = RenderProgram0(s => { s.SetInstrumentInsert(0, 0, new GainInsert { Gain = 0.5f }); s.ClearInstrumentInserts(); });
+        (float[] left, float[] right) cleared = RenderProgram0(s => { s.SetInstrumentInsert(0, 0, new GainInsert { Gain = 0.5f }); s.ClearInstrumentInserts(); });
         Assert.Equal(baseline.left, cleared.left);
         Assert.Equal(baseline.right, cleared.right);
     }
@@ -38,8 +38,8 @@ public sealed class InstrumentInsertRenderTests
     [Fact]
     public void Passthrough_insert_is_bit_identical_for_a_single_instrument()
     {
-        var baseline = RenderProgram0(null);
-        var passthrough = RenderProgram0(s => s.SetInstrumentInsert(0, 0, new PassthroughInsert()));
+        (float[] left, float[] right) baseline = RenderProgram0(null);
+        (float[] left, float[] right) passthrough = RenderProgram0(s => s.SetInstrumentInsert(0, 0, new PassthroughInsert()));
         Assert.Equal(baseline.left, passthrough.left);    // bus round-trip (clear→+=→interleave→+=) is exact
         Assert.Equal(baseline.right, passthrough.right);
     }
@@ -47,8 +47,8 @@ public sealed class InstrumentInsertRenderTests
     [Fact]
     public void Gain_insert_scales_the_instrument()
     {
-        var flat = Rms(RenderProgram0(null).left);
-        var half = Rms(RenderProgram0(s => s.SetInstrumentInsert(0, 0, new GainInsert { Gain = 0.5f })).left);
+        double flat = Rms(RenderProgram0(null).left);
+        double half = Rms(RenderProgram0(s => s.SetInstrumentInsert(0, 0, new GainInsert { Gain = 0.5f })).left);
         Assert.True(Math.Abs(half / flat - 0.5) < 0.001, $"×0.5 insert should halve RMS (ratio {half / flat:F4})");
     }
 
@@ -56,9 +56,9 @@ public sealed class InstrumentInsertRenderTests
     public void Insert_on_one_instrument_leaves_another_untouched()
     {
         // Program 1 alone — the reference for the part we are NOT inserting on.
-        var prog1Only = RenderTwo(insertOnProg0: null, onlyProgram1: true);
+        (float[] left, float[] right) prog1Only = RenderTwo(insertOnProg0: null, onlyProgram1: true);
         // Both parts, with a silencing (×0) insert on program 0: master must equal program 1 alone.
-        var muted0 = RenderTwo(insertOnProg0: new GainInsert { Gain = 0f }, onlyProgram1: false);
+        (float[] left, float[] right) muted0 = RenderTwo(insertOnProg0: new GainInsert { Gain = 0f }, onlyProgram1: false);
         Assert.Equal(prog1Only.left, muted0.left);
         Assert.Equal(prog1Only.right, muted0.right);
     }
@@ -103,7 +103,7 @@ public sealed class InstrumentInsertRenderTests
 
     private static IRBank MakeBank(int programs)
     {
-        var data = new[] { Constant(0.5f, 16000) };
+        float[][] data = new[] { Constant(0.5f, 16000) };
         var meta = new[] { new SampleMetadata { SampleRate = Rate, Channels = 1, LengthFrames = 16000, RootKey = 60 } };
         var patches = new Patch[programs];
         for (var p = 0; p < programs; p++)

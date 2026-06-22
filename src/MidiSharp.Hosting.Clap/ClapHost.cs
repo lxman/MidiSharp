@@ -2,7 +2,6 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using MidiSharp.Hosting;
 using static MidiSharp.Hosting.Clap.ClapAbi;
 
 namespace MidiSharp.Hosting.Clap;
@@ -92,7 +91,7 @@ internal sealed unsafe class ClapHost : IDisposable
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static void* HostGetExtension(ClapHost_Native* host, byte* extensionId)
     {
-        var id = Marshal.PtrToStringUTF8((IntPtr)extensionId);
+        string? id = Marshal.PtrToStringUTF8((IntPtr)extensionId);
         if (id == ExtTimerSupport) return (void*)TimerSupport;
         if (id == ExtPosixFdSupport) return (void*)FdSupport;
         if (id == ExtThreadCheck) return (void*)ThreadCheck;
@@ -113,11 +112,11 @@ internal sealed unsafe class ClapHost : IDisposable
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static byte HostRegisterTimer(ClapAbi.ClapHost* host, uint periodMs, uint* timerId)
     {
-        var self = Self((ClapHost_Native*)host);
+        ClapHost self = Self((ClapHost_Native*)host);
         if (self._loop == null || self._pluginTimer == null) return 0;
-        var id = self._nextTimerId++;
-        var plugin = self._plugin;
-        var ext = self._pluginTimer;
+        uint id = self._nextTimerId++;
+        ClapAbi.ClapPlugin* plugin = self._plugin;
+        ClapPluginTimerSupport* ext = self._pluginTimer;
         self._loop.RegisterTimer(periodMs, id, () => ext->OnTimer(plugin, id));
         if (timerId != null) *timerId = id;
         return 1;
@@ -133,10 +132,10 @@ internal sealed unsafe class ClapHost : IDisposable
     // ── clap.posix-fd-support ──
     private static byte RegisterFdImpl(ClapAbi.ClapHost* host, int fd, uint flags)
     {
-        var self = Self((ClapHost_Native*)host);
+        ClapHost self = Self((ClapHost_Native*)host);
         if (self._loop == null || self._pluginFd == null) return 0;
-        var plugin = self._plugin;
-        var ext = self._pluginFd;
+        ClapAbi.ClapPlugin* plugin = self._plugin;
+        ClapPluginPosixFdSupport* ext = self._pluginFd;
         self._loop.RegisterFd(fd, () => ext->OnFd(plugin, fd, flags));
         return 1;
     }
@@ -207,9 +206,9 @@ internal sealed unsafe class ClapHost : IDisposable
     {
         lock (Ext)
         {
-            if (!Ext.TryGetValue(s, out var p))
+            if (!Ext.TryGetValue(s, out IntPtr p))
             {
-                var bytes = Encoding.UTF8.GetBytes(s);
+                byte[] bytes = Encoding.UTF8.GetBytes(s);
                 p = Marshal.AllocHGlobal(bytes.Length + 1);
                 Marshal.Copy(bytes, 0, p, bytes.Length);
                 ((byte*)p)[bytes.Length] = 0;
@@ -221,8 +220,8 @@ internal sealed unsafe class ClapHost : IDisposable
 
     private static IntPtr Utf8(string s)
     {
-        var bytes = Encoding.UTF8.GetBytes(s);
-        var p = Marshal.AllocHGlobal(bytes.Length + 1);
+        byte[] bytes = Encoding.UTF8.GetBytes(s);
+        IntPtr p = Marshal.AllocHGlobal(bytes.Length + 1);
         Marshal.Copy(bytes, 0, p, bytes.Length);
         ((byte*)p)[bytes.Length] = 0;
         return p;

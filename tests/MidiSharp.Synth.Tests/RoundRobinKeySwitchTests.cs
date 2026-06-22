@@ -21,8 +21,8 @@ public sealed class RoundRobinKeySwitchTests
     {
         // Control: two plain zones on key 60 both match → two voices. This is the
         // baseline that round-robin/keyswitch must narrow to one.
-        var bank = MakeBank(Zone(0), Zone(1));
-        var synth = NewSynth(bank);
+        IRBank bank = MakeBank(Zone(0), Zone(1));
+        Synthesizer synth = NewSynth(bank);
 
         synth.NoteOn(0, 60, 100);
         Assert.Equal(2, synth.ActiveVoiceCount);
@@ -31,10 +31,10 @@ public sealed class RoundRobinKeySwitchTests
     [Fact]
     public void RoundRobin_rotatesOneZonePerNoteOn()
     {
-        var bank = MakeBank(
+        IRBank bank = MakeBank(
             Zone(sampleId: 0, rr: new RoundRobin(0, 2)),   // loud, position 0
             Zone(sampleId: 1, rr: new RoundRobin(1, 2)));  // silent, position 1
-        var synth = NewSynth(bank);
+        Synthesizer synth = NewSynth(bank);
 
         synth.NoteOn(0, 60, 100);
         Assert.Equal(1, synth.ActiveVoiceCount);           // exactly one variant, not both
@@ -51,13 +51,13 @@ public sealed class RoundRobinKeySwitchTests
     [Fact]
     public void KeySwitch_pressingSwitchKeySoundsNoNote()
     {
-        var bank = MakeBank(
+        IRBank bank = MakeBank(
             Zone(sampleId: 0, ks: new KeySwitch(24, 25, SelectingKey: 24, Default: 24)),
             Zone(sampleId: 1, ks: new KeySwitch(24, 25, SelectingKey: 25, Default: 24)));
-        var synth = NewSynth(bank);
+        Synthesizer synth = NewSynth(bank);
 
         synth.NoteOn(0, 60, 100);                          // default selection (24) → articulation A
-        var afterNote = synth.ActiveVoiceCount;
+        int afterNote = synth.ActiveVoiceCount;
         Assert.Equal(1, afterNote);
 
         synth.NoteOn(0, 25, 100);                          // a switch key — selects, sounds nothing
@@ -67,10 +67,10 @@ public sealed class RoundRobinKeySwitchTests
     [Fact]
     public void KeySwitch_selectsArticulationByLastPressedSwitch()
     {
-        var bank = MakeBank(
+        IRBank bank = MakeBank(
             Zone(sampleId: 0, ks: new KeySwitch(24, 25, SelectingKey: 24, Default: 24)),  // loud
             Zone(sampleId: 1, ks: new KeySwitch(24, 25, SelectingKey: 25, Default: 24))); // silent
-        var synth = NewSynth(bank);
+        Synthesizer synth = NewSynth(bank);
 
         // Before any switch: default 24 → articulation A (loud).
         synth.NoteOn(0, 60, 100);

@@ -45,15 +45,15 @@ public sealed class TempoMap
             throw new NotSupportedException("SMPTE time division not yet supported");
         }
 
-        var ticksPerQuarterNote = file.Header.Division.TicksPerQuarterNote;
+        int ticksPerQuarterNote = file.Header.Division.TicksPerQuarterNote;
         var tempoChanges = new List<TempoChange>();
 
         // For Format 1 files, tempo events are in the first track
         // For Format 0 files, they're mixed with other events
         // We scan all tracks to be safe
-        foreach (var track in file.Tracks)
+        foreach (MidiTrack? track in file.Tracks)
         {
-            foreach (var evt in track.Events)
+            foreach (MidiEvent? evt in track.Events)
             {
                 if (evt is MetaEvent { Type: MetaEventType.SetTempo, Tempo: not null } meta)
                 {
@@ -81,15 +81,15 @@ public sealed class TempoMap
     {
         double totalMicroseconds = 0;
         long previousTick = 0;
-        var previousTempo = DefaultMicrosecondsPerBeat;
+        int previousTempo = DefaultMicrosecondsPerBeat;
 
         for (var i = 0; i < changes.Count; i++)
         {
-            var change = changes[i];
+            TempoChange change = changes[i];
 
             // Calculate time from previous point to this one
-            var deltaTicks = change.Tick - previousTick;
-            var deltaTime = (double)deltaTicks * previousTempo / ticksPerQuarterNote;
+            long deltaTicks = change.Tick - previousTick;
+            double deltaTime = (double)deltaTicks * previousTempo / ticksPerQuarterNote;
             totalMicroseconds += deltaTime;
 
             // Update the change with calculated real time
@@ -106,7 +106,7 @@ public sealed class TempoMap
     public int GetTempoAtTick(long tick)
     {
         // Binary search for the tempo change at or before this tick
-        var index = FindTempoChangeIndex(tick);
+        int index = FindTempoChangeIndex(tick);
         return _tempoChanges[index].MicrosecondsPerBeat;
     }
 
@@ -115,7 +115,7 @@ public sealed class TempoMap
     /// </summary>
     public double GetBpmAtTick(long tick)
     {
-        var microsecondsPerBeat = GetTempoAtTick(tick);
+        int microsecondsPerBeat = GetTempoAtTick(tick);
         return 60_000_000.0 / microsecondsPerBeat;
     }
 
@@ -124,13 +124,13 @@ public sealed class TempoMap
     /// </summary>
     public TimeSpan TickToTime(long tick)
     {
-        var index = FindTempoChangeIndex(tick);
-        var tempoChange = _tempoChanges[index];
+        int index = FindTempoChangeIndex(tick);
+        TempoChange tempoChange = _tempoChanges[index];
 
         // Calculate time from the tempo change point to the target tick
-        var deltaTicks = tick - tempoChange.Tick;
-        var deltaMicroseconds = (double)deltaTicks * tempoChange.MicrosecondsPerBeat / _ticksPerQuarterNote;
-        var totalMicroseconds = tempoChange.RealTimeMicroseconds + deltaMicroseconds;
+        long deltaTicks = tick - tempoChange.Tick;
+        double deltaMicroseconds = (double)deltaTicks * tempoChange.MicrosecondsPerBeat / _ticksPerQuarterNote;
+        double totalMicroseconds = tempoChange.RealTimeMicroseconds + deltaMicroseconds;
 
         return TimeSpan.FromTicks((long)(totalMicroseconds * 10)); // 1 tick = 0.1 microseconds
     }
@@ -140,11 +140,11 @@ public sealed class TempoMap
     /// </summary>
     public long TimeToTick(TimeSpan time)
     {
-        var targetMicroseconds = time.Ticks / 10.0;
+        double targetMicroseconds = time.Ticks / 10.0;
 
         // Find the tempo change at or before this time
         var index = 0;
-        for (var i = _tempoChanges.Count - 1; i >= 0; i--)
+        for (int i = _tempoChanges.Count - 1; i >= 0; i--)
         {
             if (_tempoChanges[i].RealTimeMicroseconds <= targetMicroseconds)
             {
@@ -153,8 +153,8 @@ public sealed class TempoMap
             }
         }
 
-        var tempoChange = _tempoChanges[index];
-        var deltaMicroseconds = targetMicroseconds - tempoChange.RealTimeMicroseconds;
+        TempoChange tempoChange = _tempoChanges[index];
+        double deltaMicroseconds = targetMicroseconds - tempoChange.RealTimeMicroseconds;
         var deltaTicks = (long)(deltaMicroseconds * _ticksPerQuarterNote / tempoChange.MicrosecondsPerBeat);
 
         return tempoChange.Tick + deltaTicks;
@@ -164,12 +164,12 @@ public sealed class TempoMap
     {
         // Binary search for the last tempo change at or before the given tick
         var low = 0;
-        var high = _tempoChanges.Count - 1;
+        int high = _tempoChanges.Count - 1;
         var result = 0;
 
         while (low <= high)
         {
-            var mid = (low + high) / 2;
+            int mid = (low + high) / 2;
             if (_tempoChanges[mid].Tick <= tick)
             {
                 result = mid;

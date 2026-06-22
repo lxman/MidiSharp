@@ -20,10 +20,10 @@ public sealed class RandomRrVelCurveTests
     {
         // Two zones tiling [0,1): [0,0.5) is loud, [0.5,1) is silent. Each note rolls once
         // and exactly one zone sounds; across many notes both variants occur.
-        var bank = MakeBank(
+        IRBank bank = MakeBank(
             Zone(sampleId: 0, random: new RandomRange(0.0, 0.5)),   // loud
             Zone(sampleId: 1, random: new RandomRange(0.5, 1.0)));  // silent
-        var synth = NewSynth(bank);
+        Synthesizer synth = NewSynth(bank);
 
         int loud = 0, silent = 0;
         for (var n = 0; n < 64; n++)
@@ -41,13 +41,13 @@ public sealed class RandomRrVelCurveTests
     [Fact]
     public void RandomRoundRobin_isReproducible_acrossSynthsWithSameSeed()
     {
-        var bank = MakeBank(
+        IRBank bank = MakeBank(
             Zone(sampleId: 0, random: new RandomRange(0.0, 0.5)),
             Zone(sampleId: 1, random: new RandomRange(0.5, 1.0)));
 
         bool[] Run()
         {
-            var synth = NewSynth(bank);
+            Synthesizer synth = NewSynth(bank);
             var seq = new bool[32];
             for (var n = 0; n < seq.Length; n++)
             {
@@ -70,8 +70,8 @@ public sealed class RandomRrVelCurveTests
         curve[120] = 1.0;
         for (var v = 0; v < 128; v++) curve[v] = v <= 40 ? 0.0 : v >= 120 ? 1.0 : (v - 40) / 80.0;
 
-        var bank = MakeBank(Zone(sampleId: 0, ampVelCurve: curve));   // loud base sample
-        var synth = NewSynth(bank);
+        IRBank bank = MakeBank(Zone(sampleId: 0, ampVelCurve: curve));   // loud base sample
+        Synthesizer synth = NewSynth(bank);
 
         synth.NoteOn(0, 60, 40);
         Assert.True(RenderPeak(synth) < 0.01f, "velocity 40 maps to ~0 gain");

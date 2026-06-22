@@ -10,7 +10,7 @@ internal static class InfoChunkReader
 {
     public static InfoMetadata Read(ReadOnlyMemory<byte> infoList)
     {
-        var span = infoList.Span;
+        ReadOnlySpan<byte> span = infoList.Span;
         if (BinaryHelpers.ReadTag(span, 0) != "INFO")
             throw new SoundFontException(SoundFontValidationCode.FileBroken, "Expected INFO form type");
 
@@ -20,12 +20,12 @@ internal static class InfoChunkReader
         var pos = 4;
         while (pos + 8 <= span.Length)
         {
-            var tag = BinaryHelpers.ReadTag(span, pos);
-            var size = BinaryHelpers.ReadUInt32LE(span, pos + 4);
-            var bodyStart = pos + 8;
+            string tag = BinaryHelpers.ReadTag(span, pos);
+            uint size = BinaryHelpers.ReadUInt32LE(span, pos + 4);
+            int bodyStart = pos + 8;
             if (bodyStart + size > span.Length)
                 throw new SoundFontException(SoundFontValidationCode.FileBroken);
-            var body = span.Slice(bodyStart, (int)size);
+            ReadOnlySpan<byte> body = span.Slice(bodyStart, (int)size);
 
             switch (tag)
             {
@@ -70,7 +70,7 @@ internal static class InfoChunkReader
 
     private static string DecodeZString(ReadOnlySpan<byte> body)
     {
-        var nul = body.IndexOf((byte)0);
+        int nul = body.IndexOf((byte)0);
         if (nul >= 0) body = body.Slice(0, nul);
         return BinaryHelpers.Ascii.GetString(body.ToArray());
     }

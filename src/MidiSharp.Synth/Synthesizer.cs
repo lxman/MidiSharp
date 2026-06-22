@@ -130,7 +130,7 @@ public sealed class Synthesizer
         get
         {
             var count = 0;
-            foreach (var voice in _voices)
+            foreach (Voice voice in _voices)
                 if (voice.State != VoiceState.Free)
                     count++;
             return count;
@@ -210,7 +210,7 @@ public sealed class Synthesizer
         // ControlChange so known CCs hit their fields and the rest land in the generic store.
         if (soundBank.InitialControllers.Count > 0)
             for (var ch = 0; ch < _channels.Length; ch++)
-                foreach (var kv in soundBank.InitialControllers)
+                foreach (KeyValuePair<int, int> kv in soundBank.InitialControllers)
                     ControlChange(ch, kv.Key, kv.Value);
     }
 
@@ -260,7 +260,7 @@ public sealed class Synthesizer
     public InstrumentMix GetInstrumentMix(int bank, int program)
     {
         var id = new InstrumentId(bank, program);
-        if (!_instrumentMixes.TryGetValue(id, out var mix))
+        if (!_instrumentMixes.TryGetValue(id, out InstrumentMix? mix))
         {
             mix = new InstrumentMix();
             _instrumentMixes[id] = mix;
@@ -279,7 +279,7 @@ public sealed class Synthesizer
     {
         get
         {
-            foreach (var m in _instrumentMixes.Values) if (m.Solo) return true;
+            foreach (InstrumentMix? m in _instrumentMixes.Values) if (m.Solo) return true;
             return false;
         }
     }
@@ -338,12 +338,12 @@ public sealed class Synthesizer
         // in by promoting velocity to a 14-bit value, then re-mapping back to 1..127 with
         // sub-step precision via simple rounding. The actual velocity-attenuation calc
         // inside Voice.Configure is log-based so even small additions register.
-        var prefixCh = _channels[channel];
+        ChannelState prefixCh = _channels[channel];
         if (prefixCh.HighResVelocityPrefix != 0)
         {
             int hi = velocity, lo = prefixCh.HighResVelocityPrefix;
             // Combine to 14-bit. Center the LSB so prefix=64 doesn't shift velocity.
-            var combined14 = (hi << 7) | lo;
+            int combined14 = (hi << 7) | lo;
             // Convert back to 7-bit with sub-step rounding: divide by 128, round to nearest.
             velocity = Math.Clamp((combined14 + 64) >> 7, 1, 127);
             prefixCh.HighResVelocityPrefix = 0;  // one-shot per CA-031
@@ -359,7 +359,7 @@ public sealed class Synthesizer
 
         if (_soundBank == null) return;
 
-        var channelState = _channels[channel];
+        ChannelState channelState = _channels[channel];
 
         // Override wins, most specific first: a per-part override (this exact track+channel) beats a
         // whole-track override, which beats channel resolution. Each forces the note's instrument
@@ -368,9 +368,9 @@ public sealed class Synthesizer
         Patch? patch = null;
         if (trackIndex >= 0)
         {
-            if (_partPatchMap.TryGetValue(TrackPart(trackIndex, channel), out var paddr))
+            if (_partPatchMap.TryGetValue(TrackPart(trackIndex, channel), out (int Bank, int Program) paddr))
                 patch = _soundBank.FindPatch(paddr.Bank, paddr.Program);
-            if (patch == null && _trackPatchMap.TryGetValue(trackIndex, out var addr))
+            if (patch == null && _trackPatchMap.TryGetValue(trackIndex, out (int Bank, int Program) addr))
                 patch = _soundBank.FindPatch(addr.Bank, addr.Program);
         }
         patch ??= _soundBank.FindPatch(channelState.Bank, channelState.Program)
@@ -383,7 +383,7 @@ public sealed class Synthesizer
 
         // Determine portamento source (key we should glide from). CC 84 (one-shot) wins
         // over LastNoteKey when set, and falls back only when CC 65 (portamento on) is true.
-        var portamentoSource = channelState.PortamentoSourceKey >= 0
+        int portamentoSource = channelState.PortamentoSourceKey >= 0
             ? channelState.PortamentoSourceKey
             : channelState.PortamentoOn ? channelState.LastNoteKey : -1;
         var portamentoStartCents = 0.0;
@@ -392,21 +392,21 @@ public sealed class Synthesizer
         {
             portamentoStartCents = (portamentoSource - key) * 100.0;
             // CC 5 0..127 mapped to ~0..6 seconds via quadratic curve so low values are short.
-            var t = channelState.PortamentoTimeCc / 127.0;
+            double t = channelState.PortamentoTimeCc / 127.0;
             portamentoTimeSeconds = t * t * 6.0;
         }
         channelState.PortamentoSourceKey = -1;
         channelState.LastNoteKey = (sbyte)key;
 
         // GM2 sound-controller offsets in octaves (±1 octave at CC=0/127, 0 at CC=64).
-        var attackOctaves = (channelState.AttackTimeCc - 64) / 64.0;
-        var decayOctaves = (channelState.DecayTimeCc - 64) / 64.0;
-        var releaseOctaves = (channelState.ReleaseTimeCc - 64) / 64.0;
-        var vibFreqOctaves = (channelState.VibratoRateCc - 64) / 64.0;
-        var vibDelayOctaves = (channelState.VibratoDelayCc - 64) / 64.0;
-        var filterQDbOffset = channelState.FilterQOffsetCb / 10.0;
+        double attackOctaves = (channelState.AttackTimeCc - 64) / 64.0;
+        double decayOctaves = (channelState.DecayTimeCc - 64) / 64.0;
+        double releaseOctaves = (channelState.ReleaseTimeCc - 64) / 64.0;
+        double vibFreqOctaves = (channelState.VibratoRateCc - 64) / 64.0;
+        double vibDelayOctaves = (channelState.VibratoDelayCc - 64) / 64.0;
+        double filterQDbOffset = channelState.FilterQOffsetCb / 10.0;
 
-        var samples = _soundBank.Samples;
+        ISampleSource samples = _soundBank.Samples;
 
         // Round-robin sequence index for this NoteOn, computed once (lazily, only
         // if a round-robin zone is actually reached) and shared across zones.
@@ -418,7 +418,7 @@ public sealed class Synthesizer
         // banks leave the stream (and reproducibility) untouched.
         double? roll = null;
 
-        foreach (var zone in patch.Zones)
+        foreach (PatchZone? zone in patch.Zones)
         {
             if (!zone.Keys.Contains(key)) continue;
             if (!zone.Velocities.Contains(velocity)) continue;
@@ -451,7 +451,7 @@ public sealed class Synthesizer
                 if (roll.Value < rand.Lo || roll.Value >= rand.Hi) continue;
             }
 
-            var voice = AllocateVoice(channel, key);
+            Voice? voice = AllocateVoice(channel, key);
             if (voice == null) continue;
 
             // Exclusive group: silence any sounding voice in the same group on the channel.
@@ -490,7 +490,7 @@ public sealed class Synthesizer
 
             // GS drum NRPN overrides for this specific (channel, key).
             if (channelState.DrumOverrides != null &&
-                channelState.DrumOverrides.TryGetValue(key, out var drumOv))
+                channelState.DrumOverrides.TryGetValue(key, out DrumKeyOverride? drumOv))
                 voice.ApplyDrumOverride(drumOv);
 
             // SFZ humanization (amp/pitch/delay/offset random + fixed delay). Rolled from the synth's
@@ -500,12 +500,12 @@ public sealed class Synthesizer
             if (zone.AmpRandomDb != 0 || zone.PitchRandomCents != 0 || zone.FilterRandomCents != 0 ||
                 zone.DelaySeconds != 0 || zone.DelayRandomSeconds != 0 || zone.OffsetRandomFrames != 0)
             {
-                var gainDb = zone.AmpRandomDb != 0 ? _rng.NextDouble() * zone.AmpRandomDb : 0.0;
-                var detune = zone.PitchRandomCents != 0 ? _rng.NextDouble() * zone.PitchRandomCents : 0.0;
-                var delaySec = zone.DelaySeconds
-                               + (zone.DelayRandomSeconds != 0 ? _rng.NextDouble() * zone.DelayRandomSeconds : 0.0);
-                var offFrames = zone.OffsetRandomFrames != 0 ? (long)(_rng.NextDouble() * zone.OffsetRandomFrames) : 0;
-                var filRand = zone.FilterRandomCents != 0 ? _rng.NextDouble() * zone.FilterRandomCents : 0.0;
+                double gainDb = zone.AmpRandomDb != 0 ? _rng.NextDouble() * zone.AmpRandomDb : 0.0;
+                double detune = zone.PitchRandomCents != 0 ? _rng.NextDouble() * zone.PitchRandomCents : 0.0;
+                double delaySec = zone.DelaySeconds
+                                  + (zone.DelayRandomSeconds != 0 ? _rng.NextDouble() * zone.DelayRandomSeconds : 0.0);
+                long offFrames = zone.OffsetRandomFrames != 0 ? (long)(_rng.NextDouble() * zone.OffsetRandomFrames) : 0;
+                double filRand = zone.FilterRandomCents != 0 ? _rng.NextDouble() * zone.FilterRandomCents : 0.0;
                 voice.ApplyHumanization(gainDb, detune, delaySec, offFrames, filRand);
             }
         }
@@ -515,7 +515,7 @@ public sealed class Synthesizer
     {
         for (var i = 0; i < gates.Count; i++)
         {
-            var gate = gates[i];
+            CCGate gate = gates[i];
             if (!gate.Contains(ch.GetCC(gate.Controller))) return false;
         }
         return true;
@@ -528,7 +528,7 @@ public sealed class Synthesizer
     /// </summary>
     private static bool TrySelectKeyswitch(Patch patch, int key, ChannelState ch)
     {
-        var zones = patch.Zones;
+        IReadOnlyList<PatchZone> zones = patch.Zones;
         for (var i = 0; i < zones.Count; i++)
         {
             if (zones[i].KeySwitch is { } ks && key >= ks.Low && key <= ks.High)
@@ -548,7 +548,7 @@ public sealed class Synthesizer
         if ((uint)channel >= ChannelCount) return;
         if ((uint)key >= 128) return;
 
-        var channelState = _channels[channel];
+        ChannelState channelState = _channels[channel];
 
         // If sustain pedal is held, don't release yet
         if (channelState.Sustain)
@@ -559,7 +559,7 @@ public sealed class Synthesizer
 
     private void ReleaseVoices(int channel, int key)
     {
-        foreach (var voice in _voices)
+        foreach (Voice voice in _voices)
         {
             if (voice.State == VoiceState.Playing &&
                 voice.Channel == channel &&
@@ -585,14 +585,14 @@ public sealed class Synthesizer
         if ((uint)controller >= 128) return;
         value = Math.Clamp(value, 0, 127);
 
-        var channelState = _channels[channel];
+        ChannelState channelState = _channels[channel];
 
         // Sustain pedal — handled here (not as a switch case) because SFZ sustain_cc can reassign it to
         // any controller. Also stored generically so routes/ampeg_dynamic can read the raw value. When
         // the bank keeps the default (CC64), this is exactly the old behaviour.
         if (controller == channelState.SustainCc)
         {
-            var on = value >= 64;
+            bool on = value >= 64;
             if (channelState.Sustain && !on)
                 ReleaseAllSustainedVoices(channel);
             channelState.Sustain = on;
@@ -654,7 +654,7 @@ public sealed class Synthesizer
                 channelState.PhaserDepth = (byte)value;
                 break;
             case 66: // Sostenuto
-                var newSostenuto = value >= 64;
+                bool newSostenuto = value >= 64;
                 switch (channelState.Sostenuto)
                 {
                     case false when newSostenuto:
@@ -662,7 +662,7 @@ public sealed class Synthesizer
                         // Pedal going down — capture every voice currently sounding (Playing only;
                         // already-released voices keep releasing). Subsequent NoteOns won't be
                         // captured, that's the whole point of sostenuto vs sustain.
-                        foreach (var voice in _voices)
+                        foreach (Voice voice in _voices)
                         {
                             if (voice.State == VoiceState.Playing && voice.Channel == channel)
                                 voice.SostenutoHeld = true;
@@ -673,7 +673,7 @@ public sealed class Synthesizer
                     case true when !newSostenuto:
                     {
                         // Pedal lift — release any captured voices that had NoteOffs while held.
-                        foreach (var voice in _voices)
+                        foreach (Voice voice in _voices)
                         {
                             if (voice.State != VoiceState.Playing ||
                                 voice.Channel != channel ||
@@ -832,9 +832,9 @@ public sealed class Synthesizer
             case 0 when ch.RpnLsb == 1:
             {
                 // 14-bit value with center 0x2000. Convert (value <<7) part now, LSB later.
-                var currentFine14 = (int)Math.Round(ch.FineTuneCents / 100.0 * 8192.0) + 0x2000;
-                var lsb = currentFine14 & 0x7F;
-                var newFine14 = ((value & 0x7F) << 7) | lsb;
+                int currentFine14 = (int)Math.Round(ch.FineTuneCents / 100.0 * 8192.0) + 0x2000;
+                int lsb = currentFine14 & 0x7F;
+                int newFine14 = ((value & 0x7F) << 7) | lsb;
                 ch.FineTuneCents = (newFine14 - 0x2000) * (100.0 / 8192.0);
                 return;
             }
@@ -852,7 +852,7 @@ public sealed class Synthesizer
             // Combined with LSB (cents fraction) it overrides our default 50-cent cap.
             case 0 when ch.RpnLsb == 5:
             {
-                var cents = ch.ModulationDepthRangeCents - Math.Floor(ch.ModulationDepthRangeCents / 100.0) * 100.0;
+                double cents = ch.ModulationDepthRangeCents - Math.Floor(ch.ModulationDepthRangeCents / 100.0) * 100.0;
                 ch.ModulationDepthRangeCents = value * 100.0 + cents;
                 return;
             }
@@ -873,9 +873,9 @@ public sealed class Synthesizer
         if (ch is { RpnMsb: 0, RpnLsb: 1 })
         {
             // Fine tune LSB — update bits 0-6 of the 14-bit value.
-            var currentFine14 = (int)Math.Round(ch.FineTuneCents / 100.0 * 8192.0) + 0x2000;
-            var msb = (currentFine14 >> 7) & 0x7F;
-            var newFine14 = (msb << 7) | (value & 0x7F);
+            int currentFine14 = (int)Math.Round(ch.FineTuneCents / 100.0 * 8192.0) + 0x2000;
+            int msb = (currentFine14 >> 7) & 0x7F;
+            int newFine14 = (msb << 7) | (value & 0x7F);
             ch.FineTuneCents = (newFine14 - 0x2000) * (100.0 / 8192.0);
             return;
         }
@@ -883,7 +883,7 @@ public sealed class Synthesizer
 
         // RPN 0,5 LSB: fractional cents of the modulation depth range.
         if (ch is not { RpnMsb: 0, RpnLsb: 5 }) return;
-        var semis = Math.Floor(ch.ModulationDepthRangeCents / 100.0);
+        double semis = Math.Floor(ch.ModulationDepthRangeCents / 100.0);
         // LSB per RP-021 is interpreted as cents/128 fraction of a semitone.
         ch.ModulationDepthRangeCents = semis * 100.0 + value * 100.0 / 128.0;
     }
@@ -902,7 +902,7 @@ public sealed class Synthesizer
         if (ch.IsDrumPart && msb >= 0x18 && msb <= 0x1E)
         {
             ch.DrumOverrides ??= new Dictionary<int, DrumKeyOverride>();
-            if (!ch.DrumOverrides.TryGetValue(lsb, out var ov))
+            if (!ch.DrumOverrides.TryGetValue(lsb, out DrumKeyOverride? ov))
             {
                 ov = new DrumKeyOverride();
                 ch.DrumOverrides[lsb] = ov;
@@ -992,7 +992,7 @@ public sealed class Synthesizer
         if ((uint)key >= 128) return;
         var clamped = (byte)Math.Clamp(pressure, 0, 127);
 
-        foreach (var voice in _voices)
+        foreach (Voice voice in _voices)
         {
             if (voice.State != VoiceState.Free &&
                 voice.Channel == channel &&
@@ -1078,7 +1078,7 @@ public sealed class Synthesizer
             // Master Volume: 7F dev 04 01 LL MM (14-bit, MSB last).
             case 0x04 when sub2 == 0x01 && d.Length >= 6:
             {
-                var raw = ((d[5] & 0x7F) << 7) | (d[4] & 0x7F);
+                int raw = ((d[5] & 0x7F) << 7) | (d[4] & 0x7F);
                 _masterVolume = raw / 16383f;
                 return;
             }
@@ -1086,7 +1086,7 @@ public sealed class Synthesizer
             // addendum, not widely used in real files.
             case 0x04 when sub2 == 0x02 && d.Length >= 6:
             {
-                var raw = ((d[5] & 0x7F) << 7) | (d[4] & 0x7F);
+                int raw = ((d[5] & 0x7F) << 7) | (d[4] & 0x7F);
                 _masterPan = (raw - 8192) / 8192f;  // -1..+1
                 return;
             }
@@ -1095,7 +1095,7 @@ public sealed class Synthesizer
             // synth level rather than per-channel.
             case 0x04 when sub2 == 0x03 && d.Length >= 6:
             {
-                var raw = ((d[5] & 0x7F) << 7) | (d[4] & 0x7F);
+                int raw = ((d[5] & 0x7F) << 7) | (d[4] & 0x7F);
                 _masterTuneCents = (raw - 0x2000) * (100.0 / 8192.0);
                 return;
             }
@@ -1103,7 +1103,7 @@ public sealed class Synthesizer
             // range ±64 semitones (only MSB byte is normally significant).
             case 0x04 when sub2 == 0x04 && d.Length >= 6:
             {
-                var raw = ((d[5] & 0x7F) << 7) | (d[4] & 0x7F);
+                int raw = ((d[5] & 0x7F) << 7) | (d[4] & 0x7F);
                 _masterKeyShiftSemitones = (raw - 0x2000) / 128;  // approx semitones
                 return;
             }
@@ -1124,9 +1124,9 @@ public sealed class Synthesizer
 
         // The "data" region runs from d[7] up to but not including the checksum.
         // The checksum is at d[Length-1] if there's no trailing F7, or d[Length-2] if there is.
-        var dataEnd = d.Length - 1;
+        int dataEnd = d.Length - 1;
         if (d[dataEnd] == 0xF7) dataEnd--;
-        var payload = d[7..dataEnd];
+        ReadOnlySpan<byte> payload = d[7..dataEnd];
 
         switch (ah)
         {
@@ -1142,7 +1142,7 @@ public sealed class Synthesizer
 
         // Part parameters (ah=40, am=1n where n is the GS part block).
         if (ah != 0x40 || (am & 0xF0) != 0x10) return;
-        var channel = GsPartBlockToChannel(am & 0x0F);
+        int channel = GsPartBlockToChannel(am & 0x0F);
         HandleGsPart(channel, al, payload);
 
         // GS Reset: ah=40, am=00, al=7F, payload=00 — already covered by HandleGsMaster.
@@ -1155,7 +1155,7 @@ public sealed class Synthesizer
             case 0x00 when payload.Length >= 4:
                 // Master Tune: four nibbles m1 m2 m3 m4 -> 16-bit value with center 0x0400,
                 // range 0x0018..0x07E8 mapped to -100..+100 cents.
-                var rawTune = ((payload[0] & 0x0F) << 12) | ((payload[1] & 0x0F) << 8)
+                int rawTune = ((payload[0] & 0x0F) << 12) | ((payload[1] & 0x0F) << 8)
                                                           | ((payload[2] & 0x0F) << 4) | (payload[3] & 0x0F);
                 _masterTuneCents = (rawTune - 0x0400) / 10.0;  // approx
                 break;
@@ -1180,7 +1180,7 @@ public sealed class Synthesizer
     private void HandleGsReverbChorus(int al, ReadOnlySpan<byte> payload)
     {
         if (payload.Length < 1) return;
-        var v = payload[0];
+        byte v = payload[0];
         switch (al)
         {
             // Reverb macros 0x30 = type (0=room1..7=plate), 0x31 = character, 0x32 = pre-LPF,
@@ -1196,8 +1196,8 @@ public sealed class Synthesizer
     private void HandleGsPart(int channel, int al, ReadOnlySpan<byte> payload)
     {
         if (channel < 0 || channel >= _channels.Length || payload.Length < 1) return;
-        var ch = _channels[channel];
-        var v = payload[0];
+        ChannelState ch = _channels[channel];
+        byte v = payload[0];
         switch (al)
         {
             case 0x15:  // Use For Rhythm Part: 0=off, 1=MAP1 (bank 128), 2=MAP2 (bank 127).
@@ -1242,9 +1242,9 @@ public sealed class Synthesizer
         if (d.Length < 8 || d[2] != 0x4C) return;
         int ah = d[3], am = d[4], al = d[5];
 
-        var dataEnd = d.Length - 1;
+        int dataEnd = d.Length - 1;
         if (d[dataEnd] == 0xF7) dataEnd--;
-        var payload = d[6..(dataEnd + 1)];
+        ReadOnlySpan<byte> payload = d[6..(dataEnd + 1)];
 
         switch (ah)
         {
@@ -1261,7 +1261,7 @@ public sealed class Synthesizer
                     // Master Tune: al=00, four nibbles
                     case 0x00 when payload.Length >= 4:
                     {
-                        var raw = ((payload[0] & 0x0F) << 12) | ((payload[1] & 0x0F) << 8)
+                        int raw = ((payload[0] & 0x0F) << 12) | ((payload[1] & 0x0F) << 8)
                                                               | ((payload[2] & 0x0F) << 4) | (payload[3] & 0x0F);
                         _masterTuneCents = (raw - 0x0400) / 10.0;
                         return;
@@ -1279,8 +1279,8 @@ public sealed class Synthesizer
             // Multi-part: ah=08 am=part al=parameter
             case 0x08 when am < 16 && payload.Length >= 1:
             {
-                var ch = _channels[am];
-                var v = payload[0];
+                ChannelState ch = _channels[am];
+                byte v = payload[0];
                 switch (al)
                 {
                     case 0x07:  // Part Mode: 0=normal, 1=drum, 2=drum-S1, 3=drum-S2.
@@ -1324,7 +1324,7 @@ public sealed class Synthesizer
     /// </summary>
     public void AllSoundOff()
     {
-        foreach (var voice in _voices)
+        foreach (Voice voice in _voices)
             voice.Kill();
     }
 
@@ -1333,7 +1333,7 @@ public sealed class Synthesizer
     /// </summary>
     public void AllNotesOff()
     {
-        foreach (var voice in _voices)
+        foreach (Voice voice in _voices)
         {
             if (voice.State == VoiceState.Playing)
                 voice.Release();
@@ -1346,14 +1346,14 @@ public sealed class Synthesizer
     public void Reset()
     {
         AllSoundOff();
-        foreach (var channel in _channels)
+        foreach (ChannelState channel in _channels)
             channel.ResetAll();
 
         // Reset channel 10 to percussion. Any GS "Use For Rhythm Part" SysEx that moved
         // drums elsewhere is now undone — only channel 10 is drums after a Reset.
         for (var i = 0; i < _channels.Length; i++)
         {
-            var isDrum = i == 9;
+            bool isDrum = i == 9;
             _channels[i].IsDrumPart = isDrum;
             _channels[i].DrumBank = 128;  // back to MAP1 default
             _channels[i].Bank = isDrum ? (ushort)128 : (ushort)0;
@@ -1375,7 +1375,7 @@ public sealed class Synthesizer
     /// <param name="right">Right channel buffer</param>
     public void Generate(Span<float> left, Span<float> right)
     {
-        var frames = left.Length;
+        int frames = left.Length;
 
         // Clear output buffers
         left.Clear();
@@ -1387,63 +1387,63 @@ public sealed class Synthesizer
             _reverbSendBuffer = new float[frames];
             _chorusSendBuffer = new float[frames];
         }
-        var reverbSend = _reverbSendBuffer.AsSpan(0, frames);
-        var chorusSend = _chorusSendBuffer.AsSpan(0, frames);
+        Span<float> reverbSend = _reverbSendBuffer.AsSpan(0, frames);
+        Span<float> chorusSend = _chorusSendBuffer.AsSpan(0, frames);
         reverbSend.Clear();
         chorusSend.Clear();
 
         // Tier-1 mixer: only do any per-instrument work when at least one trim exists. While the map is
         // empty this whole layer is skipped and the voice loop is the exact pre-mixer code path.
-        var mixerActive = _instrumentMixes.Count != 0;
+        bool mixerActive = _instrumentMixes.Count != 0;
         if (mixerActive)
         {
             _anySolo = false;
-            foreach (var m in _instrumentMixes.Values)
+            foreach (InstrumentMix? m in _instrumentMixes.Values)
                 if (m.Solo) { _anySolo = true; break; }
         }
 
         // Tier-2 inserts: read the immutable snapshot once (stable for this block). When any exist,
         // instruments with an insert render into a private bus instead of straight into master.
-        var inserts = _instrumentInserts;
-        var hasInserts = inserts.Count != 0;
+        IReadOnlyDictionary<InstrumentId, IInstrumentInsert> inserts = _instrumentInserts;
+        bool hasInserts = inserts.Count != 0;
         if (hasInserts) PrepareBuses(inserts, frames);
 
         // Process each voice — writes dry signal to L/R AND mono signal to send buses
-        foreach (var voice in _voices)
+        foreach (Voice voice in _voices)
         {
             if (voice.State == VoiceState.Free)
                 continue;
 
-            var channelState = _channels[voice.Channel];
+            ChannelState channelState = _channels[voice.Channel];
 
             // Extras outside the route framework: things that aren't standard
             // modulators or that don't fit the unipolar/bipolar source model.
 
             // GM2 CC 77 (vibrato depth): bipolar around 64, ±50 cents. The route
             // framework uses unipolar sources only, so this stays synth-level.
-            var extraVibCents = (channelState.VibratoDepthCc - 64) * (50.0 / 64.0);
+            double extraVibCents = (channelState.VibratoDepthCc - 64) * (50.0 / 64.0);
 
             // CC 67 (soft pedal / una corda): ≥ 64 = ~6 dB attenuation.
-            var softPedalAttenDb = channelState.SoftPedal >= 64 ? 6.0 : 0.0;
+            double softPedalAttenDb = channelState.SoftPedal >= 64 ? 6.0 : 0.0;
 
             // CC 92 tremolo: sin LFO modulates attenuation symmetrically up to
             // ±TremoloMaxAttenDb at full depth. Phase advances once per Generate.
             var tremoloAttenDb = 0.0;
             if (channelState.TremoloDepth > 0)
             {
-                var depth = channelState.TremoloDepth / 127.0;
-                var lfo = 0.5 * (1.0 - Math.Sin(_tremoloPhase[voice.Channel]));
+                double depth = channelState.TremoloDepth / 127.0;
+                double lfo = 0.5 * (1.0 - Math.Sin(_tremoloPhase[voice.Channel]));
                 tremoloAttenDb = lfo * depth * TremoloMaxAttenDb;
             }
 
             // CC 8 Balance: post-pan L/R gain multipliers.
-            var balanceLeft = channelState.Balance >= 64 ? 1f : channelState.Balance / 64f;
-            var balanceRight = channelState.Balance <= 64 ? 1f : (127 - channelState.Balance) / 63f;
+            float balanceLeft = channelState.Balance >= 64 ? 1f : channelState.Balance / 64f;
+            float balanceRight = channelState.Balance <= 64 ? 1f : (127 - channelState.Balance) / 63f;
 
             // Non-bend channel-level pitch offset: master tune + master key shift
             // + RPN 0,1 fine tune + RPN 0,2 coarse tune. The pitch-bend portion is
             // handled by the modulation route #10 inside the voice.
-            var nonBendPitchCents =
+            double nonBendPitchCents =
                 channelState.FineTuneCents
                 + channelState.CoarseTuneSemitones * 100.0
                 + _masterTuneCents
@@ -1456,7 +1456,7 @@ public sealed class Synthesizer
             float instReverbAdd = 0f, instChorusAdd = 0f, instGainFactor = 1f;
             if (mixerActive)
             {
-                _instrumentMixes.TryGetValue(voice.Instrument, out var mix);
+                _instrumentMixes.TryGetValue(voice.Instrument, out InstrumentMix? mix);
                 if (mix != null)
                 {
                     instAttenDb = -mix.GainDb;
@@ -1476,7 +1476,7 @@ public sealed class Synthesizer
             Span<float> outL = left, outR = right;
             if (hasInserts && inserts.ContainsKey(voice.Instrument))
             {
-                var bus = _buses[voice.Instrument];
+                InstrumentBus? bus = _buses[voice.Instrument];
                 outL = bus.L.AsSpan(0, frames);
                 outR = bus.R.AsSpan(0, frames);
             }
@@ -1505,7 +1505,7 @@ public sealed class Synthesizer
         }
 
         // Advance each channel's tremolo phase by one buffer's worth of time.
-        var tremoloStep = 2.0 * Math.PI * TremoloFrequencyHz * frames / _sampleRate;
+        double tremoloStep = 2.0 * Math.PI * TremoloFrequencyHz * frames / _sampleRate;
         for (var c = 0; c < _tremoloPhase.Length; c++)
         {
             if (_channels[c].TremoloDepth <= 0) continue;
@@ -1523,11 +1523,11 @@ public sealed class Synthesizer
 
         // Master volume + master pan applied as a final stage after the effect mix.
         // Master pan is a simple balance: attenuate the opposite channel.
-        var needScale = Math.Abs(_masterVolume - 1.0f) > 0.001f || _masterPan != 0f;
+        bool needScale = Math.Abs(_masterVolume - 1.0f) > 0.001f || _masterPan != 0f;
         if (!needScale) return;
-        var mv = _masterVolume;
-        var leftMul = mv * (_masterPan > 0 ? 1f - _masterPan : 1f);
-        var rightMul = mv * (_masterPan < 0 ? 1f + _masterPan : 1f);
+        float mv = _masterVolume;
+        float leftMul = mv * (_masterPan > 0 ? 1f - _masterPan : 1f);
+        float rightMul = mv * (_masterPan < 0 ? 1f + _masterPan : 1f);
         for (var i = 0; i < frames; i++)
         {
             left[i] *= leftMul;
@@ -1540,7 +1540,7 @@ public sealed class Synthesizer
     /// </summary>
     public void GenerateInterleaved(Span<float> buffer)
     {
-        var frames = buffer.Length / 2;
+        int frames = buffer.Length / 2;
 
         // Ensure temp buffers are large enough
         if (_leftBuffer.Length < frames)
@@ -1549,8 +1549,8 @@ public sealed class Synthesizer
             _rightBuffer = new float[frames];
         }
 
-        var left = _leftBuffer.AsSpan(0, frames);
-        var right = _rightBuffer.AsSpan(0, frames);
+        Span<float> left = _leftBuffer.AsSpan(0, frames);
+        Span<float> right = _rightBuffer.AsSpan(0, frames);
 
         Generate(left, right);
 
@@ -1565,7 +1565,7 @@ public sealed class Synthesizer
     private Voice? AllocateVoice(int channel, int key)
     {
         // First, look for a free voice
-        foreach (var voice in _voices)
+        foreach (Voice voice in _voices)
         {
             if (voice.State == VoiceState.Free)
                 return voice;
@@ -1575,7 +1575,7 @@ public sealed class Synthesizer
         Voice? oldest = null;
         var oldestGen = int.MaxValue;
 
-        foreach (var voice in _voices)
+        foreach (Voice voice in _voices)
         {
             if (voice.State != VoiceState.Released || voice.GenerationId >= oldestGen) continue;
             oldest = voice;
@@ -1589,7 +1589,7 @@ public sealed class Synthesizer
         }
 
         // Last resort: steal the oldest playing voice
-        foreach (var voice in _voices)
+        foreach (Voice voice in _voices)
         {
             if (voice.GenerationId >= oldestGen) continue;
             oldest = voice;
@@ -1604,7 +1604,7 @@ public sealed class Synthesizer
 
     private void KillVoicesByChannelKey(int channel, int key)
     {
-        foreach (var voice in _voices)
+        foreach (Voice voice in _voices)
         {
             if (voice.State != VoiceState.Free &&
                 voice.Channel == channel &&
@@ -1624,7 +1624,7 @@ public sealed class Synthesizer
 
     private void KillVoicesByExclusiveClass(int channel, int exclusiveGroup)
     {
-        foreach (var voice in _voices)
+        foreach (Voice voice in _voices)
         {
             if (voice.State != VoiceState.Free &&
                 voice.Channel == channel &&
@@ -1643,14 +1643,14 @@ public sealed class Synthesizer
     /// </summary>
     private void EnforceRegionPolyphony(PatchZone zone, int channel)
     {
-        var cap = zone.Polyphony;
+        int cap = zone.Polyphony;
         // Count only Playing voices (a stolen voice becomes Released/Free and drops out, so the loop
         // terminates). This caps the simultaneously-held notes from the region; release tails ring on.
         while (true)
         {
             var count = 0;
             Voice? oldest = null;
-            foreach (var voice in _voices)
+            foreach (Voice voice in _voices)
             {
                 if (voice.State != VoiceState.Playing || voice.Channel != channel ||
                     !ReferenceEquals(voice.Zone, zone)) continue;
@@ -1665,7 +1665,7 @@ public sealed class Synthesizer
 
     private void ReleaseAllVoices(int channel)
     {
-        foreach (var voice in _voices)
+        foreach (Voice voice in _voices)
         {
             if (voice.State == VoiceState.Playing && voice.Channel == channel)
                 voice.Release();
@@ -1674,7 +1674,7 @@ public sealed class Synthesizer
 
     private void ReleaseAllSustainedVoices(int channel)
     {
-        foreach (var voice in _voices)
+        foreach (Voice voice in _voices)
         {
             if (voice.State != VoiceState.Playing || voice.Channel != channel) continue;
             // Sostenuto still down on a captured voice → defer release until sostenuto lifts.
@@ -1687,7 +1687,7 @@ public sealed class Synthesizer
 
     private void KillAllVoices(int channel)
     {
-        foreach (var voice in _voices)
+        foreach (Voice voice in _voices)
         {
             if (voice.Channel == channel)
                 voice.Kill();
@@ -1699,9 +1699,9 @@ public sealed class Synthesizer
     // alone — they're never read, since routing and MixBusesToMaster both key off the insert snapshot.
     private void PrepareBuses(IReadOnlyDictionary<InstrumentId, IInstrumentInsert> inserts, int frames)
     {
-        foreach (var id in inserts.Keys)
+        foreach (InstrumentId id in inserts.Keys)
         {
-            if (!_buses.TryGetValue(id, out var bus))
+            if (!_buses.TryGetValue(id, out InstrumentBus? bus))
             {
                 bus = new InstrumentBus(frames);
                 _buses[id] = bus;
@@ -1716,10 +1716,10 @@ public sealed class Synthesizer
     private void MixBusesToMaster(IReadOnlyDictionary<InstrumentId, IInstrumentInsert> inserts,
         Span<float> left, Span<float> right, int frames)
     {
-        foreach (var kv in inserts)
+        foreach (KeyValuePair<InstrumentId, IInstrumentInsert> kv in inserts)
         {
-            if (!_buses.TryGetValue(kv.Key, out var bus)) continue;
-            var interleaved = bus.Interleaved;
+            if (!_buses.TryGetValue(kv.Key, out InstrumentBus? bus)) continue;
+            float[] interleaved = bus.Interleaved;
             for (var i = 0; i < frames; i++)
             {
                 interleaved[i * 2] = bus.L[i];

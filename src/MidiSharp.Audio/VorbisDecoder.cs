@@ -29,10 +29,10 @@ public sealed class VorbisDecoder : IAudioDecoder
         // file (a prefix yields FrameCount 0 → the caller retries with the full bytes).
         try
         {
-            var arr = data.ToArray();
+            byte[]? arr = data.ToArray();
             using var ms = new MemoryStream(arr, writable: false);
             using var reader = new VorbisReader(ms, closeOnDispose: false);
-            var total = reader.TotalSamples;
+            long total = reader.TotalSamples;
             return new AudioInfo
             {
                 Channels = reader.Channels,
@@ -48,7 +48,7 @@ public sealed class VorbisDecoder : IAudioDecoder
 
     public DecodedAudio Decode(byte[] data)
     {
-        var samples = DecodePcm(data, out var channels, out var sampleRate, out var frames);
+        float[] samples = DecodePcm(data, out int channels, out int sampleRate, out long frames);
         return new DecodedAudio
         {
             Channels = channels,
@@ -68,13 +68,13 @@ public sealed class VorbisDecoder : IAudioDecoder
     {
         if (ogg.Length == 0) { channels = 1; sampleRate = 44100; frames = 0; return []; }
 
-        var seg = AsSegment(ogg);
+        ArraySegment<byte> seg = AsSegment(ogg);
         using var ms = new MemoryStream(seg.Array!, seg.Offset, seg.Count, writable: false, publiclyVisible: false);
         using var reader = new VorbisReader(ms, closeOnDispose: false);
 
         channels = reader.Channels;
         sampleRate = reader.SampleRate;
-        var total = reader.TotalSamples;
+        long total = reader.TotalSamples;
 
         float[] result;
         if (total <= 0 || total > int.MaxValue / Math.Max(1, channels))
@@ -84,7 +84,7 @@ public sealed class VorbisDecoder : IAudioDecoder
         else
         {
             var buf = new float[total * channels];
-            var read = reader.ReadSamples(buf, 0, buf.Length);
+            int read = reader.ReadSamples(buf, 0, buf.Length);
             if (read < buf.Length) { Array.Resize(ref buf, read); }
             result = buf;
         }
@@ -104,18 +104,18 @@ public sealed class VorbisDecoder : IAudioDecoder
     {
         if (ogg.Length == 0 || maxFloats <= 0) { channels = 1; sampleRate = 44100; return 0; }
 
-        var seg = AsSegment(ogg);
+        ArraySegment<byte> seg = AsSegment(ogg);
         using var ms = new MemoryStream(seg.Array!, seg.Offset, seg.Count, writable: false, publiclyVisible: false);
         using var reader = new VorbisReader(ms, closeOnDispose: false);
 
         channels = reader.Channels;
         sampleRate = reader.SampleRate;
 
-        var cap = Math.Min(maxFloats, dest.Length);
+        int cap = Math.Min(maxFloats, dest.Length);
         var total = 0;
         while (total < cap)
         {
-            var got = reader.ReadSamples(dest, total, cap - total);
+            int got = reader.ReadSamples(dest, total, cap - total);
             if (got <= 0) break;
             total += got;
         }
@@ -126,7 +126,7 @@ public sealed class VorbisDecoder : IAudioDecoder
     public static void Peek(ReadOnlyMemory<byte> ogg, out int channels, out long frames)
     {
         if (ogg.Length == 0) { channels = 1; frames = 0; return; }
-        var seg = AsSegment(ogg);
+        ArraySegment<byte> seg = AsSegment(ogg);
         using var ms = new MemoryStream(seg.Array!, seg.Offset, seg.Count, writable: false, publiclyVisible: false);
         using var reader = new VorbisReader(ms, closeOnDispose: false);
         channels = reader.Channels;
@@ -134,7 +134,7 @@ public sealed class VorbisDecoder : IAudioDecoder
     }
 
     private static ArraySegment<byte> AsSegment(ReadOnlyMemory<byte> m) =>
-        MemoryMarshal.TryGetArray(m, out var seg) ? seg : new ArraySegment<byte>(m.ToArray());
+        MemoryMarshal.TryGetArray(m, out ArraySegment<byte> seg) ? seg : new ArraySegment<byte>(m.ToArray());
 
     private static float[] DecodeIncremental(VorbisReader reader)
     {

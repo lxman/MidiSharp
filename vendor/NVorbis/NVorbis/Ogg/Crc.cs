@@ -12,7 +12,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
             s_crcTable = new uint[256];
             for (uint i = 0; i < 256; i++)
             {
-                var s = i << 24;
+                uint s = i << 24;
                 for (var j = 0; j < 8; ++j)
                 {
                     s = (s << 1) ^ (s >= (1U << 31) ? CRC32_POLY : 0);

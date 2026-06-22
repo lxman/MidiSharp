@@ -48,14 +48,14 @@ public sealed class ParametricEq : IAudioProcessor
     /// </summary>
     public void SetBands(IReadOnlyList<EqBandSpec> bands)
     {
-        var n = bands?.Count ?? 0;
+        int n = bands?.Count ?? 0;
         if (_left.Length < n)
         {
             var newLeft = new BiquadFilter[n];
             var newRight = new BiquadFilter[n];
             Array.Copy(_left, newLeft, _left.Length);
             Array.Copy(_right, newRight, _right.Length);
-            for (var i = _left.Length; i < n; i++)
+            for (int i = _left.Length; i < n; i++)
             {
                 newLeft[i] = new BiquadFilter(_sampleRate);
                 newRight[i] = new BiquadFilter(_sampleRate);
@@ -66,7 +66,7 @@ public sealed class ParametricEq : IAudioProcessor
 
         for (var i = 0; i < n; i++)
         {
-            var b = bands![i];
+            EqBandSpec b = bands![i];
             _left[i].Configure(b.Type, b.FrequencyHz, b.Q, b.GainDb);
             _right[i].Configure(b.Type, b.FrequencyHz, b.Q, b.GainDb);
         }
@@ -76,7 +76,7 @@ public sealed class ParametricEq : IAudioProcessor
     public void Process(Span<float> interleavedStereo)
     {
         if (_count == 0) return;
-        var frames = interleavedStereo.Length / 2;
+        int frames = interleavedStereo.Length / 2;
         for (var f = 0; f < frames; f++)
         {
             int li = f * 2, ri = li + 1;

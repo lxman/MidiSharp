@@ -96,19 +96,19 @@ public sealed class LyricStream
             return new LyricSegment(string.Empty, null, flags | LyricFlags.Melisma);
         }
 
-        var raw = _encoding.GetString(data);
+        string? raw = _encoding.GetString(data);
         var sb = new StringBuilder(raw.Length);
         string? ruby = null;
         var i = 0;
 
         while (i < raw.Length)
         {
-            var c = raw[i];
+            char c = raw[i];
 
             // Backslash command codes (RP-026 §3).
             if (c == '\\' && i + 1 < raw.Length)
             {
-                var next = raw[i + 1];
+                char next = raw[i + 1];
                 switch (next)
                 {
                     case 'r': flags |= LyricFlags.EndOfLine; i += 2; continue;
@@ -123,13 +123,13 @@ public sealed class LyricStream
             // Tag prefix: {@code} = language, {#key=value} = song info.
             if (c == '{' && i + 1 < raw.Length)
             {
-                var tagType = raw[i + 1];
+                char tagType = raw[i + 1];
                 if (tagType == '@')
                 {
-                    var end = raw.IndexOf('}', i + 2);
+                    int end = raw.IndexOf('}', i + 2);
                     if (end > 0)
                     {
-                        var code = raw.Substring(i + 2, end - (i + 2)).Trim();
+                        string code = raw.Substring(i + 2, end - (i + 2)).Trim();
                         SwitchLanguage(code);
                         flags |= LyricFlags.LanguageChanged;
                         i = end + 1;
@@ -139,16 +139,16 @@ public sealed class LyricStream
                 }
                 else if (tagType == '#')
                 {
-                    var end = raw.IndexOf('}', i + 2);
+                    int end = raw.IndexOf('}', i + 2);
                     if (end < 0) end = raw.Length;
-                    var content = raw.Substring(i + 2, end - (i + 2));
+                    string content = raw.Substring(i + 2, end - (i + 2));
                     if (content.Length > 0)
                     {
-                        var eq = content.IndexOf('=');
+                        int eq = content.IndexOf('=');
                         if (eq > 0)
                         {
-                            var key = content.Substring(0, eq).Trim();
-                            var val = content.Substring(eq + 1).Trim();
+                            string key = content.Substring(0, eq).Trim();
+                            string val = content.Substring(eq + 1).Trim();
                             SetSongInfo(key, val);
                             flags |= LyricFlags.SongInfoChanged;
                         }
@@ -163,7 +163,7 @@ public sealed class LyricStream
             // text preceded it in the same event (per RP-026 §4 / §6).
             if (c == '[')
             {
-                var end = raw.IndexOf(']', i + 1);
+                int end = raw.IndexOf(']', i + 1);
                 if (end > 0)
                 {
                     ruby = raw.Substring(i + 1, end - (i + 1));
@@ -186,7 +186,7 @@ public sealed class LyricStream
 
     private void SwitchLanguage(string code)
     {
-        var upper = code.ToUpperInvariant();
+        string upper = code.ToUpperInvariant();
         LanguageCode = upper;
         // Spec recognises LATIN (ANSI / Windows-1252) and JP (Shift-JIS). Other
         // codes are accepted (we update LanguageCode for the caller) but fall back

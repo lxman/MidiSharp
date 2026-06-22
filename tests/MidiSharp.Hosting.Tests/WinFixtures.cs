@@ -11,7 +11,7 @@ internal static class WinFixtures
     {
         get
         {
-            var env = Environment.GetEnvironmentVariable("MIDISHARP_WIN_FIXTURES");
+            string? env = Environment.GetEnvironmentVariable("MIDISHARP_WIN_FIXTURES");
             if (!string.IsNullOrEmpty(env)) return env;
             // bin/Debug/net10.0 -> repo root is five levels up, then tests/fixtures/win/out.
             return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,

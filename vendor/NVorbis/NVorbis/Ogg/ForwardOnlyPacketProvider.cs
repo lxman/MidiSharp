@@ -135,8 +135,8 @@ namespace MidiSharp.Audio.Vorbis.Ogg
             }
 
             // first, set flags from the start page
-            var contOverhead = dataStart;
-            var isFirst = packetIndex == 27;
+            int contOverhead = dataStart;
+            bool isFirst = packetIndex == 27;
             if (isCont)
             {
                 if (isFirst)
@@ -161,12 +161,12 @@ namespace MidiSharp.Audio.Vorbis.Ogg
             }
 
             // second, determine how long the packet is
-            var dataLen = GetPacketLength(pageBuf, ref packetIndex);
+            int dataLen = GetPacketLength(pageBuf, ref packetIndex);
             var packetBuf = new Memory<byte>(pageBuf, dataStart, dataLen);
             dataStart += dataLen;
 
             // third, determine if the packet is the last one in the page
-            var isLast = packetIndex == 27 + pageBuf[26];
+            bool isLast = packetIndex == 27 + pageBuf[26];
             if (isCntd)
             {
                 if (isLast)
@@ -177,7 +177,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
                 else
                 {
                     // whelp, not quite...  gotta account for the continued packet
-                    var pi = packetIndex;
+                    int pi = packetIndex;
                     GetPacketLength(pageBuf, ref pi);
                     isLast = pi == 27 + pageBuf[26];
                 }
@@ -208,10 +208,10 @@ namespace MidiSharp.Audio.Vorbis.Ogg
                         contOverhead += 27 + pageBuf[26];
 
                         // save off the previous buffer data
-                        var prevBuf = packetBuf;
+                        Memory<byte> prevBuf = packetBuf;
 
                         // get the size of this page's portion
-                        var contSz = GetPacketLength(pageBuf, ref packetIndex);
+                        int contSz = GetPacketLength(pageBuf, ref packetIndex);
 
                         // set up the new buffer and fill it
                         packetBuf = new Memory<byte>(new byte[prevBuf.Length + contSz]);
@@ -260,7 +260,7 @@ namespace MidiSharp.Audio.Vorbis.Ogg
                 }
             }
 
-            var temp = _pageQueue.Dequeue();
+            (byte[] buf, bool isResync) temp = _pageQueue.Dequeue();
             pageBuf = temp.buf;
             isResync = temp.isResync;
 

@@ -36,7 +36,7 @@ public sealed class DlsLoaderTests : IDisposable
 
     /// <summary>Seconds → DLS time-cents scale (16.16). sec = 2^(tc/1200).</summary>
     private static int Tc(double seconds) => (int)Math.Round(1200.0 * Math.Log2(seconds) * 65536.0);
-    private static double TcToSec(int scale) { var tc = scale / 65536.0; return tc <= -12000 ? 0 : Math.Pow(2, tc / 1200.0); }
+    private static double TcToSec(int scale) { double tc = scale / 65536.0; return tc <= -12000 ? 0 : Math.Pow(2, tc / 1200.0); }
 
     /// <summary>Hz → DLS absolute-cents scale (16.16). Hz = 8.176 · 2^(cents/1200).</summary>
     private static int AbsCents(double hz) => (int)Math.Round(1200.0 * Math.Log2(hz / 8.176) * 65536.0);
@@ -50,19 +50,19 @@ public sealed class DlsLoaderTests : IDisposable
     [Fact]
     public void Loads_basic_instrument_region_and_sample()
     {
-        var pcm = Enumerable.Range(0, 100).Select(i => (short)(i * 10)).ToArray();
-        var dls = MakeDls(
+        short[] pcm = Enumerable.Range(0, 100).Select(i => (short)(i * 10)).ToArray();
+        byte[] dls = MakeDls(
             Instrument(bank: 0, prog: 5, drum: false, name: "Test Piano",
                 instArts: null,
                 regions: [Region(48, 72, 0, 127, keyGroup: 0, tableIndex: 0, arts: null, rgnWsmp: null)]),
             [Wave(unity: 60, fine: 0, gainCb1616: 0, pcm: pcm, loop: null)]);
 
-        using var bank = Load(dls);
+        using IRBank bank = Load(dls);
 
-        var patch = bank.FindPatch(0, 5);
+        Patch? patch = bank.FindPatch(0, 5);
         Assert.NotNull(patch);
         Assert.Equal("Test Piano", patch!.Name);
-        var z = patch.Zones[0];
+        PatchZone z = patch.Zones[0];
         Assert.Equal(48, z.Keys.Low);
         Assert.Equal(72, z.Keys.High);
         Assert.Equal(60, z.Sample.OverridingRootKey);
@@ -72,14 +72,14 @@ public sealed class DlsLoaderTests : IDisposable
     [Fact]
     public void Volume_envelope_from_eg1_connections()
     {
-        var arts = Art2(
+        byte[] arts = Art2(
             Conn(ConnectionSource.None, ConnectionDestination.Eg1AttackTime, Tc(2.0)),
             Conn(ConnectionSource.None, ConnectionDestination.Eg1DecayTime, Tc(4.0)),
             Conn(ConnectionSource.None, ConnectionDestination.Eg1ReleaseTime, Tc(0.5)),
             Conn(ConnectionSource.None, ConnectionDestination.Eg1SustainLevel, Fixed16(SustainCb(0.5))));
 
-        var z = LoadSingleZone(arts);
-        var env = z.VolumeEnvelope;
+        PatchZone z = LoadSingleZone(arts);
+        EnvelopeSettings env = z.VolumeEnvelope;
         Assert.Equal(2.0, env.AttackSeconds, 3);
         Assert.Equal(4.0, env.DecaySeconds, 3);
         Assert.Equal(0.5, env.ReleaseSeconds, 3);
@@ -89,14 +89,14 @@ public sealed class DlsLoaderTests : IDisposable
     [Fact]
     public void Mod_envelope_eg2_targets_pitch_and_filter()
     {
-        var arts = Art2(
+        byte[] arts = Art2(
             // EG2 timing makes the mod envelope exist; EG2 as a source supplies the depths.
             Conn(ConnectionSource.None, ConnectionDestination.Eg2AttackTime, Tc(1.0)),
             Conn(ConnectionSource.None, ConnectionDestination.Eg2ReleaseTime, Tc(0.25)),
             Conn(ConnectionSource.Eg2, ConnectionDestination.Pitch, Fixed16(300)),       // +300 cents
             Conn(ConnectionSource.Eg2, ConnectionDestination.FilterCutoff, Fixed16(1200)));
 
-        var z = LoadSingleZone(arts);
+        PatchZone z = LoadSingleZone(arts);
         Assert.NotNull(z.ModulationEnvelope);
         Assert.Equal(1.0, z.ModulationEnvelope!.AttackSeconds, 3);
         Assert.Equal(300.0, z.Pitch.ModulationEnvelopeDepthCents, 1);
@@ -107,12 +107,12 @@ public sealed class DlsLoaderTests : IDisposable
     [Fact]
     public void Filter_cutoff_and_q_from_connections()
     {
-        var cutoffScale = AbsCents(2000);
-        var arts = Art2(
+        int cutoffScale = AbsCents(2000);
+        byte[] arts = Art2(
             Conn(ConnectionSource.None, ConnectionDestination.FilterCutoff, cutoffScale),
             Conn(ConnectionSource.None, ConnectionDestination.FilterQ, Fixed16(120)));   // 12.0 dB (cB→dB)
 
-        var z = LoadSingleZone(arts);
+        PatchZone z = LoadSingleZone(arts);
         Assert.NotNull(z.Filter);
         Assert.Equal(FilterType.LowPass, z.Filter!.Type);
         Assert.Equal(AbsCentsToHz(cutoffScale), z.Filter.CutoffHz, 1);
@@ -122,13 +122,13 @@ public sealed class DlsLoaderTests : IDisposable
     [Fact]
     public void Vibrato_lfo_from_connections()
     {
-        var freqScale = AbsCents(6.0);   // 6 Hz
-        var arts = Art2(
+        int freqScale = AbsCents(6.0);   // 6 Hz
+        byte[] arts = Art2(
             Conn(ConnectionSource.None, ConnectionDestination.VibratoFrequency, freqScale),
             Conn(ConnectionSource.None, ConnectionDestination.VibratoStartDelay, Tc(0.5)),
             Conn(ConnectionSource.Vibrato, ConnectionDestination.Pitch, Fixed16(40)));   // 40 cents depth
 
-        var z = LoadSingleZone(arts);
+        PatchZone z = LoadSingleZone(arts);
         Assert.NotNull(z.VibratoLFO);
         Assert.Equal(AbsCentsToHz(freqScale), z.VibratoLFO!.FrequencyHz, 2);
         Assert.Equal(0.5, z.VibratoLFO.DelaySeconds, 3);
@@ -138,14 +138,14 @@ public sealed class DlsLoaderTests : IDisposable
     [Fact]
     public void Mod_lfo_targets_pitch_volume_and_filter()
     {
-        var freqScale = AbsCents(5.0);
-        var arts = Art2(
+        int freqScale = AbsCents(5.0);
+        byte[] arts = Art2(
             Conn(ConnectionSource.None, ConnectionDestination.LfoFrequency, freqScale),
             Conn(ConnectionSource.Lfo, ConnectionDestination.Pitch, Fixed16(25)),         // 25 cents
             Conn(ConnectionSource.Lfo, ConnectionDestination.Gain, Fixed16(60)),          // 6.0 dB (cB→dB)
             Conn(ConnectionSource.Lfo, ConnectionDestination.FilterCutoff, Fixed16(200)));
 
-        var z = LoadSingleZone(arts);
+        PatchZone z = LoadSingleZone(arts);
         Assert.NotNull(z.ModulationLFO);
         Assert.Equal(AbsCentsToHz(freqScale), z.ModulationLFO!.FrequencyHz, 2);
         Assert.Equal(25.0, z.ModulationLFO.PitchDepthCents, 1);
@@ -158,11 +158,11 @@ public sealed class DlsLoaderTests : IDisposable
     {
         // KeyNumber → FilterCutoff: not part of the default-articulation set, so its presence proves a
         // bank-supplied external connection was translated into a runtime ModulationRoute.
-        var arts = Art2(
+        byte[] arts = Art2(
             Conn(ConnectionSource.None, ConnectionDestination.FilterCutoff, AbsCents(1000)),
             Conn(ConnectionSource.KeyNumber, ConnectionDestination.FilterCutoff, Fixed16(2400)));
 
-        var z = LoadSingleZone(arts);
+        PatchZone z = LoadSingleZone(arts);
         Assert.Contains(z.Routes, r =>
             r.Source is ModSource.KeyNumber && r.Dest == ModDestination.FilterCutoffCents);
     }
@@ -170,7 +170,7 @@ public sealed class DlsLoaderTests : IDisposable
     [Fact]
     public void Default_articulation_routes_are_present_without_bank_articulators()
     {
-        var z = LoadSingleZone(arts: null);
+        PatchZone z = LoadSingleZone(arts: null);
         // Even with no bank articulators, DLS Level 2 defaults give velocity→gain and CC7→gain etc.
         Assert.Contains(z.Routes, r => r.Source is ModSource.Velocity && r.Dest == ModDestination.AttenuationDb);
         Assert.Contains(z.Routes, r => r.Source is ModSource.ChannelController { Number: 10 } && r.Dest == ModDestination.PanNormalized);
@@ -179,13 +179,13 @@ public sealed class DlsLoaderTests : IDisposable
     [Fact]
     public void Drum_kit_flag_maps_to_bank_128()
     {
-        var dls = MakeDls(
+        byte[] dls = MakeDls(
             Instrument(bank: 0, prog: 0, drum: true, name: "Drums",
                 instArts: null,
                 regions: [Region(35, 81, 0, 127, 0, 0, null, null)]),
             [Wave(60, 0, 0, [1, 2, 3, 4], null)]);
 
-        using var bank = Load(dls);
+        using IRBank bank = Load(dls);
         Assert.NotNull(bank.FindPatch(128, 0));   // drum-kit flag forces bank 128
         Assert.Null(bank.FindPatch(0, 0));
     }
@@ -194,14 +194,14 @@ public sealed class DlsLoaderTests : IDisposable
     public void Forward_loop_and_tuning_from_wsmp()
     {
         var wsmp = new WsmpSpec(unity: 48, fineCents: 25, gainCb1616: 0, loop: (type: 0u, start: 10u, length: 50u));
-        var dls = MakeDls(
+        byte[] dls = MakeDls(
             Instrument(0, 0, false, "Looped",
                 instArts: null,
                 regions: [Region(0, 127, 0, 127, 0, 0, null, null)]),
             [WaveWithWsmp(new short[100], wsmp)]);
 
-        using var bank = Load(dls);
-        var z = bank.FindPatch(0, 0)!.Zones[0];
+        using IRBank bank = Load(dls);
+        PatchZone z = bank.FindPatch(0, 0)!.Zones[0];
         Assert.Equal(LoopMode.Continuous, z.Sample.LoopMode);
         Assert.Equal(48, z.Sample.OverridingRootKey);
         Assert.Equal(25.0, z.Sample.FineTuneCents, 1);
@@ -211,15 +211,15 @@ public sealed class DlsLoaderTests : IDisposable
     public void Extensible_float_wave_decodes_as_float_not_int()
     {
         var pcm = new[] { 0.75f, 0.123f, 0.75f, 0.123f };
-        var dls = MakeDls(
+        byte[] dls = MakeDls(
             Instrument(0, 0, false, "FloatExt", null,
                 [Region(0, 127, 0, 127, 0, 0, null, null)]),
             [WaveFloatExtensible(pcm)]);
 
-        using var bank = Load(dls);
-        var id = bank.FindPatch(0, 0)!.Zones[0].Sample.SampleId;
+        using IRBank bank = Load(dls);
+        int id = bank.FindPatch(0, 0)!.Zones[0].Sample.SampleId;
         var buf = new float[pcm.Length];
-        var n = bank.Samples.ReadFrames(id, 0, buf);
+        int n = bank.Samples.ReadFrames(id, 0, buf);
 
         Assert.Equal(pcm.Length, n);
         // Decoded as float → matches the source. Misread as integer PCM would map every value to ~0.49
@@ -233,13 +233,13 @@ public sealed class DlsLoaderTests : IDisposable
     {
         // wsmp lGain is 16.16 cB of gain (negative = quieter); the reader negates → positive attenuation.
         var wsmp = new WsmpSpec(unity: 60, fineCents: 0, gainCb1616: -Fixed16(60), loop: null);  // 60 cB = 6 dB down
-        var dls = MakeDls(
+        byte[] dls = MakeDls(
             Instrument(0, 0, false, "Quiet", null,
                 [Region(0, 127, 0, 127, 0, 0, null, null)]),
             [WaveWithWsmp(new short[16], wsmp)]);
 
-        using var bank = Load(dls);
-        var z = bank.FindPatch(0, 0)!.Zones[0];
+        using IRBank bank = Load(dls);
+        PatchZone z = bank.FindPatch(0, 0)!.Zones[0];
         Assert.Equal(6.0, z.Level.AttenuationDb, 2);
     }
 
@@ -247,14 +247,14 @@ public sealed class DlsLoaderTests : IDisposable
 
     private IRBank Load(byte[] dls)
     {
-        var path = Path.Combine(_dir, "bank.dls");
+        string path = Path.Combine(_dir, "bank.dls");
         File.WriteAllBytes(path, dls);
         return SoundBankLoader.Load(path);
     }
 
     private PatchZone LoadSingleZone(byte[]? arts)
     {
-        var dls = MakeDls(
+        byte[] dls = MakeDls(
             Instrument(0, 0, false, "Inst",
                 instArts: arts,
                 regions: [Region(0, 127, 0, 127, 0, 0, null, null)]),
@@ -271,7 +271,7 @@ public sealed class DlsLoaderTests : IDisposable
 
     private static byte[] Instrument(uint bank, uint prog, bool drum, string name, byte[]? instArts, byte[][] regions)
     {
-        var localeBank = drum ? (bank | 0x80000000u) : bank;
+        uint localeBank = drum ? (bank | 0x80000000u) : bank;
         var parts = new List<byte[]>
         {
             Chunk("insh", Cat(U32((uint)regions.Length), U32(localeBank), U32(prog))),
@@ -317,7 +317,7 @@ public sealed class DlsLoaderTests : IDisposable
         Buffer.BlockCopy(pcm, 0, data, 0, data.Length);
         // KSDATAFORMAT_SUBTYPE_IEEE_FLOAT = {00000003-0000-0010-8000-00AA00389B71}; leading word = 0x0003.
         byte[] floatSubformat = [0x03, 0, 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xAA, 0, 0x38, 0x9B, 0x71];
-        var fmt = Cat(
+        byte[] fmt = Cat(
             U16(0xFFFE), U16(1), U32(44100), U32(44100 * 4), U16(4), U16(32),  // extensible, mono, 32-bit
             U16(22), U16(32), U32(0),    // cbSize, wValidBitsPerSample, dwChannelMask
             floatSubformat);
@@ -330,7 +330,7 @@ public sealed class DlsLoaderTests : IDisposable
 
     private static byte[] Wsmp(WsmpSpec w)
     {
-        var head = Cat(U32(20), U16(w.unity), S16(w.fineCents), S32(w.gainCb1616), U32(0),
+        byte[] head = Cat(U32(20), U16(w.unity), S16(w.fineCents), S32(w.gainCb1616), U32(0),
             U32(w.loop is null ? 0u : 1u));
         if (w.loop is { } l)
             head = Cat(head, Cat(U32(16), U32(l.type), U32(l.start), U32(l.length)));
@@ -347,7 +347,7 @@ public sealed class DlsLoaderTests : IDisposable
 
     private static byte[] Riff(string form, params byte[][] children)
     {
-        var body = Cat(children);
+        byte[] body = Cat(children);
         return Cat(Tag("RIFF"), U32((uint)(4 + body.Length)), Tag(form), body);
     }
 
@@ -356,7 +356,7 @@ public sealed class DlsLoaderTests : IDisposable
 
     private static byte[] Chunk(string tag, byte[] body)
     {
-        var pad = (body.Length & 1) == 1 ? new byte[] { 0 } : Array.Empty<byte>();
+        byte[] pad = (body.Length & 1) == 1 ? new byte[] { 0 } : Array.Empty<byte>();
         return Cat(Tag(tag), U32((uint)body.Length), body, pad);
     }
 

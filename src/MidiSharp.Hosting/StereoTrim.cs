@@ -20,8 +20,8 @@ public static class StereoTrim
     /// </summary>
     public static void Add(Span<float> dst, ReadOnlySpan<float> src, double gainDb, double pan)
     {
-        var (gl, gr) = Factors(gainDb, pan);
-        var n = Math.Min(dst.Length, src.Length);
+        (float gl, float gr) = Factors(gainDb, pan);
+        int n = Math.Min(dst.Length, src.Length);
         for (var i = 0; i + 1 < n; i += 2)
         {
             dst[i] += src[i] * gl;
@@ -37,7 +37,7 @@ public static class StereoTrim
     /// </summary>
     public static void Apply(Span<float> buf, double gainDb, double pan)
     {
-        var (gl, gr) = Factors(gainDb, pan);
+        (float gl, float gr) = Factors(gainDb, pan);
         if (gl == 1f && gr == 1f) return;   // unity → leave untouched (bit-identical)
         for (var i = 0; i + 1 < buf.Length; i += 2)
         {
@@ -48,9 +48,9 @@ public static class StereoTrim
 
     private static (float left, float right) Factors(double gainDb, double pan)
     {
-        var gain = gainDb == 0.0 ? 1f : (float)Math.Pow(10.0, gainDb / 20.0);
-        var gl = pan > 0 ? gain * (float)(1.0 - pan) : gain;   // pan right → trim left
-        var gr = pan < 0 ? gain * (float)(1.0 + pan) : gain;   // pan left  → trim right
+        float gain = gainDb == 0.0 ? 1f : (float)Math.Pow(10.0, gainDb / 20.0);
+        float gl = pan > 0 ? gain * (float)(1.0 - pan) : gain;   // pan right → trim left
+        float gr = pan < 0 ? gain * (float)(1.0 + pan) : gain;   // pan left  → trim right
         return (gl, gr);
     }
 }

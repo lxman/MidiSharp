@@ -111,9 +111,9 @@ internal static class LadspaInterop
     /// <summary>The plugin's default value for a port, resolved from its range hint (best-effort).</summary>
     public static float ResolveDefault(in LADSPA_PortRangeHint hint, int sampleRate)
     {
-        var h = hint.HintDescriptor;
-        var lower = hint.LowerBound * ((h & HintSampleRate) != 0 ? sampleRate : 1);
-        var upper = hint.UpperBound * ((h & HintSampleRate) != 0 ? sampleRate : 1);
+        int h = hint.HintDescriptor;
+        float lower = hint.LowerBound * ((h & HintSampleRate) != 0 ? sampleRate : 1);
+        float upper = hint.UpperBound * ((h & HintSampleRate) != 0 ? sampleRate : 1);
         return (h & HintDefaultMask) switch
         {
             HintDefaultMinimum => lower,

@@ -10,8 +10,10 @@ using MidiSharp.Dsp;
 using MidiSharp.IO;
 using MidiSharp.Loader;
 using MidiSharp.Loader.Sfz;
+using MidiSharp.Model;
 using MidiSharp.Model.Events;
 using MidiSharp.PatchMap;
+using MidiSharp.Sequencing;
 using MidiSharp.SoundBank;
 using MidiSharp.Synth;
 using MidiSharp.Synth.OwnAudio;
@@ -50,7 +52,7 @@ for (var i = 0; i < args.Length; i++)
             // Optional numeric ceiling in dBFS follows; default -1.0. A dense mix can overshoot 0 dBFS
             // and clip on export — this brickwalls the master output so it never does.
             limiterCeilingDb = -1.0;
-            if (i + 1 < args.Length && double.TryParse(args[i + 1], CultureInfo.InvariantCulture, out var parsedCeil))
+            if (i + 1 < args.Length && double.TryParse(args[i + 1], CultureInfo.InvariantCulture, out double parsedCeil))
             { limiterCeilingDb = parsedCeil; i++; }
             break;
         default: positionals.Add(args[i]); break;
@@ -89,7 +91,7 @@ string midiPath, sf2Path;
 string? renderPath;
 if (setupSpec != null)
 {
-    setup = SetupSupport.Resolve(setupSpec, out var setupError);
+    setup = SetupSupport.Resolve(setupSpec, out string? setupError);
     if (setup == null) { Console.WriteLine(setupError); return 1; }
     midiPath = setup.MidiPath;
     sf2Path = setup.SoundfontPath;
@@ -108,14 +110,14 @@ if (!File.Exists(midiPath)) { Console.WriteLine($"MIDI not found: {midiPath}"); 
 if (!sf2Path.Contains('+') && !File.Exists(sf2Path)) { Console.WriteLine($"SoundFont not found: {sf2Path}"); return 1; }
 
 Console.WriteLine($"Loading MIDI: {midiPath}");
-var repair = SmfRepairFilter.Scan(File.ReadAllBytes(midiPath));
+SmfRepairResult repair = SmfRepairFilter.Scan(File.ReadAllBytes(midiPath));
 if (repair.HasDefects)
 {
     Console.WriteLine($"  Repair: {repair.CorrectedCount} corrected of {repair.Defects.Count} defect(s):");
-    foreach (var d in repair.Defects)
+    foreach (SmfDefect d in repair.Defects)
         Console.WriteLine($"    {d}");
 }
-var midiFile = MidiFileReader.Read(repair.Data);
+MidiFile midiFile = MidiFileReader.Read(repair.Data);
 Console.WriteLine($"  Format: {midiFile.Header.Format}, Tracks: {midiFile.Tracks.Count}, " +
                   $"Division: {midiFile.Header.Division.TicksPerQuarterNote} ticks/quarter");
 
@@ -124,7 +126,7 @@ Console.WriteLine($"Loading SoundFont: {sf2Path}");
 // fast first-hit notes out-run the lazy background decoder and lose their attack (non-deterministic
 // "dropped notes"). Live playback keeps the default lazy path (must never block the audio thread).
 var loadOptions = new SoundBankLoadOptions { BlockingSampleDecode = renderPath != null };
-var soundBank = LoadBank(sf2Path, loadOptions);
+IRBank soundBank = LoadBank(sf2Path, loadOptions);
 Console.WriteLine($"  {soundBank.Name}: {soundBank.Patches.Count} patches, " +
                   $"{soundBank.Samples.Count} samples");
 
@@ -132,9 +134,9 @@ Console.WriteLine($"  {soundBank.Name}: {soundBank.Patches.Count} patches, " +
 if (listPatches)
 {
     Console.WriteLine("Patches used by this song:");
-    foreach (var u in PatchUsageAnalyzer.Analyze(midiFile, soundBank))
+    foreach (UsedPatch u in PatchUsageAnalyzer.Analyze(midiFile, soundBank))
     {
-        var addr = u.IsDrum
+        string addr = u.IsDrum
             ? $"kit (bank 128) prog {u.Program,3}"
             : $"prog {u.Program,3}" + (u.Bank != 0 ? $" bank {u.Bank}" : "");
         Console.WriteLine($"  {addr}  ch[{string.Join(",", u.Channels)}]  {u.BaseName ?? "(not in base font)"}");
@@ -145,7 +147,7 @@ if (listPatches)
 // Build the bank the synth plays: a saved setup's overrides, or --map patch swaps, or the base font
 // as-is. The synth consumes one bank — it can't tell a composite from a native font. A setup may also
 // carry per-track routing, returned as a track→patch map handed to Synthesizer.SetTrackPatchMap.
-var playBank = soundBank;
+IRBank playBank = soundBank;
 PatchMapSession? session = null;
 IReadOnlyDictionary<int, (int Bank, int Program)>? trackPatchMap = null;
 IReadOnlyDictionary<int, (int Bank, int Program)>? partPatchMap = null;
@@ -155,17 +157,17 @@ if (setup != null && ((setup.Overrides?.Length ?? 0) > 0 || (setup.TrackOverride
     try
     {
         session = SetupSupport.BuildSession(setup, soundBank, loadOptions);
-        var resolved = session.BuildResolved();
+        CompositeResult resolved = session.BuildResolved();
         playBank = resolved.Bank;
         trackPatchMap = resolved.TrackPatchMap;
         partPatchMap = resolved.PartPatchMap;
-        foreach (var o in setup.Overrides ?? [])
+        foreach (SetupPatchOverride o in setup.Overrides ?? [])
             Console.WriteLine($"  override prog {o.LogicalProgram} → {Path.GetFileName(o.SourcePath)} " +
                               $"(bank {o.SourceBank}, prog {o.SourceProgram})");
-        foreach (var o in setup.TrackOverrides ?? [])
+        foreach (SetupTrackOverride o in setup.TrackOverrides ?? [])
             Console.WriteLine($"  track {o.TrackIndex} ({o.TrackName ?? "?"}) → {Path.GetFileName(o.SourcePath)} " +
                               $"(bank {o.SourceBank}, prog {o.SourceProgram})");
-        foreach (var o in setup.PartOverrides ?? [])
+        foreach (SetupPartOverride o in setup.PartOverrides ?? [])
             Console.WriteLine($"  part t{o.TrackIndex} ch{o.Channel} ({o.PartName ?? "?"}) → {Path.GetFileName(o.SourcePath)} " +
                               $"(bank {o.SourceBank}, prog {o.SourceProgram})");
     }
@@ -182,18 +184,18 @@ else if (maps.Count > 0)
     {
         session = new PatchMapSession(soundBank);
         var srcByPath = new Dictionary<string, IRBank>(StringComparer.OrdinalIgnoreCase);
-        foreach (var spec in maps)
+        foreach (string spec in maps)
         {
-            var (lb, lp, font, sb, sp) = ParseMap(spec);
+            (int lb, int lp, string font, int sb, int sp) = ParseMap(spec);
             if (!File.Exists(font)) { Console.WriteLine($"Override font not found: {font}"); session.Dispose(); return 1; }
-            if (!srcByPath.TryGetValue(font, out var src))
+            if (!srcByPath.TryGetValue(font, out IRBank? src))
             {
                 src = SoundBankLoader.Load(font, loadOptions);
                 session.AddSource(src);
                 srcByPath[font] = src;
             }
             session.SetOverride(lb, lp, new PatchRef(src, sb, sp));
-            var what = lb == 128 ? $"kit prog {lp}" : $"prog {lp}" + (lb != 0 ? $" bank {lb}" : "");
+            string what = lb == 128 ? $"kit prog {lp}" : $"prog {lp}" + (lb != 0 ? $" bank {lb}" : "");
             Console.WriteLine($"  override {what} → {Path.GetFileName(font)} (bank {sb}, prog {sp})");
         }
         playBank = session.BuildComposite();
@@ -218,16 +220,16 @@ if (partPatchMap != null) synth.SetPartPatchMap(partPatchMap);
 // Zero is skipped so an all-zero setup stays on the synth's bit-identical pre-mixer path.
 if (setup != null)
 {
-    foreach (var o in setup.Overrides ?? [])
+    foreach (SetupPatchOverride o in setup.Overrides ?? [])
         if (o.GainDb != 0)
             synth.GetInstrumentMix(o.LogicalBank, o.LogicalProgram).GainDb = o.GainDb;
     if (trackPatchMap != null)
-        foreach (var o in setup.TrackOverrides ?? [])
-            if (o.GainDb != 0 && trackPatchMap.TryGetValue(o.TrackIndex, out var addr))
+        foreach (SetupTrackOverride o in setup.TrackOverrides ?? [])
+            if (o.GainDb != 0 && trackPatchMap.TryGetValue(o.TrackIndex, out (int Bank, int Program) addr))
                 synth.GetInstrumentMix(addr.Bank, addr.Program).GainDb = o.GainDb;
     // A part override's trim lands on the part's mixer bucket — the (TrackMixBank, TrackPart) id the
     // voice is tagged with — matching the web player.
-    foreach (var o in setup.PartOverrides ?? [])
+    foreach (SetupPartOverride o in setup.PartOverrides ?? [])
         if (o.GainDb != 0)
             synth.GetInstrumentMix(Synthesizer.TrackMixBank, Synthesizer.TrackPart(o.TrackIndex, o.Channel)).GainDb = o.GainDb;
 }
@@ -248,7 +250,7 @@ if (limiterCeilingDb is { } ceil)
 // the live path lets the audio backend pull blocks via its callback.
 var player = new RealtimePlayer(midiFile, synth);
 
-var exitCode = renderPath != null
+int exitCode = renderPath != null
     ? RenderToWav(player, renderPath, sampleRate, masterChain)
     : PlayLive(player, sampleRate);
 session?.Dispose();   // releases the base + override source fonts (no-op if no overrides)
@@ -270,13 +272,13 @@ static int RunSfzReport(string target)
     else { Console.WriteLine($"Not found: {target}"); return 1; }
 
     if (files.Count == 0) { Console.WriteLine($"No .sfz files under {target}"); return 0; }
-    var single = files.Count == 1;
+    bool single = files.Count == 1;
 
     // family -> (#fonts using it, total regions across fonts, note)
     var rollup = new Dictionary<string, (int Fonts, int Regions, string? Note)>(StringComparer.Ordinal);
     var withFindings = 0;
 
-    foreach (var f in files)
+    foreach (string f in files)
     {
         SfzLoadReport rep;
         try { rep = SfzDiagnostics.Scan(f); }
@@ -291,15 +293,15 @@ static int RunSfzReport(string target)
             if (rep.IgnoredHeaders.Count > 0)
                 Console.WriteLine("  ignored headers: " +
                     string.Join(", ", rep.IgnoredHeaders.Select(h => $"<{h.Header}>×{h.Count}")));
-            foreach (var op in rep.UnsupportedOpcodes)
+            foreach (SfzOpcodeStat op in rep.UnsupportedOpcodes)
                 Console.WriteLine($"  {op.Opcode,-24}{op.Count,6}  {op.Note}");
             if (!rep.HasFindings)
                 Console.WriteLine("  fully supported");
         }
 
-        foreach (var op in rep.UnsupportedOpcodes)
+        foreach (SfzOpcodeStat op in rep.UnsupportedOpcodes)
         {
-            rollup.TryGetValue(op.Opcode, out var agg);
+            rollup.TryGetValue(op.Opcode, out (int Fonts, int Regions, string? Note) agg);
             rollup[op.Opcode] = (agg.Fonts + 1, agg.Regions + op.Count, op.Note);
         }
     }
@@ -309,7 +311,7 @@ static int RunSfzReport(string target)
         Console.WriteLine();
         Console.WriteLine($"=== Rollup: {files.Count} fonts scanned, {withFindings} use unsupported opcodes ===");
         Console.WriteLine($"  {"opcode",-24}{"fonts",6}{"regions",9}  note");
-        foreach (var kv in rollup.OrderByDescending(k => k.Value.Fonts).ThenByDescending(k => k.Value.Regions)
+        foreach (KeyValuePair<string, (int Fonts, int Regions, string? Note)> kv in rollup.OrderByDescending(k => k.Value.Fonts).ThenByDescending(k => k.Value.Regions)
                                   .ThenBy(k => k.Key, StringComparer.Ordinal))
             Console.WriteLine($"  {kv.Key,-24}{kv.Value.Fonts,6}{kv.Value.Regions,9}  {kv.Value.Note}");
     }
@@ -320,7 +322,7 @@ static IRBank LoadBank(string spec, SoundBankLoadOptions options)
 {
     if (spec.Contains('+'))
     {
-        var parts = spec.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        string[] parts = spec.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var files = new List<(string, int)>();
         for (var i = 0; i < parts.Length; i++) files.Add((parts[i], i == 0 ? 0 : 128));
         return SoundBankLoader.LoadSfz(files, options);
@@ -329,8 +331,8 @@ static IRBank LoadBank(string spec, SoundBankLoadOptions options)
     if (spec.EndsWith(".sfz", StringComparison.OrdinalIgnoreCase) &&
         spec.Contains("Melodic", StringComparison.OrdinalIgnoreCase))
     {
-        var i = spec.IndexOf("Melodic", StringComparison.OrdinalIgnoreCase);
-        var drums = spec[..i] + "Drums" + spec[(i + "Melodic".Length)..];
+        int i = spec.IndexOf("Melodic", StringComparison.OrdinalIgnoreCase);
+        string drums = spec[..i] + "Drums" + spec[(i + "Melodic".Length)..];
         if (File.Exists(drums))
         {
             Console.WriteLine($"  (auto-pairing percussion: {Path.GetFileName(drums)} → bank 128)");
@@ -347,25 +349,25 @@ static IRBank LoadBank(string spec, SoundBankLoadOptions options)
 // the right are the source coordinates; everything before them is the font path.
 static (int lb, int lp, string font, int sb, int sp) ParseMap(string spec)
 {
-    var eq = spec.IndexOf('=');
+    int eq = spec.IndexOf('=');
     if (eq <= 0)
         throw new FormatException($"Bad --map '{spec}'. Use <prog>=<font> or <bank>:<prog>=<font>:<srcBank>:<srcProg>.");
 
-    var left = spec[..eq];
-    var right = spec[(eq + 1)..];
+    string left = spec[..eq];
+    string right = spec[(eq + 1)..];
 
     int lb = 0, lp;
-    var lparts = left.Split(':');
+    string[] lparts = left.Split(':');
     if (lparts.Length == 1) lp = int.Parse(lparts[0]);
     else { lb = int.Parse(lparts[0]); lp = int.Parse(lparts[1]); }
 
     // Peel up to two trailing integer tokens off the right as the source coordinates;
     // the remainder is the font path (so a path may itself contain colons).
-    var rparts = right.Split(':');
+    string[] rparts = right.Split(':');
     var tail = new List<int>();
-    var idx = rparts.Length - 1;
-    while (idx > 0 && tail.Count < 2 && int.TryParse(rparts[idx], out var n)) { tail.Insert(0, n); idx--; }
-    var font = string.Join(":", rparts, 0, idx + 1);
+    int idx = rparts.Length - 1;
+    while (idx > 0 && tail.Count < 2 && int.TryParse(rparts[idx], out int n)) { tail.Insert(0, n); idx--; }
+    string font = string.Join(":", rparts, 0, idx + 1);
 
     int sb = lb, sp = lp;
     if (tail.Count == 1) sp = tail[0];
@@ -386,19 +388,19 @@ static int PlayLive(RealtimePlayer player, int sampleRate)
     Console.WriteLine("Controls:  [Space] play/pause   [S] stop/reset   [Q] quit");
     Console.WriteLine();
 
-    var interactive = !Console.IsInputRedirected && Environment.UserInteractive;
+    bool interactive = !Console.IsInputRedirected && Environment.UserInteractive;
     var running = true;
     while (running && (interactive || !player.IsFinished))
     {
         if (interactive)
         {
-            var state = player.IsPaused ? "Paused " : player.IsFinished ? "Done   " : "Playing";
+            string state = player.IsPaused ? "Paused " : player.IsFinished ? "Done   " : "Playing";
             Console.Write($"\r[{state}] {player.Position:mm\\:ss\\.fff} / {player.Duration:mm\\:ss\\.fff}  " +
                           $"voices={player.Synthesizer.ActiveVoiceCount,3}   ");
 
             if (Console.KeyAvailable)
             {
-                var key = Console.ReadKey(intercept: true);
+                ConsoleKeyInfo key = Console.ReadKey(intercept: true);
                 switch (key.Key)
                 {
                     case ConsoleKey.Spacebar:
@@ -422,15 +424,15 @@ static int RenderToWav(RealtimePlayer player, string outPath, int sampleRate, IA
 {
     // Render the sequence plus a 2-second tail so envelope releases finish cleanly.
     var totalFrames = (long)((player.Duration.TotalSeconds + 2.0) * sampleRate);
-    var totalEvents = player.Sequencer.Events.Count;
+    int totalEvents = player.Sequencer.Events.Count;
     var totalPitchBends = 0;
-    foreach (var e in player.Sequencer.Events)
+    foreach (ScheduledEvent e in player.Sequencer.Events)
         if (e.Event is PitchBendEvent) totalPitchBends++;
 
     Console.WriteLine($"Rendering to: {outPath}");
     Console.WriteLine($"  Duration: {player.Duration:mm\\:ss\\.fff} + 2s tail = {totalFrames} frames");
 
-    using var fs = File.Create(outPath);
+    using FileStream fs = File.Create(outPath);
     WriteWavHeader(fs, sampleRate, channels: 2, totalFrames);
 
     const int blockFrames = 1024;
@@ -468,13 +470,13 @@ static int RenderToWav(RealtimePlayer player, string outPath, int sampleRate, IA
         renderedFrames += n;
         if (renderedFrames % (sampleRate * 5) == 0 || renderedFrames == totalFrames)
         {
-            var pct = 100.0 * renderedFrames / totalFrames;
+            double pct = 100.0 * renderedFrames / totalFrames;
             Console.Write($"\r  {pct,5:F1}%  voices={player.Synthesizer.ActiveVoiceCount,3}   ");
         }
     }
 
     var pbDispatched = 0;
-    foreach (var e in player.Sequencer.Events)
+    foreach (ScheduledEvent e in player.Sequencer.Events)
         if (e.Event is PitchBendEvent) pbDispatched++;
 
     Console.WriteLine($"\n  Done in {sw.Elapsed.TotalSeconds:F2}s " +
@@ -487,9 +489,9 @@ static int RenderToWav(RealtimePlayer player, string outPath, int sampleRate, IA
 
 static void WriteWavHeader(Stream s, int sampleRate, int channels, long frames)
 {
-    var byteRate = sampleRate * channels * 2;
+    int byteRate = sampleRate * channels * 2;
     var dataSize = (int)(frames * channels * 2);
-    var fileSize = 36 + dataSize;
+    int fileSize = 36 + dataSize;
     var bw = new BinaryWriter(s, Encoding.ASCII, leaveOpen: true);
     bw.Write(Encoding.ASCII.GetBytes("RIFF"));
     bw.Write(fileSize);

@@ -34,8 +34,8 @@ internal static class BinaryHelpers
     /// <summary>Reads a fixed-width zero-padded ASCII string and trims at the first NUL or trailing whitespace.</summary>
     public static string ReadFixedAscii(ReadOnlySpan<byte> data, int offset, int length)
     {
-        var slice = data.Slice(offset, length);
-        var nul = slice.IndexOf((byte)0);
+        ReadOnlySpan<byte> slice = data.Slice(offset, length);
+        int nul = slice.IndexOf((byte)0);
         if (nul >= 0) slice = slice.Slice(0, nul);
         return Ascii.GetString(slice.ToArray()).TrimEnd();
     }
@@ -46,12 +46,12 @@ internal static class BinaryHelpers
     /// </summary>
     public static void WriteFixedAscii(Span<byte> dest, int offset, int length, string value)
     {
-        var region = dest.Slice(offset, length);
+        Span<byte> region = dest.Slice(offset, length);
         region.Clear();
-        var n = Math.Min(value.Length, length);
+        int n = Math.Min(value.Length, length);
         for (var i = 0; i < n; i++)
         {
-            var c = value[i];
+            char c = value[i];
             region[i] = c < 128 ? (byte)c : (byte)'?';
         }
         // Force a NUL only when the value was strictly longer than the field and was truncated.

@@ -1,6 +1,5 @@
 using System;
 using System.Linq;
-using MidiSharp.Hosting;
 using MidiSharp.Hosting.Clap;
 using Xunit;
 
@@ -29,10 +28,10 @@ public sealed class ClapLiveTests
     [Fact]
     public void Scans_real_clap_plugins()
     {
-        var found = ScanAll();
+        PluginDescriptor[] found = ScanAll();
         Assert.SkipWhen(found.Length == 0, "No CLAP plugins on the search path — install one to run this.");
         _out.WriteLine($"Discovered {found.Length} CLAP plugin(s):");
-        foreach (var p in found.Take(25)) _out.WriteLine($"  [{p.Id}] {p.Name} ({p.Vendor}) instrument={p.IsInstrument}");
+        foreach (PluginDescriptor p in found.Take(25)) _out.WriteLine($"  [{p.Id}] {p.Name} ({p.Vendor}) instrument={p.IsInstrument}");
         Assert.All(found, p => Assert.False(string.IsNullOrWhiteSpace(p.Id)));
     }
 
@@ -44,7 +43,7 @@ public sealed class ClapLiveTests
     public void Loads_a_specific_real_clap_effect_and_processes_audio()
     {
         const string targetId = "studio.kx.distrho.MaBitcrush";
-        var desc = ScanAll().FirstOrDefault(p => p.Id == targetId);
+        PluginDescriptor? desc = ScanAll().FirstOrDefault(p => p.Id == targetId);
         Assert.SkipWhen(desc == null, $"{targetId} not installed.");
 
         IHostedPlugin plugin;
@@ -65,7 +64,7 @@ public sealed class ClapLiveTests
                 buf[2 * i] = s; buf[2 * i + 1] = s;
             }
             effect.Process(buf);
-            foreach (var v in buf) Assert.True(float.IsFinite(v), $"{plugin.Descriptor.Name} produced a non-finite sample.");
+            foreach (float v in buf) Assert.True(float.IsFinite(v), $"{plugin.Descriptor.Name} produced a non-finite sample.");
         }
     }
 
@@ -75,7 +74,7 @@ public sealed class ClapLiveTests
     [Fact]
     public void Param_and_midi_events_apply_sample_accurately()
     {
-        var desc = ScanAll().FirstOrDefault(p => p.Id == "midisharp.test.gain");
+        PluginDescriptor? desc = ScanAll().FirstOrDefault(p => p.Id == "midisharp.test.gain");
         Assert.SkipWhen(desc == null, "gain fixture not installed.");
         using var effect = new HostedEffect(_format.Load(desc!, Config), Config);
 
@@ -93,12 +92,12 @@ public sealed class ClapLiveTests
         int FirstChange(float[] x) { for (var i = 0; i < x.Length; i++) if (Math.Abs(x[i] - 1f) > 1e-4) return i; return -1; }
 
         // Establish gain = ×1 (normalized 0.5 of the 0..2 range) via a live set.
-        var warm = RunBlock(e => e.Plugin.SetParameter(0, 0.5));
+        float[] warm = RunBlock(e => e.Plugin.SetParameter(0, 0.5));
         Assert.True(Math.Abs(warm[0] - 1f) < 1e-4 && Math.Abs(warm[Block - 1] - 1f) < 1e-4, "warm-up gain should be ×1");
 
         // Parameter event at sample 256 → ×0.5.
         const int pOff = 256;
-        var pOut = RunBlock(e => e.QueueEvent(HostEvent.Param(pOff, 0, 0.25)));
+        float[] pOut = RunBlock(e => e.QueueEvent(HostEvent.Param(pOff, 0, 0.25)));
         Assert.True(Math.Abs(pOut[pOff - 1] - 1f) < 1e-4, $"sample before param event should be ×1 (got {pOut[pOff - 1]})");
         Assert.True(Math.Abs(pOut[pOff] - 0.5f) < 1e-4, $"sample at param event should be ×0.5 (got {pOut[pOff]})");
         Assert.Equal(pOff, FirstChange(pOut));
@@ -107,7 +106,7 @@ public sealed class ClapLiveTests
 
         // MIDI CC#7 = 127 at sample 384 → ×2.
         const int mOff = 384;
-        var mOut = RunBlock(e => e.QueueEvent(HostEvent.Midi(mOff, 0xB0, 7, 127)));
+        float[] mOut = RunBlock(e => e.QueueEvent(HostEvent.Midi(mOff, 0xB0, 7, 127)));
         Assert.True(Math.Abs(mOut[mOff - 1] - 1f) < 1e-4, $"sample before CC event should be ×1 (got {mOut[mOff - 1]})");
         Assert.True(Math.Abs(mOut[mOff] - 2f) < 1e-4, $"sample at CC event should be ×2 (got {mOut[mOff]})");
         Assert.Equal(mOff, FirstChange(mOut));
@@ -122,7 +121,7 @@ public sealed class ClapLiveTests
         // can hang or segfault on load/teardown (that robustness is the out-of-process sandbox's job; see
         // Loads_a_specific_real_clap_effect_and_processes_audio). The fixture's [0..2] linear gain is also
         // what the ratio math below assumes.
-        var desc = ScanAll().FirstOrDefault(p => p.Id.Equals("midisharp.test.gain", StringComparison.OrdinalIgnoreCase));
+        PluginDescriptor? desc = ScanAll().FirstOrDefault(p => p.Id.Equals("midisharp.test.gain", StringComparison.OrdinalIgnoreCase));
         Assert.SkipWhen(desc == null, "gain fixture (midisharp.test.gain) not installed.");
 
         IHostedPlugin plugin;
@@ -130,11 +129,11 @@ public sealed class ClapLiveTests
         catch (NotSupportedException) { Assert.Skip("gain fixture is not a stereo effect."); return; }
 
         using var effect = new HostedEffect(plugin, Config);
-        var gain = plugin.Parameters.FirstOrDefault(p => p.Name.Contains("gain", StringComparison.OrdinalIgnoreCase));
+        PluginParameter? gain = plugin.Parameters.FirstOrDefault(p => p.Name.Contains("gain", StringComparison.OrdinalIgnoreCase));
         Assert.SkipWhen(gain == null, "gain fixture exposes no gain parameter.");
 
         const double amp = 0.4;
-        var inputRms = amp / Math.Sqrt(2);
+        double inputRms = amp / Math.Sqrt(2);
 
         double RenderRms(double normalized)
         {
@@ -151,14 +150,14 @@ public sealed class ClapLiveTests
                     buf[2 * i] = s; buf[2 * i + 1] = s;
                 }
                 effect.Process(buf);
-                foreach (var v in buf) { Assert.True(float.IsFinite(v), "non-finite sample"); sumSq += (double)v * v; n++; }
+                foreach (float v in buf) { Assert.True(float.IsFinite(v), "non-finite sample"); sumSq += (double)v * v; n++; }
             }
             return Math.Sqrt(sumSq / n);
         }
 
-        var rmsUnity = RenderRms(gain!.Normalize(1.0));
-        var rmsHalf = RenderRms(gain.Normalize(0.5));
-        var rmsDouble = RenderRms(gain.Normalize(2.0));
+        double rmsUnity = RenderRms(gain!.Normalize(1.0));
+        double rmsHalf = RenderRms(gain.Normalize(0.5));
+        double rmsDouble = RenderRms(gain.Normalize(2.0));
         _out.WriteLine($"input={inputRms:F5}  unity={rmsUnity:F5}  half={rmsHalf:F5}  double={rmsDouble:F5}");
 
         Assert.True(Math.Abs(rmsUnity - inputRms) < 0.01, $"×1 gain should be transparent (got {rmsUnity:F5}).");

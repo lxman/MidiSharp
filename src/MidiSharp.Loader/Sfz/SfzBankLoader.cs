@@ -30,11 +30,11 @@ internal static class SfzBankLoader
     public static IRBank Load(Stream stream, string? basePath, SoundBankLoadOptions options)
     {
         using var reader = new StreamReader(stream);
-        var text = reader.ReadToEnd();
-        var baseDir = basePath != null
+        string text = reader.ReadToEnd();
+        string baseDir = basePath != null
             ? (Path.GetDirectoryName(Path.GetFullPath(basePath)) ?? ".")
             : ".";
-        var name = basePath != null ? Path.GetFileNameWithoutExtension(basePath) : "SFZ Instrument";
+        string? name = basePath != null ? Path.GetFileNameWithoutExtension(basePath) : "SFZ Instrument";
 
         var acc = new Accumulator();
         acc.AddText(text, baseDir, bank: 0);
@@ -52,7 +52,7 @@ internal static class SfzBankLoader
             throw new SoundBankLoadException("No SFZ files provided");
 
         var acc = new Accumulator();
-        foreach (var (path, bank) in files)
+        foreach ((string path, int bank) in files)
             acc.AddFile(path, bank);
         return acc.Build(Path.GetFileNameWithoutExtension(files[0].Path), options.DecodedSampleCacheBytes, options.BlockingSampleDecode);
     }
@@ -74,22 +74,22 @@ internal static class SfzBankLoader
 
         public void AddFile(string path, int bank)
         {
-            var text = File.ReadAllText(path);
-            var baseDir = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".";
+            string text = File.ReadAllText(path);
+            string baseDir = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".";
             AddText(text, baseDir, bank);
         }
 
         public void AddText(string text, string baseDir, int bank)
         {
-            var instrument = SfzParser.Parse(text, inc => ReadInclude(baseDir, inc));
+            SfzInstrument instrument = SfzParser.Parse(text, inc => ReadInclude(baseDir, inc));
 
             // Carry the <control> set_cc/set_hdcc seeds (later files win on conflict).
-            foreach (var kv in instrument.Control.InitialControllers)
+            foreach (KeyValuePair<int, int> kv in instrument.Control.InitialControllers)
                 _initialControllers[kv.Key] = kv.Value;
 
-            foreach (var region in instrument.Regions)
+            foreach (SfzRegion? region in instrument.Regions)
             {
-                var sampleValue = region.Get("sample");
+                string? sampleValue = region.Get("sample");
                 if (string.IsNullOrWhiteSpace(sampleValue)) continue;
                 sampleValue = sampleValue!.Trim();
 
@@ -101,7 +101,7 @@ internal static class SfzBankLoader
                     // slot — loadable instead of being dropped as a missing sample.
                     if (!_idByPath.TryGetValue(sampleValue, out sampleId))
                     {
-                        var info = GeneratorInfo();
+                        AudioInfo info = GeneratorInfo();
                         sampleId = _paths.Count;
                         _paths.Add(sampleValue);   // the "*…" token doubles as the source path
                         _infos.Add(info);
@@ -112,8 +112,8 @@ internal static class SfzBankLoader
                 else
                 {
                     // Resolve against the region's positional default_path (stamped by the parser).
-                    var defaultPath = region.Get("default_path") ?? string.Empty;
-                    var resolved = ResolveSamplePath(baseDir, defaultPath, sampleValue);
+                    string defaultPath = region.Get("default_path") ?? string.Empty;
+                    string? resolved = ResolveSamplePath(baseDir, defaultPath, sampleValue);
                     if (resolved == null) { _missing++; continue; }
 
                     if (!_idByPath.TryGetValue(resolved, out sampleId))
@@ -131,13 +131,13 @@ internal static class SfzBankLoader
                     }
                 }
 
-                var lo = Math.Clamp(region.GetInt("loprog", 0), 0, 127);
-                var hi = Math.Clamp(region.GetInt("hiprog", 127), 0, 127);
+                int lo = Math.Clamp(region.GetInt("loprog", 0), 0, 127);
+                int hi = Math.Clamp(region.GetInt("hiprog", 127), 0, 127);
                 // Patch name from the program/instrument-level label only: master_label (Discord
                 // labels its 128 GM slots this way) then global_label. group_label/region_label are
                 // sub-group names (mic, velocity layer, articulation), not instrument names, so they
                 // don't name the patch — it falls back to the filename instead.
-                var label = region.Get("master_label") ?? region.Get("global_label");
+                string? label = region.Get("master_label") ?? region.Get("global_label");
                 _placed.Add((bank, lo, hi,
                     SfzZoneTranslator.Build(region, instrument.Control, sampleId, _infos[sampleId]), label));
             }
@@ -183,12 +183,12 @@ internal static class SfzBankLoader
             // preserved (it matters for overlapping / round-robin / keyswitch zones).
             var byKey = new Dictionary<(int Bank, int Program), List<PatchZone>>();
             var labelByKey = new Dictionary<(int Bank, int Program), string>();
-            foreach (var (bank, lo, hi, zone, label) in _placed)
+            foreach ((int bank, int lo, int hi, PatchZone zone, string? label) in _placed)
             {
-                for (var program = lo; program <= hi; program++)
+                for (int program = lo; program <= hi; program++)
                 {
-                    var key = (bank, program);
-                    if (!byKey.TryGetValue(key, out var list))
+                    (int bank, int program) key = (bank, program);
+                    if (!byKey.TryGetValue(key, out List<PatchZone>? list))
                         byKey[key] = list = [];
                     list.Add(zone);
                     if (label != null)
@@ -198,19 +198,19 @@ internal static class SfzBankLoader
             }
 
             var patches = new List<Patch>(byKey.Count);
-            foreach (var kv in byKey)
+            foreach (KeyValuePair<(int Bank, int Program), List<PatchZone>> kv in byKey)
                 patches.Add(new Patch
                 {
                     Bank = kv.Key.Bank,
                     Program = kv.Key.Program,
-                    Name = labelByKey.TryGetValue(kv.Key, out var lbl) ? lbl : name,
+                    Name = labelByKey.TryGetValue(kv.Key, out string? lbl) ? lbl : name,
                     Zones = kv.Value,
                 });
 
             // sustain_cc is per-region in SFZ but global to the pedal in practice; surface the dominant
             // non-default reassignment to the synth (half-pedal fonts route the whole bank to one CC).
             var sustainCc = 64;
-            foreach (var (_, _, _, zone, _) in _placed)
+            foreach ((int _, int _, int _, PatchZone zone, string? _) in _placed)
                 if (zone.SustainCc != 64) { sustainCc = zone.SustainCc; break; }
 
             return new IRBank
@@ -229,7 +229,7 @@ internal static class SfzBankLoader
 
     internal static string? ReadInclude(string baseDir, string includePath)
     {
-        var resolved = ResolveExisting(baseDir, includePath.Replace('\\', '/'));
+        string? resolved = ResolveExisting(baseDir, includePath.Replace('\\', '/'));
         if (resolved == null) return null;
         try { return File.ReadAllText(resolved); }
         catch { return null; }
@@ -240,7 +240,7 @@ internal static class SfzBankLoader
     private static string? ResolveSamplePath(string baseDir, string defaultPath, string sampleValue)
     {
         sampleValue = sampleValue.Replace('\\', '/').Trim();
-        var relative = string.IsNullOrEmpty(defaultPath)
+        string relative = string.IsNullOrEmpty(defaultPath)
             ? sampleValue
             : defaultPath.TrimEnd('/') + "/" + sampleValue;
         return ResolveExisting(baseDir, relative);
@@ -253,17 +253,17 @@ internal static class SfzBankLoader
     /// </summary>
     private static string? ResolveExisting(string baseDir, string relative)
     {
-        var direct = Path.GetFullPath(Path.Combine(baseDir, relative));
+        string direct = Path.GetFullPath(Path.Combine(baseDir, relative));
         if (File.Exists(direct)) return direct;
 
-        var current = baseDir;
-        var segments = relative.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        foreach (var seg in segments)
+        string current = baseDir;
+        string[]? segments = relative.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        foreach (string seg in segments)
         {
             if (seg == ".") continue;
             if (seg == "..") { current = Path.GetDirectoryName(current) ?? current; continue; }
 
-            var candidate = Path.Combine(current, seg);
+            string candidate = Path.Combine(current, seg);
             if (Directory.Exists(candidate) || File.Exists(candidate))
             {
                 current = candidate;
@@ -274,7 +274,7 @@ internal static class SfzBankLoader
             string? match = null;
             if (Directory.Exists(current))
             {
-                foreach (var entry in Directory.EnumerateFileSystemEntries(current))
+                foreach (string? entry in Directory.EnumerateFileSystemEntries(current))
                 {
                     if (string.Equals(Path.GetFileName(entry), seg, StringComparison.OrdinalIgnoreCase))
                     {

@@ -51,10 +51,10 @@ public readonly struct ScheduledEvent(
     /// </summary>
     public int CompareTo(ScheduledEvent other)
     {
-        var tickCompare = AbsoluteTicks.CompareTo(other.AbsoluteTicks);
+        int tickCompare = AbsoluteTicks.CompareTo(other.AbsoluteTicks);
         if (tickCompare != 0) return tickCompare;
 
-        var trackCompare = TrackIndex.CompareTo(other.TrackIndex);
+        int trackCompare = TrackIndex.CompareTo(other.TrackIndex);
         if (trackCompare != 0) return trackCompare;
 
         // Preserve original file order within a (tick, track) — keeps multi-byte

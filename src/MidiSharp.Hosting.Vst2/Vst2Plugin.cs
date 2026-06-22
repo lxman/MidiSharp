@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
-using MidiSharp.Hosting;
 using static MidiSharp.Hosting.Vst2.Vst2Abi;
 
 namespace MidiSharp.Hosting.Vst2;
@@ -92,7 +91,7 @@ public sealed unsafe class Vst2Plugin : IHostedPlugin, IPluginGui
         // Parameter events apply at block granularity; MIDI events go through effProcessEvents with
         // deltaFrames (sample-accurate). Build the VstEvents block from this call's MIDI events.
         var n = 0;
-        foreach (var e in events)
+        foreach (HostEvent e in events)
         {
             if (e.Kind == HostEventKind.Param)
             {
@@ -100,7 +99,7 @@ public sealed unsafe class Vst2Plugin : IHostedPlugin, IPluginGui
             }
             else if (n < _evCapacity)
             {
-                ref var m = ref _midiEvents[n];
+                ref VstMidiEvent m = ref _midiEvents[n];
                 m.Type = VstMidiType;
                 m.ByteSize = sizeof(VstMidiEvent);
                 m.DeltaFrames = e.SampleOffset;
@@ -210,7 +209,7 @@ public sealed unsafe class Vst2Plugin : IHostedPlugin, IPluginGui
         _parameters.Clear();
         for (var i = 0; i < _eff->NumParams; i++)
         {
-            var name = Vst2Format.StringOp(_eff, EffGetParamName, i, 64);
+            string name = Vst2Format.StringOp(_eff, EffGetParamName, i, 64);
             // VST2 parameters are already normalized 0..1; min/max are the identity range.
             _parameters.Add(new PluginParameter(i, string.IsNullOrEmpty(name) ? $"Param {i + 1}" : name,
                 label: "", minValue: 0, maxValue: 1, defaultValue: _eff->GetParameter(_eff, i)));

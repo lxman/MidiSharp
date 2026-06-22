@@ -70,7 +70,7 @@ internal sealed class LazyVorbisSf3SampleSource : ISampleSource
         for (var i = 0; i < metadata.Count; i++)
         {
             _metadata[i] = metadata[i];
-            var e = entries[i];
+            (int ByteStart, int ByteLength, int Channels) e = entries[i];
             _entries[i] = new Entry(e.ByteStart, e.ByteLength, e.Channels);
         }
         _cacheBudgetBytes = cacheBudgetBytes <= 0 ? long.MaxValue : cacheBudgetBytes;
@@ -78,18 +78,18 @@ internal sealed class LazyVorbisSf3SampleSource : ISampleSource
 
     public int ReadFrames(int sampleId, long frameOffset, Span<float> dest)
     {
-        var channels = _entries[sampleId].Channels;
+        int channels = _entries[sampleId].Channels;
 
         // Fast path: cache hit — refresh LRU and copy, all under the lock.
         lock (_cacheLock)
-            if (_cache.TryGetValue(sampleId, out var hit))
+            if (_cache.TryGetValue(sampleId, out CacheNode? hit))
                 return CopyFromNode(hit, sampleId, frameOffset, dest, channels, refreshLru: true);
 
         // Miss: decode outside the lock so concurrent decodes don't serialize, then insert + copy.
-        var (data, length, pooled) = Decode(sampleId);
+        (float[] data, int length, bool pooled) = Decode(sampleId);
         lock (_cacheLock)
         {
-            if (_cache.TryGetValue(sampleId, out var raced))   // another thread decoded it meanwhile
+            if (_cache.TryGetValue(sampleId, out CacheNode? raced))   // another thread decoded it meanwhile
             {
                 if (pooled) ArrayPool<float>.Shared.Return(data);
                 return CopyFromNode(raced, sampleId, frameOffset, dest, channels, refreshLru: true);
@@ -128,7 +128,7 @@ internal sealed class LazyVorbisSf3SampleSource : ISampleSource
         lock (_cacheLock)
             if (_cache.ContainsKey(sampleId)) return;
 
-        var (data, length, pooled) = Decode(sampleId);
+        (float[] data, int length, bool pooled) = Decode(sampleId);
         lock (_cacheLock)
         {
             if (_cache.ContainsKey(sampleId)) { if (pooled) ArrayPool<float>.Shared.Return(data); return; }
@@ -143,9 +143,9 @@ internal sealed class LazyVorbisSf3SampleSource : ISampleSource
     {
         while (_cachedBytes + incoming > _cacheBudgetBytes && _lru.Count > 0)
         {
-            var victim = _lru.First!.Value;
+            int victim = _lru.First!.Value;
             _lru.RemoveFirst();
-            if (_cache.TryGetValue(victim, out var victimNode))
+            if (_cache.TryGetValue(victim, out CacheNode? victimNode))
             {
                 _cachedBytes -= victimNode.Length * 4L;
                 _cache.Remove(victim);
@@ -156,23 +156,23 @@ internal sealed class LazyVorbisSf3SampleSource : ISampleSource
 
     private (float[] data, int length, bool pooled) Decode(int sampleId)
     {
-        var entry = _entries[sampleId];
+        Entry entry = _entries[sampleId];
         if (entry.ByteLength <= 0) return ([], 0, false);
 
-        var slice = _smplBytes.Slice(entry.ByteStart, entry.ByteLength);
+        ReadOnlyMemory<byte> slice = _smplBytes.Slice(entry.ByteStart, entry.ByteLength);
 
         // Known length → decode straight into a pooled buffer (the common case).
-        VorbisDecoder.Peek(slice, out var channels, out var frames);
+        VorbisDecoder.Peek(slice, out int channels, out long frames);
         if (frames > 0 && frames <= int.MaxValue / Math.Max(1, channels))
         {
             var floats = (int)(frames * channels);
-            var buf = ArrayPool<float>.Shared.Rent(floats);
-            var read = VorbisDecoder.DecodePcmInto(slice, buf, floats, out _, out _);
+            float[]? buf = ArrayPool<float>.Shared.Rent(floats);
+            int read = VorbisDecoder.DecodePcmInto(slice, buf, floats, out _, out _);
             return (buf, read, true);
         }
 
         // Unknown length (rare) → fall back to the allocating decode; not pooled.
-        var arr = VorbisDecoder.DecodePcm(slice, out _, out _, out _);
+        float[] arr = VorbisDecoder.DecodePcm(slice, out _, out _, out _);
         return (arr, arr.Length, false);
     }
 
@@ -182,7 +182,7 @@ internal sealed class LazyVorbisSf3SampleSource : ISampleSource
         _disposed = true;
         lock (_cacheLock)
         {
-            foreach (var kv in _cache)
+            foreach (KeyValuePair<int, CacheNode> kv in _cache)
                 if (kv.Value.Pooled) ArrayPool<float>.Shared.Return(kv.Value.Data);
             _cache.Clear();
             _lru.Clear();

@@ -56,7 +56,7 @@ public static class TrackUsageAnalyzer
 
         var accumulators = new Dictionary<int, TrackAccumulator>();
 
-        foreach (var scheduled in new MidiSequencer(file).Events)
+        foreach (ScheduledEvent scheduled in new MidiSequencer(file).Events)
         {
             switch (scheduled.Event)
             {
@@ -71,9 +71,9 @@ public static class TrackUsageAnalyzer
                     break;
                 case NoteOnEvent { Velocity: > 0 } on:
                 {
-                    var s = state[on.Channel];
-                    var bank = BankResolution.Resolve(s.BankMsb, s.BankLsb, s.IsDrum, s.DrumBank);
-                    if (!accumulators.TryGetValue(scheduled.TrackIndex, out var acc))
+                    ChannelBankState s = state[on.Channel];
+                    int bank = BankResolution.Resolve(s.BankMsb, s.BankLsb, s.IsDrum, s.DrumBank);
+                    if (!accumulators.TryGetValue(scheduled.TrackIndex, out TrackAccumulator? acc))
                     {
                         acc = new TrackAccumulator();
                         accumulators[scheduled.TrackIndex] = acc;
@@ -89,12 +89,12 @@ public static class TrackUsageAnalyzer
         var result = new List<TrackUsage>(file.Tracks.Count);
         for (var t = 0; t < file.Tracks.Count; t++)
         {
-            accumulators.TryGetValue(t, out var acc);
+            accumulators.TryGetValue(t, out TrackAccumulator? acc);
 
             string? baseName = null;
             if (baseBank != null && acc?.FirstPatch is { } fp)
             {
-                var patch = baseBank.FindPatch(fp.Bank, fp.Program) ?? baseBank.FindPatch(0, fp.Program);
+                Patch? patch = baseBank.FindPatch(fp.Bank, fp.Program) ?? baseBank.FindPatch(0, fp.Program);
                 baseName = patch?.Name;
             }
 

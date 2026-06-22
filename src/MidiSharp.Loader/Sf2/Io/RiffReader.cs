@@ -13,7 +13,7 @@ internal sealed class RiffReader
 
     public RiffReader(ReadOnlyMemory<byte> data)
     {
-        var span = data.Span;
+        ReadOnlySpan<byte> span = data.Span;
         if (span.Length < 12)
             throw new SoundFontException(SoundFontValidationCode.RiffChunkTooSmall);
 
@@ -25,9 +25,9 @@ internal sealed class RiffReader
         // of truth, so we ignore the RIFF size and walk the actual file bytes until we've
         // collected the three required LIST chunks. This survives both truncated files
         // (where we'll error on a chunk that overruns) and files with trailing junk.
-        var remaining = span.Length - 8;
-        var main = data.Slice(8, remaining);
-        var mainSpan = main.Span;
+        int remaining = span.Length - 8;
+        ReadOnlyMemory<byte> main = data.Slice(8, remaining);
+        ReadOnlySpan<byte> mainSpan = main.Span;
         if (BinaryHelpers.ReadTag(mainSpan, 0) != "sfbk")
             throw new SoundFontException(SoundFontValidationCode.FileBroken, "Expected sfbk form type");
 
@@ -35,16 +35,16 @@ internal sealed class RiffReader
         ReadOnlyMemory<byte>? info = null, sdta = null, pdta = null;
         while (pos + 8 <= mainSpan.Length && (info is null || sdta is null || pdta is null))
         {
-            var tag = BinaryHelpers.ReadTag(mainSpan, pos);
-            var size = BinaryHelpers.ReadUInt32LE(mainSpan, pos + 4);
+            string tag = BinaryHelpers.ReadTag(mainSpan, pos);
+            uint size = BinaryHelpers.ReadUInt32LE(mainSpan, pos + 4);
             pos += 8;
             if (pos + size > mainSpan.Length)
                 throw new SoundFontException(SoundFontValidationCode.FileBroken);
             if (tag != "LIST")
                 throw new SoundFontException(SoundFontValidationCode.FileBroken, $"Expected LIST, got '{tag}'");
 
-            var listBody = main.Slice(pos, (int)size);
-            var formType = BinaryHelpers.ReadTag(listBody.Span, 0);
+            ReadOnlyMemory<byte> listBody = main.Slice(pos, (int)size);
+            string formType = BinaryHelpers.ReadTag(listBody.Span, 0);
             switch (formType)
             {
                 case "INFO": info = listBody; break;

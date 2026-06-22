@@ -20,7 +20,7 @@ internal sealed class PdtaChunkReader
 
     public PdtaChunkReader(ReadOnlyMemory<byte> pdtaList)
     {
-        var span = pdtaList.Span;
+        ReadOnlySpan<byte> span = pdtaList.Span;
         if (BinaryHelpers.ReadTag(span, 0) != "pdta")
             throw new SoundFontException(SoundFontValidationCode.FileBroken, "Expected pdta form type");
 
@@ -43,14 +43,14 @@ internal sealed class PdtaChunkReader
         ReadOnlyMemory<byte> pdta, ref int pos, string expectedTag,
         int recordSize, SoundFontValidationCode badCode, int minMultiples)
     {
-        var span = pdta.Span;
+        ReadOnlySpan<byte> span = pdta.Span;
         if (pos + 8 > span.Length)
             throw new SoundFontException(SoundFontValidationCode.FileBroken);
-        var tag = BinaryHelpers.ReadTag(span, pos);
-        var size = BinaryHelpers.ReadUInt32LE(span, pos + 4);
+        string tag = BinaryHelpers.ReadTag(span, pos);
+        uint size = BinaryHelpers.ReadUInt32LE(span, pos + 4);
         if (tag != expectedTag)
             throw new SoundFontException(SoundFontValidationCode.FileBroken, $"Expected '{expectedTag}', got '{tag}'");
-        var bodyStart = pos + 8;
+        int bodyStart = pos + 8;
         if (bodyStart + size > span.Length)
             throw new SoundFontException(SoundFontValidationCode.FileBroken);
         if (size % recordSize != 0 || size < (uint)(recordSize * minMultiples))

@@ -17,9 +17,9 @@ internal static class FormatDetector
     /// </summary>
     public static SoundBankFormat DetectFromFile(string path)
     {
-        using var fs = File.OpenRead(path);
+        using FileStream fs = File.OpenRead(path);
         Span<byte> header = stackalloc byte[12];
-        var read = fs.Read(header);
+        int read = fs.Read(header);
         return Detect(header.Slice(0, read), path);
     }
 
@@ -35,7 +35,7 @@ internal static class FormatDetector
         if (header.Length >= 12 && header[0] == 'R' && header[1] == 'I' && header[2] == 'F' && header[3] == 'F')
         {
             // RIFF form-type at bytes 8..11.
-            var form = header.Slice(8, 4);
+            ReadOnlySpan<byte> form = header.Slice(8, 4);
 
             if (Match(form, "sfbk"))
             {

@@ -201,7 +201,7 @@ public sealed class Envelope
     private int ScaleSamples(int samples, double octaves)
     {
         if (samples <= 0) return 0;
-        var scaled = samples * Math.Pow(2.0, octaves);
+        double scaled = samples * Math.Pow(2.0, octaves);
         if (scaled <= 0) return 0;
         if (scaled >= int.MaxValue) return int.MaxValue;
         return Math.Max(1, (int)scaled);
@@ -329,7 +329,7 @@ public sealed class Envelope
                 {
                     // ARIA shaped release: level = startLevel · (1−p)^k over the release window.
                     _releaseElapsed++;
-                    var p = (double)_releaseElapsed / _releaseSamples;
+                    double p = (double)_releaseElapsed / _releaseSamples;
                     _currentLevel = p >= 1.0 ? 0.0 : _releaseStartLevel * Math.Pow(1.0 - p, _releaseShapeExp);
                 }
                 else
@@ -365,10 +365,10 @@ public sealed class Envelope
     private void StartHold()
     {
         // Apply key-to-hold modulation
-        var holdSamples = _holdSamples;
+        int holdSamples = _holdSamples;
         if (_keynumToHold != 0)
         {
-            var modulation = _keynumToHold * (60 - _keyNumber);
+            double modulation = _keynumToHold * (60 - _keyNumber);
             holdSamples = TimecentsToSamples((short)((short)modulation + SamplesToTimecents(holdSamples)));
         }
 
@@ -386,10 +386,10 @@ public sealed class Envelope
     private void StartDecay()
     {
         // Apply key-to-decay modulation
-        var decaySamples = _decaySamples;
+        int decaySamples = _decaySamples;
         if (_keynumToDecay != 0)
         {
-            var modulation = _keynumToDecay * (60 - _keyNumber);
+            double modulation = _keynumToDecay * (60 - _keyNumber);
             decaySamples = TimecentsToSamples((short)((short)modulation + SamplesToTimecents(decaySamples)));
         }
 
@@ -401,7 +401,7 @@ public sealed class Envelope
 
             // Decay from peak (1.0) down to sustainLevel as a dB-linear ramp.
             // Per-sample multiplicative factor: factor^decaySamples == sustainLevel.
-            var target = Math.Max(_sustainLevel, SilenceFloor);
+            double target = Math.Max(_sustainLevel, SilenceFloor);
             _decayFactor = Math.Pow(target, 1.0 / decaySamples);
         }
         else
@@ -420,7 +420,7 @@ public sealed class Envelope
         if (timecents <= -12000)
             return 0;
 
-        var seconds = Math.Pow(2.0, timecents / 1200.0);
+        double seconds = Math.Pow(2.0, timecents / 1200.0);
         return Math.Max(1, (int)(seconds * _sampleRate));
     }
 
@@ -429,7 +429,7 @@ public sealed class Envelope
         if (samples <= 0)
             return -12000;
 
-        var seconds = (double)samples / _sampleRate;
+        double seconds = (double)samples / _sampleRate;
         return (short)(1200.0 * Math.Log(seconds) / Math.Log(2.0));
     }
 

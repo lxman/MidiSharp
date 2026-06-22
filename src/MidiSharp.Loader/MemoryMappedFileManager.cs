@@ -48,7 +48,7 @@ internal sealed unsafe class MemoryMappedFileManager : MemoryManager<byte>, IPre
 
     public MemoryMappedFileManager(string path)
     {
-        var length = new FileInfo(path).Length;
+        long length = new FileInfo(path).Length;
         if (length > int.MaxValue)
             throw new NotSupportedException($"File too large to memory-map as a single span: {length} bytes");
         _length = (int)length;
@@ -84,7 +84,7 @@ internal sealed unsafe class MemoryMappedFileManager : MemoryManager<byte>, IPre
     public void Prefetch(ReadOnlyMemory<byte> region)
     {
         if (_disposed || region.IsEmpty) return;
-        using var h = region.Pin();
+        using MemoryHandle h = region.Pin();
         OsPrefetch((IntPtr)h.Pointer, region.Length);
     }
 
@@ -100,7 +100,7 @@ internal sealed unsafe class MemoryMappedFileManager : MemoryManager<byte>, IPre
                 // madvise requires a page-aligned address; round down and extend the length.
                 long page = Environment.SystemPageSize;
                 var a = addr.ToInt64();
-                var aligned = a & ~(page - 1);
+                long aligned = a & ~(page - 1);
                 madvise((IntPtr)aligned, (UIntPtr)(length + (a - aligned)), MADV_WILLNEED);
             }
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))

@@ -39,13 +39,13 @@ internal sealed class EffectRack : IInstrumentInsert, IDisposable
     public void Configure(IReadOnlyList<EffectDto>? effects, double trailingGainDb = 0)
     {
         // Reclaim plugins removed on the previous Configure — the chain has long since stopped using them.
-        foreach (var dead in _pendingDispose) dead.Dispose();
+        foreach (HostedEffect dead in _pendingDispose) dead.Dispose();
         _pendingDispose.Clear();
 
         var ordered = new List<IAudioProcessor>();
         var live = new HashSet<string>();
         if (effects != null)
-            foreach (var e in effects)
+            foreach (EffectDto e in effects)
             {
                 if (!e.Enabled) continue;
                 switch (e.Type?.ToLowerInvariant())
@@ -61,14 +61,14 @@ internal sealed class EffectRack : IInstrumentInsert, IDisposable
                         ordered.Add(_limiter);
                         break;
                     case "plugin":
-                        var he = ResolvePlugin(e);
+                        HostedEffect? he = ResolvePlugin(e);
                         if (he != null) { ordered.Add(he); live.Add(KeyOf(e)); }
                         break;
                 }
             }
 
         // Plugins no longer in the list: pull them from the lookup now, dispose next Configure.
-        foreach (var key in _plugins.Keys.Where(k => !live.Contains(k)).ToList())
+        foreach (string key in _plugins.Keys.Where(k => !live.Contains(k)).ToList())
         {
             _pendingDispose.Add(_plugins[key]);
             _plugins.Remove(key);
@@ -88,12 +88,12 @@ internal sealed class EffectRack : IInstrumentInsert, IDisposable
         if (_pluginHost == null || string.IsNullOrEmpty(e.PluginFormat) || string.IsNullOrEmpty(e.PluginId))
             return null;
 
-        var key = KeyOf(e);
-        if (!_plugins.TryGetValue(key, out var he))
+        string key = KeyOf(e);
+        if (!_plugins.TryGetValue(key, out HostedEffect? he))
         {
             try
             {
-                var plugin = _pluginHost.Load(e.PluginFormat, e.PluginId);
+                IHostedPlugin plugin = _pluginHost.Load(e.PluginFormat, e.PluginId);
                 he = new HostedEffect(plugin, _pluginHost.Config);
                 _plugins[key] = he;
                 if (!string.IsNullOrEmpty(e.PluginState))
@@ -102,9 +102,9 @@ internal sealed class EffectRack : IInstrumentInsert, IDisposable
             catch { return null; }   // missing/incompatible plugin → skip the insert
         }
 
-        if (e.PluginParams != null)
-            for (var i = 0; i < e.PluginParams.Length && i < he.Plugin.Parameters.Count; i++)
-                he.Plugin.SetParameter(i, e.PluginParams[i]);
+        if (e.PluginParams == null) return he;
+        for (var i = 0; i < e.PluginParams.Length && i < he.Plugin.Parameters.Count; i++)
+            he.Plugin.SetParameter(i, e.PluginParams[i]);
         return he;
     }
 
@@ -114,15 +114,15 @@ internal sealed class EffectRack : IInstrumentInsert, IDisposable
     /// has no instance or no state. Used to capture live plugin state into a saved setup.</summary>
     public string? GetPluginState(string instanceId)
     {
-        if (!_plugins.TryGetValue(instanceId, out var he)) return null;
-        var blob = he.Plugin.SaveState();
+        if (!_plugins.TryGetValue(instanceId, out HostedEffect? he)) return null;
+        byte[] blob = he.Plugin.SaveState();
         return blob.Length > 0 ? Convert.ToBase64String(blob) : null;
     }
 
     /// <summary>The live hosted plugin for an InstanceId, or null if this rack doesn't hold it. Lets the
     /// server reach a loaded plugin (e.g. to open its editor) without exposing the rack's internals.</summary>
     public IHostedPlugin? FindPlugin(string instanceId)
-        => _plugins.TryGetValue(instanceId, out var he) ? he.Plugin : null;
+        => _plugins.TryGetValue(instanceId, out HostedEffect? he) ? he.Plugin : null;
 
     public void Process(Span<float> interleavedStereo) => _chain.Process(interleavedStereo);
 
@@ -130,15 +130,15 @@ internal sealed class EffectRack : IInstrumentInsert, IDisposable
 
     public void Dispose()
     {
-        foreach (var p in _pendingDispose) p.Dispose();
+        foreach (HostedEffect p in _pendingDispose) p.Dispose();
         _pendingDispose.Clear();
-        foreach (var p in _plugins.Values) p.Dispose();
+        foreach (HostedEffect p in _plugins.Values) p.Dispose();
         _plugins.Clear();
     }
 
     private static EqBandSpec ToEqSpec(EqBandDto b)
     {
-        var type = b.Type?.ToLowerInvariant() switch
+        BiquadType type = b.Type?.ToLowerInvariant() switch
         {
             "lowshelf" => BiquadType.LowShelf,
             "highshelf" => BiquadType.HighShelf,

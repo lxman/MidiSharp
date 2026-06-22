@@ -1,7 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using MidiSharp.Hosting;
 using MidiSharp.Hosting.Clap;
 using MidiSharp.Hosting.Sandbox;
 using Xunit;
@@ -28,11 +28,11 @@ public sealed class SandboxTests
     // config/tfm path over to it.
     private static string? WorkerDll()
     {
-        var baseDir = AppContext.BaseDirectory;
-        var workerDir = baseDir.Replace(
+        string baseDir = AppContext.BaseDirectory;
+        string workerDir = baseDir.Replace(
             Path.Combine("tests", "MidiSharp.Hosting.Tests"),
             Path.Combine("src", "MidiSharp.Hosting.Worker"));
-        var dll = Path.Combine(workerDir, "MidiSharp.Hosting.Worker.dll");
+        string dll = Path.Combine(workerDir, "MidiSharp.Hosting.Worker.dll");
         return File.Exists(dll) ? dll : null;
     }
 
@@ -45,9 +45,9 @@ public sealed class SandboxTests
     [Fact]
     public void Sandboxed_scan_discovers_plugins_in_a_worker_process()
     {
-        var worker = WorkerDll();
+        string? worker = WorkerDll();
         Assert.SkipWhen(worker == null, "sandbox worker not built.");
-        var found = SandboxScanner.ScanFormat("CLAP", worker!);
+        List<PluginDescriptor> found = SandboxScanner.ScanFormat("CLAP", worker!);
         _out.WriteLine($"sandboxed CLAP scan found {found.Count} plugins");
         Assert.All(found, p => Assert.Equal("CLAP", p.Format));
         Assert.SkipWhen(GainDescriptor() == null, "CLAP gain fixture not installed.");
@@ -57,21 +57,21 @@ public sealed class SandboxTests
     [Fact]
     public void Sandboxed_scan_skips_a_crashing_plugin_and_resumes()
     {
-        var worker = WorkerDll();
+        string? worker = WorkerDll();
         Assert.SkipWhen(worker == null, "sandbox worker not built.");
-        var crashSrc = Path.Combine(
+        string crashSrc = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "soundfonts", "clap-test", "crash.clap");
-        var gain = GainDescriptor();
+        PluginDescriptor? gain = GainDescriptor();
         Assert.SkipWhen(!File.Exists(crashSrc) || gain == null, "crash/gain CLAP fixtures not available.");
 
-        var tmp = Path.Combine(Path.GetTempPath(), "midisharp-scan-" + Guid.NewGuid().ToString("N"));
+        string tmp = Path.Combine(Path.GetTempPath(), "midisharp-scan-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tmp);
         try
         {
             File.Copy(crashSrc, Path.Combine(tmp, "01_crash.clap"));        // sorts first → scanned (and crashes) first
             File.Copy(gain!.Path, Path.Combine(tmp, "02_gain.clap"));       // must still be found after resume
 
-            var found = SandboxScanner.ScanFormat("CLAP", worker!, [tmp]);
+            List<PluginDescriptor> found = SandboxScanner.ScanFormat("CLAP", worker!, [tmp]);
             _out.WriteLine($"scan of [crasher, gain] found {found.Count}: {string.Join(", ", found.Select(p => p.Name))}");
             // The crasher killed its scan worker, but the scan resumed past it and discovered the good plugin.
             Assert.Contains(found, p => p.Id == "midisharp.test.gain");
@@ -82,8 +82,8 @@ public sealed class SandboxTests
     [Fact]
     public void Sandboxed_plugin_processes_audio_correctly_in_another_process()
     {
-        var worker = WorkerDll();
-        var desc = GainDescriptor();
+        string? worker = WorkerDll();
+        PluginDescriptor? desc = GainDescriptor();
         Assert.SkipWhen(worker == null, "sandbox worker not built.");
         Assert.SkipWhen(desc == null, "CLAP gain fixture not installed.");
 
@@ -94,7 +94,7 @@ public sealed class SandboxTests
 
         using var effect = new HostedEffect(plugin, Config);
         const double amp = 0.4;
-        var inputRms = amp / Math.Sqrt(2);
+        double inputRms = amp / Math.Sqrt(2);
 
         double RenderRms(double normalized)
         {
@@ -111,14 +111,14 @@ public sealed class SandboxTests
                     buf[2 * i] = s; buf[2 * i + 1] = s;
                 }
                 effect.Process(buf);
-                foreach (var v in buf) { Assert.True(float.IsFinite(v), "non-finite"); sumSq += (double)v * v; n++; }
+                foreach (float v in buf) { Assert.True(float.IsFinite(v), "non-finite"); sumSq += (double)v * v; n++; }
             }
             return Math.Sqrt(sumSq / n);
         }
 
-        var unity = RenderRms(0.5);
-        var half = RenderRms(0.25);
-        var dbl = RenderRms(1.0);
+        double unity = RenderRms(0.5);
+        double half = RenderRms(0.25);
+        double dbl = RenderRms(1.0);
         _out.WriteLine($"input={inputRms:F5} unity={unity:F5} half={half:F5} double={dbl:F5}");
         Assert.True(Math.Abs(unity - inputRms) < 0.01, $"×1 (got {unity:F5})");
         Assert.True(Math.Abs(half - inputRms * 0.5) < 0.01, $"×0.5 (got {half:F5})");
@@ -128,8 +128,8 @@ public sealed class SandboxTests
     [Fact]
     public void Plugin_state_round_trips_through_the_worker()
     {
-        var worker = WorkerDll();
-        var desc = GainDescriptor();
+        string? worker = WorkerDll();
+        PluginDescriptor? desc = GainDescriptor();
         Assert.SkipWhen(worker == null, "sandbox worker not built.");
         Assert.SkipWhen(desc == null, "CLAP gain fixture not installed.");
 
@@ -140,7 +140,7 @@ public sealed class SandboxTests
         void Apply(double v) { plugin.SetParameter(0, v); Array.Clear(buf); effect.Process(buf); }
 
         Apply(0.25);
-        var blob = plugin.SaveState();           // captures the plugin's state (gain = 0.25) across the worker
+        byte[] blob = plugin.SaveState();           // captures the plugin's state (gain = 0.25) across the worker
         _out.WriteLine($"saved {blob.Length} state bytes through the worker");
         Assert.NotEmpty(blob);                   // the gain fixture implements clap.state
 
@@ -154,11 +154,11 @@ public sealed class SandboxTests
     [Fact]
     public void Opens_a_plugin_editor_in_the_worker_process()
     {
-        var worker = WorkerDll();
+        string? worker = WorkerDll();
         Assert.SkipWhen(worker == null, "sandbox worker not built.");
         Assert.SkipWhen(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")), "no X display.");
         var f = new ClapFormat();
-        var gui = f.Scan(f.DefaultSearchPaths).FirstOrDefault(p => p.Id == "midisharp.test.gui");
+        PluginDescriptor? gui = f.Scan(f.DefaultSearchPaths).FirstOrDefault(p => p.Id == "midisharp.test.gui");
         Assert.SkipWhen(gui == null, "CLAP gui fixture not installed.");
 
         using var plugin = new SandboxedPlugin(gui!, worker!, Config);
@@ -182,10 +182,10 @@ public sealed class SandboxTests
     [Fact]
     public void A_hung_plugin_is_killed_by_the_watchdog_and_recovers()
     {
-        var worker = WorkerDll();
+        string? worker = WorkerDll();
         Assert.SkipWhen(worker == null, "sandbox worker not built.");
         var f = new ClapFormat();
-        var hang = f.Scan(f.DefaultSearchPaths).FirstOrDefault(p => p.Id == "midisharp.test.hang");
+        PluginDescriptor? hang = f.Scan(f.DefaultSearchPaths).FirstOrDefault(p => p.Id == "midisharp.test.hang");
         Assert.SkipWhen(hang == null, "hang fixture not installed.");
 
         using var plugin = new SandboxedPlugin(hang!, worker!, Config);
@@ -207,8 +207,8 @@ public sealed class SandboxTests
     [Fact]
     public void A_worker_crash_degrades_to_silence_and_the_host_survives()
     {
-        var worker = WorkerDll();
-        var desc = GainDescriptor();
+        string? worker = WorkerDll();
+        PluginDescriptor? desc = GainDescriptor();
         Assert.SkipWhen(worker == null, "sandbox worker not built.");
         Assert.SkipWhen(desc == null, "CLAP gain fixture not installed.");
 

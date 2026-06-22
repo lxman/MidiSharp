@@ -1,5 +1,4 @@
 using System;
-using MidiSharp.Hosting;
 using Xunit;
 
 namespace MidiSharp.Hosting.Tests;

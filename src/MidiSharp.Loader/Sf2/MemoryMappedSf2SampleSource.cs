@@ -72,14 +72,14 @@ internal sealed class MemoryMappedSf2SampleSource : ISampleSource
 
     public int ReadFrames(int sampleId, long frameOffset, Span<float> dest)
     {
-        var entry = _entries[sampleId];
+        SampleEntry entry = _entries[sampleId];
 
         if (frameOffset < 0 || frameOffset >= entry.LengthFrames) return 0;
 
-        var available = entry.LengthFrames - frameOffset;
+        long available = entry.LengthFrames - frameOffset;
         var framesToRead = (int)Math.Min(available, dest.Length);
 
-        var sourceStart = entry.AbsoluteStart + frameOffset;   // in int16 frames
+        long sourceStart = entry.AbsoluteStart + frameOffset;   // in int16 frames
         const float Scale = 1.0f / 32768.0f;
 
         if (!_sm24.IsEmpty)
@@ -89,11 +89,11 @@ internal sealed class MemoryMappedSf2SampleSource : ISampleSource
             // exactly. Only taken when the font actually ships 24-bit data, so 16-bit fonts are
             // byte-identical to the fast path below.
             const float Scale24 = 1.0f / 8388608.0f;
-            var hi = _smpl.Span.Slice((int)sourceStart * 2, framesToRead * 2);
-            var lo = _sm24.Span.Slice((int)sourceStart, framesToRead);
+            ReadOnlySpan<byte> hi = _smpl.Span.Slice((int)sourceStart * 2, framesToRead * 2);
+            ReadOnlySpan<byte> lo = _sm24.Span.Slice((int)sourceStart, framesToRead);
             for (var i = 0; i < framesToRead; i++)
             {
-                var sample24 = (BinaryPrimitives.ReadInt16LittleEndian(hi.Slice(i * 2, 2)) << 8) | lo[i];
+                int sample24 = (BinaryPrimitives.ReadInt16LittleEndian(hi.Slice(i * 2, 2)) << 8) | lo[i];
                 dest[i] = sample24 * Scale24;
             }
             return framesToRead;
@@ -102,13 +102,13 @@ internal sealed class MemoryMappedSf2SampleSource : ISampleSource
         if (BitConverter.IsLittleEndian)
         {
             // Direct reinterpret of the file bytes as int16 — zero copy — then SIMD int16→float.
-            var src = MemoryMarshal.Cast<byte, short>(_smpl.Span).Slice((int)sourceStart, framesToRead);
+            ReadOnlySpan<short> src = MemoryMarshal.Cast<byte, short>(_smpl.Span).Slice((int)sourceStart, framesToRead);
             SampleConvert.Int16ToFloat(src, dest, Scale);
         }
         else
         {
             // Big-endian host: SF2 data on disk is little-endian, so read each frame explicitly.
-            var bytes = _smpl.Span.Slice((int)sourceStart * 2, framesToRead * 2);
+            ReadOnlySpan<byte> bytes = _smpl.Span.Slice((int)sourceStart * 2, framesToRead * 2);
             for (var i = 0; i < framesToRead; i++)
                 dest[i] = BinaryPrimitives.ReadInt16LittleEndian(bytes.Slice(i * 2, 2)) * Scale;
         }
@@ -122,9 +122,9 @@ internal sealed class MemoryMappedSf2SampleSource : ISampleSource
         // first read on the audio thread doesn't fault synchronously. No-op for a managed byte[]
         // (already resident) — _backingOwner is only IPrefetchable when mmap-backed.
         if (_backingOwner is not IPrefetchable pf) return;
-        var e = _entries[sampleId];
-        var byteStart = e.AbsoluteStart * 2;
-        var byteLen = e.LengthFrames * 2;
+        SampleEntry e = _entries[sampleId];
+        long byteStart = e.AbsoluteStart * 2;
+        long byteLen = e.LengthFrames * 2;
         if (byteStart < 0 || byteLen <= 0 || byteStart >= _smpl.Length) return;
         byteLen = Math.Min(byteLen, _smpl.Length - byteStart);   // clamp; never fault on a bad header
         pf.Prefetch(_smpl.Slice((int)byteStart, (int)byteLen));

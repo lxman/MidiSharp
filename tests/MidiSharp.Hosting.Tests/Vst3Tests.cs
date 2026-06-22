@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
-using MidiSharp.Hosting;
+using MidiSharp.Hosting.EditorHost;
 using MidiSharp.Hosting.Vst3;
 using Xunit;
 
@@ -35,7 +35,7 @@ public sealed class Vst3Tests
 
     private IHostedPlugin? LoadGain()
     {
-        var d = _format.Scan(_format.DefaultSearchPaths).FirstOrDefault(p => p.Name == "MidiSharp VST3 Gain");
+        PluginDescriptor? d = _format.Scan(_format.DefaultSearchPaths).FirstOrDefault(p => p.Name == "MidiSharp VST3 Gain");
         return d == null ? null : _format.Load(d, Config);
     }
 
@@ -45,9 +45,9 @@ public sealed class Vst3Tests
     [Fact]
     public void Loads_the_vst3_fixture_and_reads_its_metadata()
     {
-        var plugin = LoadGain();
+        IHostedPlugin? plugin = LoadGain();
         Assert.SkipWhen(plugin == null, "VST3 gain fixture not installed.");
-        using var _ = plugin;
+        using IHostedPlugin _ = plugin;
         _out.WriteLine($"Loaded {plugin!.Descriptor.Name}, {plugin.Parameters.Count} params");
         Assert.Equal("MidiSharp VST3 Gain", plugin.Descriptor.Name);
         Assert.Single(plugin.Parameters);
@@ -57,12 +57,12 @@ public sealed class Vst3Tests
     [Fact]
     public void Applies_its_parameter_through_the_bridge()
     {
-        var plugin = LoadGain();
+        IHostedPlugin? plugin = LoadGain();
         Assert.SkipWhen(plugin == null, "VST3 gain fixture not installed.");
         using var effect = new HostedEffect(plugin!, Config);
 
         const double amp = 0.4;
-        var inputRms = amp / Math.Sqrt(2);
+        double inputRms = amp / Math.Sqrt(2);
 
         double RenderRms(double normalized)
         {
@@ -79,14 +79,14 @@ public sealed class Vst3Tests
                     buf[2 * i] = s; buf[2 * i + 1] = s;
                 }
                 effect.Process(buf);
-                foreach (var v in buf) { Assert.True(float.IsFinite(v), "non-finite"); sumSq += (double)v * v; n++; }
+                foreach (float v in buf) { Assert.True(float.IsFinite(v), "non-finite"); sumSq += (double)v * v; n++; }
             }
             return Math.Sqrt(sumSq / n);
         }
 
-        var unity = RenderRms(0.5);   // param 0.5 → ×1
-        var half = RenderRms(0.25);   // param 0.25 → ×0.5
-        var dbl = RenderRms(1.0);     // param 1.0 → ×2
+        double unity = RenderRms(0.5);   // param 0.5 → ×1
+        double half = RenderRms(0.25);   // param 0.25 → ×0.5
+        double dbl = RenderRms(1.0);     // param 1.0 → ×2
         _out.WriteLine($"input={inputRms:F5} unity={unity:F5} half={half:F5} double={dbl:F5}");
         Assert.True(Math.Abs(unity - inputRms) < 0.01, $"×1 (got {unity:F5})");
         Assert.True(Math.Abs(half - inputRms * 0.5) < 0.01, $"×0.5 (got {half:F5})");
@@ -96,12 +96,12 @@ public sealed class Vst3Tests
     [Fact]
     public void State_round_trips_through_an_ibstream()
     {
-        var plugin = LoadGain();
+        IHostedPlugin? plugin = LoadGain();
         Assert.SkipWhen(plugin == null, "VST3 gain fixture not installed.");
-        using var _ = plugin;
+        using IHostedPlugin _ = plugin;
 
         plugin!.SetParameter(0, 0.25);          // a distinctive value
-        var saved = plugin.SaveState();         // component getState → IBStream → bytes
+        byte[] saved = plugin.SaveState();         // component getState → IBStream → bytes
         Assert.NotEmpty(saved);                 // the fixture writes its 8-byte gain
         _out.WriteLine($"saved {saved.Length} bytes, param before = {plugin.GetParameter(0):F3}");
 
@@ -115,15 +115,15 @@ public sealed class Vst3Tests
     [Fact]
     public void Reports_its_editor_and_size_through_iplugview()
     {
-        var plugin = LoadGain();
+        IHostedPlugin? plugin = LoadGain();
         Assert.SkipWhen(plugin == null, "VST3 gain fixture not installed.");
-        using var _ = plugin;
+        using IHostedPlugin _ = plugin;
 
-        var gui = plugin!.Gui;
+        IPluginGui? gui = plugin!.Gui;
         Assert.NotNull(gui);
         Assert.True(gui!.HasEditor, "the gain fixture exposes an IPlugView editor.");
         Assert.True(gui.IsApiSupported("x11", floating: false), "the view should support X11 embedding.");
-        Assert.True(gui.TryGetSize(out var w, out var h));
+        Assert.True(gui.TryGetSize(out int w, out int h));
         Assert.Equal(300, w);
         Assert.Equal(200, h);
     }
@@ -132,11 +132,11 @@ public sealed class Vst3Tests
     public void Embeds_its_iplugview_editor_in_a_native_window()
     {
         Assert.SkipWhen(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")), "no X display.");
-        var plugin = LoadGain();
+        IHostedPlugin? plugin = LoadGain();
         Assert.SkipWhen(plugin == null, "VST3 gain fixture not installed.");
-        using var _ = plugin;
+        using IHostedPlugin _ = plugin;
 
-        using var window = MidiSharp.Hosting.EditorHost.EditorWindow.Open(plugin!.Gui, "VST3 editor test");
+        using EditorWindow? window = MidiSharp.Hosting.EditorHost.EditorWindow.Open(plugin!.Gui, "VST3 editor test");
         Assert.NotNull(window);
         Assert.True(window!.IsOpen, $"editor window should open (error: {window.Error}).");
 
@@ -150,19 +150,19 @@ public sealed class Vst3Tests
     public void Host_run_loop_drives_the_editors_timer()
     {
         Assert.SkipWhen(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")), "no X display.");
-        var plugin = LoadGain();
+        IHostedPlugin? plugin = LoadGain();
         Assert.SkipWhen(plugin == null, "VST3 gain fixture not installed.");
-        using var _ = plugin;
+        using IHostedPlugin _ = plugin;
 
         // The fixture's editor registers a 20 ms timer with our Linux IRunLoop on attach, and bumps a tick
         // counter on each onTimer — exposed as the 2nd 8 bytes of its IBStream state. If the host's run loop
         // is pumping the plugin's timers, the count climbs while the window is open.
-        using var window = MidiSharp.Hosting.EditorHost.EditorWindow.Open(plugin!.Gui, "VST3 run-loop test");
+        using EditorWindow? window = MidiSharp.Hosting.EditorHost.EditorWindow.Open(plugin!.Gui, "VST3 run-loop test");
         Assert.NotNull(window);
         Assert.True(window!.IsOpen, $"editor should open (error: {window.Error}).");
 
         System.Threading.Thread.Sleep(400);   // ~20 ticks at 20 ms if the loop is firing
-        var state = plugin.SaveState();
+        byte[] state = plugin.SaveState();
         window.Close();
 
         // SaveState wraps the component state: [int32 compLen][gain double][ticks double][int32 ctrlLen].
@@ -177,11 +177,11 @@ public sealed class Vst3Tests
     public void Parameters_marshal_to_the_ui_thread_while_the_editor_is_open()
     {
         Assert.SkipWhen(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")), "no X display.");
-        var plugin = LoadGain();
+        IHostedPlugin? plugin = LoadGain();
         Assert.SkipWhen(plugin == null, "VST3 gain fixture not installed.");
-        using var _ = plugin;
+        using IHostedPlugin _ = plugin;
 
-        using var window = MidiSharp.Hosting.EditorHost.EditorWindow.Open(plugin!.Gui, "VST3 param-marshal test");
+        using EditorWindow? window = MidiSharp.Hosting.EditorHost.EditorWindow.Open(plugin!.Gui, "VST3 param-marshal test");
         Assert.NotNull(window);
         Assert.True(window!.IsOpen, $"editor should open (error: {window.Error}).");
 
@@ -201,11 +201,11 @@ public sealed class Vst3Tests
     [Fact]
     public void Discovers_the_instrument_and_its_separate_controller_parameter()
     {
-        var d = FindSynth();
+        PluginDescriptor? d = FindSynth();
         Assert.SkipWhen(d == null, "VST3 synth fixture not installed.");
         Assert.True(d!.IsInstrument, "the synth's 'Instrument' subcategory should mark it an instrument.");
 
-        using var plugin = _format.Load(d, Config);   // the component exposes no controller → host creates the separate class
+        using IHostedPlugin plugin = _format.Load(d, Config);   // the component exposes no controller → host creates the separate class
         _out.WriteLine($"Loaded {plugin.Descriptor.Name}, instrument={plugin.IsInstrument}, {plugin.Parameters.Count} params");
         Assert.Single(plugin.Parameters);             // the param lives on the SEPARATE controller object
         Assert.Equal("Volume", plugin.Parameters[0].Name);
@@ -214,14 +214,14 @@ public sealed class Vst3Tests
     [Fact]
     public void Plays_a_note_through_the_event_list()
     {
-        var d = FindSynth();
+        PluginDescriptor? d = FindSynth();
         Assert.SkipWhen(d == null, "VST3 synth fixture not installed.");
         using var inst = new HostedInstrument(_format.Load(d!, Config), Config);
 
         // Silent until a note arrives; then an A4 (key 69) sounds at ~440 Hz via the VST3 event list.
         var buf = new float[Block * 2];
         inst.Render(buf);
-        double preRms = 0; foreach (var v in buf) preRms += (double)v * v;
+        double preRms = 0; foreach (float v in buf) preRms += (double)v * v;
         Assert.True(Math.Sqrt(preRms / buf.Length) < 1e-6, "instrument should be silent before any note.");
 
         inst.NoteOn(0, channel: 0, key: 69, velocity: 100);
@@ -239,7 +239,7 @@ public sealed class Vst3Tests
         rms = Math.Sqrt(rms / left.Length);
         for (var i = 1; i < left.Length; i++)
             if ((left[i - 1] < 0f && left[i] >= 0f) || (left[i - 1] >= 0f && left[i] < 0f)) crossings++;
-        var hz = crossings * (double)Rate / (2.0 * left.Length);
+        double hz = crossings * (double)Rate / (2.0 * left.Length);
         _out.WriteLine($"note rms={rms:F4} freq={hz:F1}");
         Assert.True(rms > 0.1, $"the note should sound through the event list (rms {rms:F4}).");
         Assert.True(Math.Abs(hz - 440.0) < 5.0, $"A4 should sound at ~440 Hz (measured {hz:F1}).");

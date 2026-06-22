@@ -18,8 +18,8 @@ public class Sf3CacheTests
 {
     private static string? FindSf3()
     {
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var roots = new[]
+        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        string[] roots = new[]
         {
             Path.Combine(home, "soundfonts", "deduped", "sf3"),
             Path.Combine(home, "soundfonts"),
@@ -41,7 +41,7 @@ public class Sf3CacheTests
         long off = 0;
         while (true)
         {
-            var n = src.ReadFrames(id, off, buf);
+            int n = src.ReadFrames(id, off, buf);
             if (n <= 0) break;
             for (var i = 0; i < n; i++) outp.Add(buf[i]);
             off += n;
@@ -54,22 +54,22 @@ public class Sf3CacheTests
     {
         // Scan available SF3 fonts for one that actually carries a stereo sample (FluidR3Mono and many
         // GM banks are all-mono); only that exercises the channel-aware copy. Skips cleanly if none.
-        var (bank, src, stereoId) = FindStereoSf3();
+        (IRBank? bank, ISampleSource? src, int stereoId) = FindStereoSf3();
         using (bank)
         {
             if (bank == null) return;   // no SF3 with a stereo sample available — skip
 
-            var expected = src!.Metadata(stereoId).LengthFrames;
+            long expected = src!.Metadata(stereoId).LengthFrames;
             // Interleaved buffer sized to a quarter of the sample so several reads hit the cap. Pre-fix,
             // framesAvailable came from dest.Length (floats) instead of dest.Length/channels (frames), so
             // a capped read copied 2× the buffer and overflowed it (crash) / miscounted frames.
-            var bufFrames = Math.Max(2, (int)(expected / 4));
+            int bufFrames = Math.Max(2, (int)(expected / 4));
             var buf = new float[bufFrames * 2];
             long total = 0;
             long off = 0;
             while (true)
             {
-                var n = src.ReadFrames(stereoId, off, buf);   // must never write past buf
+                int n = src.ReadFrames(stereoId, off, buf);   // must never write past buf
                 if (n <= 0) break;
                 Assert.True(n <= buf.Length / 2, $"returned {n} frames into a {buf.Length / 2}-frame buffer");
                 total += n;
@@ -82,23 +82,23 @@ public class Sf3CacheTests
     /// <summary>Loads SF3 fonts until one with a stereo sample is found; returns (null, ...) if none.</summary>
     private static (IRBank? bank, ISampleSource? src, int stereoId) FindStereoSf3()
     {
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var roots = new[] { Path.Combine(home, "soundfonts", "deduped", "sf3"), Path.Combine(home, "soundfonts") };
-        var fonts = roots.Where(Directory.Exists)
+        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        string[] roots = new[] { Path.Combine(home, "soundfonts", "deduped", "sf3"), Path.Combine(home, "soundfonts") };
+        IEnumerable<string> fonts = roots.Where(Directory.Exists)
             .SelectMany(r => Directory.EnumerateFiles(r, "*.sf3", SearchOption.AllDirectories))
             .Select(f => new FileInfo(f))
             .Where(fi => fi.Length is > 20_000 and < 30_000_000)
             .OrderBy(fi => fi.Length)
             .Select(fi => fi.FullName);
 
-        foreach (var path in fonts)
+        foreach (string path in fonts)
         {
             IRBank bank;
             try { bank = SoundBankLoader.Load(path); }
             catch { continue; }
             for (var id = 0; id < bank.Samples.Count; id++)
             {
-                var m = bank.Samples.Metadata(id);
+                SampleMetadata m = bank.Samples.Metadata(id);
                 if (m.Channels == 2 && m.LengthFrames > 8)   // a 2-channel sample big enough to span >1 read
                     return (bank, bank.Samples, id);
             }
@@ -110,15 +110,15 @@ public class Sf3CacheTests
     [Fact]
     public void PooledCache_SurvivesEvictionAndReDecode()
     {
-        var path = FindSf3();
+        string? path = FindSf3();
         if (path == null) return;   // no real SF3 available — skip
 
         // Tiny cache budget forces eviction churn: buffers get returned to the pool and re-rented.
-        using var bank = SoundBankLoader.Load(path, new SoundBankLoadOptions { DecodedSampleCacheBytes = 64 * 1024 });
-        var src = bank.Samples;
+        using IRBank bank = SoundBankLoader.Load(path, new SoundBankLoadOptions { DecodedSampleCacheBytes = 64 * 1024 });
+        ISampleSource src = bank.Samples;
         if (src.Count < 2) return;
 
-        var first = ReadAll(src, 0);
+        float[] first = ReadAll(src, 0);
         Assert.True(first.AsSpan().SequenceEqual(ReadAll(src, 0).AsSpan()), "back-to-back reads differ");
 
         // Churn the cache by reading every other sample, evicting sample 0 (and returning its buffer).

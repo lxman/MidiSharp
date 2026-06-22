@@ -41,16 +41,16 @@ public sealed class PeakingEqFilter
             return;
         }
 
-        var f = Math.Clamp(frequencyHz, 20.0, _sampleRate * 0.45);
-        var bw = Math.Max(0.001, bandwidthOctaves);
-        var a = Math.Pow(10.0, gainDb / 40.0);
-        var w0 = 2.0 * Math.PI * f / _sampleRate;
-        var cosw0 = Math.Cos(w0);
-        var sinw0 = Math.Sin(w0);
+        double f = Math.Clamp(frequencyHz, 20.0, _sampleRate * 0.45);
+        double bw = Math.Max(0.001, bandwidthOctaves);
+        double a = Math.Pow(10.0, gainDb / 40.0);
+        double w0 = 2.0 * Math.PI * f / _sampleRate;
+        double cosw0 = Math.Cos(w0);
+        double sinw0 = Math.Sin(w0);
         // RBJ peaking EQ, bandwidth specified in octaves.
-        var alpha = sinw0 * Math.Sinh(Math.Log(2.0) / 2.0 * bw * w0 / sinw0);
+        double alpha = sinw0 * Math.Sinh(Math.Log(2.0) / 2.0 * bw * w0 / sinw0);
 
-        var norm = 1.0 + alpha / a;
+        double norm = 1.0 + alpha / a;
         _a0 = (1.0 + alpha * a) / norm;
         _a1 = (-2.0 * cosw0) / norm;
         _a2 = (1.0 - alpha * a) / norm;
@@ -64,7 +64,7 @@ public sealed class PeakingEqFilter
         if (!_enabled)
             return input;
 
-        var output = _a0 * input + _z1;
+        double output = _a0 * input + _z1;
         _z1 = _a1 * input - _b1 * output + _z2;
         _z2 = _a2 * input - _b2 * output;
         return output;

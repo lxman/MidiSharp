@@ -1,6 +1,5 @@
 using System;
 using System.Threading;
-using MidiSharp.Hosting;
 
 namespace MidiSharp.Hosting.EditorHost;
 

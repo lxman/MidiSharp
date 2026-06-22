@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using MidiSharp.Hosting;
 using static MidiSharp.Hosting.Clap.ClapAbi;
 
 namespace MidiSharp.Hosting.Clap;
@@ -22,22 +21,22 @@ public sealed unsafe class ClapFormat : IPluginFormat
     {
         get
         {
-            var env = Environment.GetEnvironmentVariable("CLAP_PATH");
+            string? env = Environment.GetEnvironmentVariable("CLAP_PATH");
             if (!string.IsNullOrEmpty(env))
             {
-                foreach (var p in env.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+                foreach (string p in env.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
                     yield return p;
                 yield break;
             }
-            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             // The CLAP standard dirs for each OS. Paths that don't exist on the current OS are skipped
             // harmlessly during enumeration, so listing all three is safe.
             yield return Path.Combine(home, ".clap");                                   // Linux user
             yield return "/usr/lib/clap";
             yield return "/usr/local/lib/clap";
-            var common = Environment.GetEnvironmentVariable("CommonProgramFiles");
+            string? common = Environment.GetEnvironmentVariable("CommonProgramFiles");
             if (!string.IsNullOrEmpty(common)) yield return Path.Combine(common, "CLAP");   // Windows system
-            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             if (!string.IsNullOrEmpty(localAppData)) yield return Path.Combine(localAppData, "Programs", "Common", "CLAP");   // Windows user
             yield return Path.Combine(home, "Library", "Audio", "Plug-Ins", "CLAP");    // macOS user
         }
@@ -45,10 +44,10 @@ public sealed unsafe class ClapFormat : IPluginFormat
 
     public IEnumerable<string> EnumerateFiles(IEnumerable<string> searchPaths)
     {
-        foreach (var dir in searchPaths)
+        foreach (string dir in searchPaths)
         {
             if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) continue;
-            foreach (var file in Directory.EnumerateFiles(dir, "*.clap").OrderBy(f => f, StringComparer.Ordinal))
+            foreach (string file in Directory.EnumerateFiles(dir, "*.clap").OrderBy(f => f, StringComparer.Ordinal))
                 yield return file;
         }
     }
@@ -60,22 +59,22 @@ public sealed unsafe class ClapFormat : IPluginFormat
     public IEnumerable<PluginDescriptor> ScanFile(string file)
     {
         var results = new List<PluginDescriptor>();
-        if (!NativeLibrary.TryLoad(file, out var lib)) return results;
+        if (!NativeLibrary.TryLoad(file, out IntPtr lib)) return results;
         try
         {
-            if (!NativeLibrary.TryGetExport(lib, EntryExport, out var entryPtr)) return results;
+            if (!NativeLibrary.TryGetExport(lib, EntryExport, out IntPtr entryPtr)) return results;
             var entry = (ClapPluginEntry*)entryPtr;
-            var path = Utf8(file);
+            IntPtr path = Utf8(file);
             try
             {
                 if (entry->Init((byte*)path) == 0) return results;
                 var factory = (ClapPluginFactory*)entry->GetFactory(Utf8Span(FactoryId));
                 if (factory == null) return results;
 
-                var count = factory->GetPluginCount(factory);
+                uint count = factory->GetPluginCount(factory);
                 for (uint i = 0; i < count; i++)
                 {
-                    var desc = factory->GetPluginDescriptor(factory, i);
+                    ClapPluginDescriptor* desc = factory->GetPluginDescriptor(factory, i);
                     if (desc == null) continue;
                     results.Add(new PluginDescriptor(
                         Format: "CLAP",
@@ -97,15 +96,15 @@ public sealed unsafe class ClapFormat : IPluginFormat
         if (descriptor.Format != Name)
             throw new ArgumentException($"Not a CLAP descriptor: {descriptor.Format}", nameof(descriptor));
 
-        var lib = NativeLibrary.Load(descriptor.Path);
+        IntPtr lib = NativeLibrary.Load(descriptor.Path);
         ClapHost? host = null;
         try
         {
-            if (!NativeLibrary.TryGetExport(lib, EntryExport, out var entryPtr))
+            if (!NativeLibrary.TryGetExport(lib, EntryExport, out IntPtr entryPtr))
                 throw new InvalidOperationException($"'{descriptor.Path}' has no clap_entry symbol.");
             var entry = (ClapPluginEntry*)entryPtr;
 
-            var path = Utf8(descriptor.Path);
+            IntPtr path = Utf8(descriptor.Path);
             try
             {
                 if (entry->Init((byte*)path) == 0)
@@ -117,10 +116,10 @@ public sealed unsafe class ClapFormat : IPluginFormat
             if (factory == null) throw new InvalidOperationException("CLAP plugin factory unavailable.");
 
             host = new ClapHost();
-            var idPtr = Utf8(descriptor.Id);
+            IntPtr idPtr = Utf8(descriptor.Id);
             try
             {
-                var plugin = factory->CreatePlugin(factory, host.Pointer, (byte*)idPtr);
+                ClapAbi.ClapPlugin* plugin = factory->CreatePlugin(factory, host.Pointer, (byte*)idPtr);
                 if (plugin == null) throw new InvalidOperationException($"create_plugin failed for {descriptor.Id}.");
                 if (plugin->Init(plugin) == 0)
                 {
@@ -144,7 +143,7 @@ public sealed unsafe class ClapFormat : IPluginFormat
         if (desc->Features == null) return false;
         for (var i = 0; ; i++)
         {
-            var f = desc->Features[i];
+            byte* f = desc->Features[i];
             if (f == null) return false;
             if (Str(f) == feature) return true;
         }
@@ -153,8 +152,8 @@ public sealed unsafe class ClapFormat : IPluginFormat
     // Small UTF-8 helpers. Utf8 allocates (caller frees); Utf8Span uses a pinned cache for short, constant ids.
     private static IntPtr Utf8(string s)
     {
-        var bytes = System.Text.Encoding.UTF8.GetBytes(s);
-        var p = Marshal.AllocHGlobal(bytes.Length + 1);
+        byte[] bytes = System.Text.Encoding.UTF8.GetBytes(s);
+        IntPtr p = Marshal.AllocHGlobal(bytes.Length + 1);
         Marshal.Copy(bytes, 0, p, bytes.Length);
         ((byte*)p)[bytes.Length] = 0;
         return p;
@@ -165,7 +164,7 @@ public sealed unsafe class ClapFormat : IPluginFormat
     {
         lock (ConstUtf8)
         {
-            if (!ConstUtf8.TryGetValue(s, out var p)) { p = Utf8(s); ConstUtf8[s] = p; }
+            if (!ConstUtf8.TryGetValue(s, out IntPtr p)) { p = Utf8(s); ConstUtf8[s] = p; }
             return (byte*)p;
         }
     }

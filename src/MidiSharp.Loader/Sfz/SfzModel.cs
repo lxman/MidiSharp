@@ -47,29 +47,29 @@ internal sealed class SfzRegion(Dictionary<string, string> opcodes)
 {
     public bool Has(string key) => opcodes.ContainsKey(key);
 
-    public string? Get(string key) => opcodes.TryGetValue(key, out var v) ? v : null;
+    public string? Get(string key) => opcodes.TryGetValue(key, out string? v) ? v : null;
 
     public IReadOnlyDictionary<string, string> Opcodes => opcodes;
 
     public int GetInt(string key, int fallback)
     {
-        var v = Get(key);
-        return v != null && int.TryParse(v.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n)
+        string? v = Get(key);
+        return v != null && int.TryParse(v.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int n)
             ? n : fallback;
     }
 
     public double GetDouble(string key, double fallback)
     {
-        var v = Get(key);
-        return v != null && double.TryParse(v.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var n)
+        string? v = Get(key);
+        return v != null && double.TryParse(v.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double n)
             ? n : fallback;
     }
 
     /// <summary>Parse a key opcode (number or note name) and apply the control offset.</summary>
     public int? GetKey(string key, SfzControl control)
     {
-        var v = Get(key);
-        if (v == null || !SfzNoteNames.TryParse(v, out var midi)) return null;
+        string? v = Get(key);
+        if (v == null || !SfzNoteNames.TryParse(v, out int midi)) return null;
         return Math.Clamp(midi + control.KeyOffset, 0, 127);
     }
 
@@ -80,12 +80,12 @@ internal sealed class SfzRegion(Dictionary<string, string> opcodes)
     /// </summary>
     public IEnumerable<(int Cc, string Value)> EnumerateCc(string prefix)
     {
-        foreach (var kv in opcodes)
+        foreach (KeyValuePair<string, string> kv in opcodes)
         {
             if (kv.Key.Length > prefix.Length &&
                 kv.Key.StartsWith(prefix, StringComparison.Ordinal) &&
                 int.TryParse(kv.Key.Substring(prefix.Length), NumberStyles.Integer,
-                             CultureInfo.InvariantCulture, out var cc) &&
+                             CultureInfo.InvariantCulture, out int cc) &&
                 cc is >= 0 and <= 127)
             {
                 yield return (cc, kv.Value);
@@ -101,18 +101,18 @@ internal sealed class SfzRegion(Dictionary<string, string> opcodes)
     /// </summary>
     public IEnumerable<(string Param, int Cc, double Value)> EnumerateModulations()
     {
-        foreach (var kv in opcodes)
+        foreach (KeyValuePair<string, string> kv in opcodes)
         {
-            var key = kv.Key;
-            var marker = key.IndexOf("_oncc", StringComparison.Ordinal);
+            string? key = kv.Key;
+            int marker = key.IndexOf("_oncc", StringComparison.Ordinal);
             var markerLen = 5;
             if (marker < 0) { marker = key.IndexOf("_cc", StringComparison.Ordinal); markerLen = 3; }
             if (marker <= 0) continue;
 
-            var ccPart = key.Substring(marker + markerLen);
-            if (!int.TryParse(ccPart, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cc))
+            string ccPart = key.Substring(marker + markerLen);
+            if (!int.TryParse(ccPart, NumberStyles.Integer, CultureInfo.InvariantCulture, out int cc))
                 continue;  // not a numeric-CC suffix (e.g. *_curvecc, *_smoothcc handled elsewhere)
-            if (!double.TryParse(kv.Value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var val))
+            if (!double.TryParse(kv.Value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double val))
                 continue;
 
             yield return (key.Substring(0, marker), cc, val);

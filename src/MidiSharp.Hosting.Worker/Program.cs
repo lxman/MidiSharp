@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.IO.Pipes;
@@ -20,7 +21,7 @@ if (args.Length >= 4 && args[0] == "--scan")
 {
     using var scanPipe = new AnonymousPipeClientStream(PipeDirection.Out, args[2]);
     using var scanWriter = new BinaryWriter(scanPipe);
-    var resumeAfter = args[3];
+    string resumeAfter = args[3];
     try
     {
         IPluginFormat sfmt = args[1] switch
@@ -31,10 +32,10 @@ if (args.Length >= 4 && args[0] == "--scan")
             "LADSPA" => new LadspaFormat(),
             _ => throw new NotSupportedException(args[1]),
         };
-        var paths = args.Length > 4 ? args[4..] : sfmt.DefaultSearchPaths;
+        IEnumerable<string> paths = args.Length > 4 ? args[4..] : sfmt.DefaultSearchPaths;
 
-        var skipping = resumeAfter.Length > 0;   // skip files up to and including resumeAfter (the last crasher)
-        foreach (var file in sfmt.EnumerateFiles(paths))
+        bool skipping = resumeAfter.Length > 0;   // skip files up to and including resumeAfter (the last crasher)
+        foreach (string file in sfmt.EnumerateFiles(paths))
         {
             if (skipping)
             {
@@ -44,7 +45,7 @@ if (args.Length >= 4 && args[0] == "--scan")
             scanWriter.Write(SandboxProtocol.ScanBegin);
             scanWriter.Write(file);
             scanWriter.Flush();                   // announce the file BEFORE touching its native code
-            foreach (var d in sfmt.ScanFile(file))
+            foreach (PluginDescriptor d in sfmt.ScanFile(file))
             {
                 scanWriter.Write(SandboxProtocol.ScanDescriptor);
                 scanWriter.Write(d.Format); scanWriter.Write(d.Id); scanWriter.Write(d.Name);
@@ -66,25 +67,25 @@ if (args.Length < 10)
     return 2;
 }
 
-var inHandle = args[0];
-var outHandle = args[1];
-var mmfPath = args[2];
-var maxFrames = int.Parse(args[3]);
-var format = args[4];
-var id = args[5];
-var pluginPath = args[6];
-var rate = int.Parse(args[7]);
-var name = args[8];
-var isInstrument = args[9] == "1";
+string inHandle = args[0];
+string outHandle = args[1];
+string mmfPath = args[2];
+int maxFrames = int.Parse(args[3]);
+string format = args[4];
+string id = args[5];
+string pluginPath = args[6];
+int rate = int.Parse(args[7]);
+string name = args[8];
+bool isInstrument = args[9] == "1";
 
 using var pipeIn = new AnonymousPipeClientStream(PipeDirection.In, inHandle);    // commands from host
 using var pipeOut = new AnonymousPipeClientStream(PipeDirection.Out, outHandle); // responses to host
 using var reader = new BinaryReader(pipeIn);
 using var writer = new BinaryWriter(pipeOut);
 
-var size = SharedSize(maxFrames);
+long size = SharedSize(maxFrames);
 using var mmf = MemoryMappedFile.CreateFromFile(mmfPath, FileMode.Open, null, size, MemoryMappedFileAccess.ReadWrite);
-using var view = mmf.CreateViewAccessor(0, size, MemoryMappedFileAccess.ReadWrite);
+using MemoryMappedViewAccessor view = mmf.CreateViewAccessor(0, size, MemoryMappedFileAccess.ReadWrite);
 
 IHostedPlugin plugin;
 unsafe
@@ -119,7 +120,7 @@ unsafe
     writer.Write(plugin.Descriptor.Name);
     writer.Write(plugin.IsInstrument);
     writer.Write(plugin.Parameters.Count);
-    foreach (var p in plugin.Parameters)
+    foreach (PluginParameter p in plugin.Parameters)
     {
         writer.Write(p.Index);
         writer.Write(p.Name);
@@ -155,8 +156,8 @@ unsafe
     {
         if (cmd == CmdProcess)
         {
-            var frames = reader.ReadInt32();
-            var n = reader.ReadInt32();
+            int frames = reader.ReadInt32();
+            int n = reader.ReadInt32();
             if (n > events.Length) events = new HostEvent[n];
             for (var i = 0; i < n; i++)
                 events[i] = new HostEvent
@@ -177,22 +178,22 @@ unsafe
         }
         else if (cmd == CmdSetParam)
         {
-            var idx = reader.ReadInt32();
-            var val = reader.ReadDouble();
+            int idx = reader.ReadInt32();
+            double val = reader.ReadDouble();
             plugin.SetParameter(idx, val);
             writer.Write(RespAck);
             writer.Flush();
         }
         else if (cmd == CmdGetParam)
         {
-            var idx = reader.ReadInt32();
+            int idx = reader.ReadInt32();
             writer.Write(RespParamValue);
             writer.Write(plugin.GetParameter(idx));
             writer.Flush();
         }
         else if (cmd == CmdSaveState)
         {
-            var blob = plugin.SaveState();
+            byte[] blob = plugin.SaveState();
             writer.Write(RespState);
             writer.Write(blob.Length);
             writer.Write(blob);
@@ -200,18 +201,18 @@ unsafe
         }
         else if (cmd == CmdLoadState)
         {
-            var len = reader.ReadInt32();
-            var blob = reader.ReadBytes(len);
+            int len = reader.ReadInt32();
+            byte[] blob = reader.ReadBytes(len);
             plugin.LoadState(blob);
             writer.Write(RespAck);
             writer.Flush();
         }
         else if (cmd == CmdOpenEditor)
         {
-            var title = reader.ReadString();
+            string title = reader.ReadString();
             if (editor is { IsOpen: true }) { writer.Write(RespAck); writer.Write(false); writer.Flush(); return; }  // already open
             editor = EditorSession.Open(plugin.Gui, title);   // on THIS thread — the plugin's creation thread
-            var ok = editor is { IsOpen: true };
+            bool ok = editor is { IsOpen: true };
             if (ok)
                 // Wake the editor's poll when a command arrives, and service it on this thread.
                 editor!.RunLoop!.RegisterFd(pipeFd, () => { try { Handle(reader.ReadByte()); } catch (EndOfStreamException) { disposeReq = true; } });
