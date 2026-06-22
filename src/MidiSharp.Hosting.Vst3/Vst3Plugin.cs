@@ -337,6 +337,7 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
     {
         "x11" => PlatformTypeX11,
         "win32" => PlatformTypeHwnd,
+        "cocoa" => PlatformTypeNsView,
         _ => null,
     };
 
