@@ -43,7 +43,7 @@ typedef struct {
 
 // ─── audio-ports extension ───────────────────────────────────────────────────
 
-static uint32_t ap_count(const clap_plugin_t *p, bool is_input) { return 1; }
+static uint32_t ap_count(const clap_plugin_t *p, bool is_input) { return 1; } /* one main stereo port on each side */
 
 static bool ap_get(const clap_plugin_t *p, uint32_t index, bool is_input, clap_audio_port_info_t *info) {
     if (index != 0) return false;
