@@ -30,18 +30,27 @@ render-shim spike) gates the rest** — do not write adapter code until the shim
 - **macOS-only tests self-skip off-OS** via `Assert.SkipWhen(!OperatingSystem.IsMacOS(), …)`; system-AU checks
   never skip on macOS.
 
-## Task 0 — Render-shim spike (de-risk the load-bearing design)  — **gate**
+## Task 0 — Render-shim spike (de-risk the load-bearing design)  — **gate** ✅ SPIKE PASS 2026-06-22
 
-- [ ] In a throwaway console (`/tmp/au-spike`, net10.0), P/Invoke AudioToolbox to: `AudioComponentFindNext` for
+- [x] In a throwaway console (net10.0), P/Invoke AudioToolbox to: `AudioComponentFindNext` for
       `AULowpass` (`type 'aufx'`, subtype `'lpas'`, manufacturer `'appl'`) → `AudioComponentInstanceNew`.
-- [ ] Set stereo **non-interleaved float32** ASBD on scope-Output **and** scope-Input;
+- [x] Set stereo **non-interleaved float32** ASBD on scope-Output **and** scope-Input;
       `kAudioUnitProperty_MaximumFramesPerSlice`; register an `AURenderCallbackStruct` whose proc fills `ioData`
-      from a known input buffer (e.g. a unit impulse / full-scale sine). `AudioUnitInitialize`.
-- [ ] `AudioUnitRender` one 512-frame block into a 2-buffer `AudioBufferList` pointing at managed output arrays;
+      from a known input buffer (a full-scale sine). `AudioUnitInitialize`.
+- [x] `AudioUnitRender` 512-frame blocks into a 2-buffer `AudioBufferList` pointing at managed output arrays;
       assert the output is the **filtered** input (non-silent, and *different* from the input — the lowpass acts).
-- [ ] Confirm the §5.1 constant values (`StreamFormat=8`, `SetRenderCallback=23`, `MaximumFramesPerSlice=14`,
-      scopes, format flags) against the actual headers / runtime behavior; correct the spec's §5.1/§12 table if
-      any differ. **Record SPIKE PASS (and any corrected constants) before Task 1.**
+- [x] Confirm the §5.1 constant values against runtime behavior; correct the spec if any differ.
+
+> **Outcome (2026-06-22, scratchpad `au-spike`, this arm64 Mac):** SPIKE PASS. AULowpass passed 200 Hz at
+> 0.98× (out RMS 0.3465 vs input 0.3536 — proves input was pulled through the callback **and** output captured)
+> and attenuated 18 kHz to −27 dB (out RMS 0.0146 — proves the AU genuinely filtered). Every AudioToolbox call
+> returned `0`. **All §5.1 constants verified correct as transcribed — no spec correction needed:**
+> `StreamFormat=8`, `MaximumFramesPerSlice=14`, `SetRenderCallback=23`; scopes `Global=0`/`Input=1`/`Output=2`;
+> non-interleaved native float32 flags `=41` (`IsFloat|IsPacked|IsNonInterleaved`); the ASBD, 2-buffer
+> `AudioBufferList`, and 72-byte `AudioTimeStamp` (incl. embedded `SMPTETime`) layouts; and the
+> `[UnmanagedCallersOnly(Cdecl)]` input callback marshalling. The pull→push render shim design is validated;
+> Task 1 may proceed. (Non-interleaved ASBD: per-channel `mBytesPerPacket = mBytesPerFrame = 4`,
+> `mChannelsPerFrame = 2`, `mFramesPerPacket = 1`.)
 
 ## Task 1 — Project + interop slice (`AudioUnitAbi.cs`)
 
