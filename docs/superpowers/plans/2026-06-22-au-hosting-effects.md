@@ -52,14 +52,15 @@ render-shim spike) gates the rest** — do not write adapter code until the shim
 > Task 1 may proceed. (Non-interleaved ASBD: per-channel `mBytesPerPacket = mBytesPerFrame = 4`,
 > `mChannelsPerFrame = 2`, `mFramesPerPacket = 1`.)
 
-## Task 1 — Project + interop slice (`AudioUnitAbi.cs`)
+## Task 1 — Project + interop slice (`AudioUnitAbi.cs`)  ✅ 2026-06-22
 
-- [ ] Create `src/MidiSharp.Hosting.AudioUnit/MidiSharp.Hosting.AudioUnit.csproj` (net10.0), add to the solution,
-      reference `MidiSharp.Hosting`.
-- [ ] `AudioUnitAbi.cs`: the structs, function P/Invokes, and constants from spec §5.1, with the **spike-verified**
-      constant values. `AudioBufferList` allocated in its 2-buffer stereo form. OSType helper (`'aufx'` →
-      big-endian `uint`).
-- [ ] Builds 0/0 on macOS; the project is excluded/no-op on non-macOS (the registry won't reference it there).
+- [x] Create `src/MidiSharp.Hosting.AudioUnit/MidiSharp.Hosting.AudioUnit.csproj` (net10.0), add to the solution
+      (`MidiSharp.slnx`), reference `MidiSharp.Hosting`.
+- [x] `AudioUnitAbi.cs`: the structs, function P/Invokes, and constants from spec §5.1, with the **spike-verified**
+      constant values. Stereo `StereoBufferList` specialization of the variable-length `AudioBufferList`. OSType
+      `FourCC` helper. (Parameter/state/MIDI/editor ABI deferred to their own tasks — Tasks 4–5, Plans B/C.)
+- [x] Builds **0/0** — both the project alone and the whole solution. Single assembly compiled everywhere, called
+      only on macOS (registry guard lands in Task 6), mirroring the platform-guarded EditorHost backends.
 
 ## Task 2 — Format & discovery (`AudioUnitFormat.cs`)
 

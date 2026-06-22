@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Audio Unit (AU v2) host adapter (macOS-only). AU is Apple's plugin format; it binds to the AudioToolbox C
+    API (AudioComponent / AudioUnit / MusicDevice) via direct P/Invoke, no vendor SDK. Like the other adapters
+    it reuses the MidiSharp.Hosting core (PlanarBuffers / HostEvent / IHostedPlugin) — this adapter only speaks
+    the AU ABI and maps it onto IHostedPlugin.
+
+    Single net10.0 assembly that compiles everywhere but is only *called* on macOS (the PluginRegistry registers
+    it under OperatingSystem.IsMacOS(), exactly as the EditorHost backends are platform-guarded). Audio is
+    non-interleaved float32, so AU reads/writes our planar buffers directly. AU is a PULL format (it pulls input
+    from a host-registered AURenderCallback); the adapter bridges that to the engine's push Process() — proven
+    by the Plan A Task 0 spike. See docs/superpowers/specs/2026-06-22-au-hosting-design.md.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>MidiSharp.Hosting.AudioUnit</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MidiSharp.Hosting\MidiSharp.Hosting.csproj" />
+  </ItemGroup>
+
+</Project>
