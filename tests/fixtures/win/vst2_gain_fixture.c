@@ -1,3 +1,4 @@
+#define _CRT_SECURE_NO_WARNINGS 1
 /* Clean-room VST2 gain effect with a Win32 (HWND) editor child. No Steinberg SDK headers — the AEffect
  * ABI is transcribed from MidiSharp's host-side Vst2Abi.cs. Name "MidiSharp VST2 Gain", uniqueID 'MsG2',
  * one "Gain" param (0..1 normalized -> x0..x2), 300x200 editor. Built by build-fixtures.ps1 (clang). */
