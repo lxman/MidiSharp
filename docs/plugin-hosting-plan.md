@@ -385,7 +385,7 @@ control. Audio via `IAudioProcessor::process` (`ProcessData` / `AudioBusBuffers`
 **Acceptance gate:** a known VST3 effect + instrument run through MidiSharp on Win/Mac/Linux; measured
 parity with a reference render.
 
-### Phase 7 — Native plugin GUIs  *(CLAP + VST3 + VST2, X11)*  — ✅ VERIFIED 2026-06-20
+### Phase 7 — Native plugin GUIs  *(CLAP + VST3 + VST2; X11 + Win32 + Cocoa)*  — ✅ VERIFIED 2026-06-20 (X11); Win32 2026-06-21; Cocoa 2026-06-22
 
 Plugin editor windows are native (X11/Win32/Cocoa) and cannot live in the browser UI, so the editor opens
 as a real OS window on the machine running the server — in the process that holds the live plugin instance
@@ -427,7 +427,11 @@ via state) — the host fires it repeatedly while open. **And the real-world pro
 fully — graph, VU meters, preset bar, every knob — driven by our `IRunLoop`, worker alive.
 
 Fixtures: `~/.clap/midisharp_gui.clap` (clap.gui + clap.timer-support), the VST3/VST2 gain fixtures with
-X11 editor windows + run-loop timers. **Remaining:** Win32/Cocoa windowing, and host services some plugins
+X11 editor windows + run-loop timers. **Win32 landed 2026-06-21 and Cocoa (macOS/arm64) landed 2026-06-22**,
+both behind the same `IEditorPlatform`/`INativeEditorWindow` seam — Win32 via `user32`/`gdi32` + a
+`MsgWaitForMultipleObjectsEx` pump, Cocoa via `libobjc`/AppKit (`objc_msgSend`) + an `NSApp` event pump (the
+per-OS backends now live in `MidiSharp.Hosting.EditorHost/{Linux,Windows,MacArm}`) — each verified by embedding
+**real** plugins (Win32: u-he Podolski; Cocoa: Surge XT VST3 + CLAP). **Remaining:** host services some plugins
 want beyond the run loop (content-scale, message handling) — discovered iteratively per plugin.
 
 ### Phase 8 — Out-of-process sandboxing  *(stability hardening)*  — ✅ CORE VERIFIED 2026-06-20
@@ -541,5 +545,6 @@ component/controller, instrument event lists, and IBStream state, plus instrumen
 binary resolution. **The plugin-hosting arc is feature-complete:** four formats (CLAP/VST2/VST3/LADSPA),
 effects and instruments, the hosted instrument carries the full channel strip, discovery+load are
 crash-isolated out-of-process, and state persists into setups. Native plugin editors (Phase 7) open from
-the web player too — CLAP, VST3, and VST2 on X11, hosted in the sandbox worker. The remaining items are
-narrower: Win32/Cocoa windowing and host timer/run-loop callbacks, and AU (macOS-only) / AAX (parked).
+the web player too — CLAP, VST3, and VST2, hosted in the sandbox worker, on **X11 (Linux), Win32 (Windows,
+2026-06-21), and Cocoa (macOS/arm64, 2026-06-22)**. The remaining items are narrower: **AU (macOS-only) / AAX
+(parked)**, and per-plugin host services beyond the run loop, discovered iteratively.

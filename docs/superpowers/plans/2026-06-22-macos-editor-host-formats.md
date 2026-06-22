@@ -18,6 +18,18 @@
 - `Vst3Format` resolves the macOS bundle `Contents/MacOS/<name>` → the VST3 fixture is a real **`.vst3` bundle**. Clean-room C-API mirroring the in-repo `src/MidiSharp.Hosting.Vst3/Vst3Abi.cs` (no Steinberg headers needed; no existing VST3 fixture to copy).
 - macOS Gatekeeper/library-validation: each built binary is **ad-hoc signed** (`codesign -s -`) so the host can `dlopen` it.
 
+> **Implementation outcome (2026-06-22, `feature/macos-editor-host`):** The VST2 clean-room `.so` fixture
+> shipped as planned (Task 1). For **VST3 and CLAP**, verification used a **real installed plugin (Surge XT)**
+> rather than hand-rolled clean-room fixtures — the user's call once the VST3 C-API fixture's cost was concrete.
+> The `MacEditorHarness` loads Surge's VST3 and CLAP on the main thread and confirms a child `NSView` embeds.
+> VST3 got the `PlatformTypeNsView` + `"cocoa"` mapping (Task 2). **CLAP needed no adapter change** but did need
+> a macOS **`.clap` bundle discovery** fix in `ClapFormat` (`EnumerateFileSystemEntries` + a `Contents/MacOS`
+> resolver) plus adding the system `/Library/Audio/Plug-Ins/{VST3,CLAP}` dirs to the default search paths. Net:
+> macOS matches the Windows pattern — real plugins for VST3/CLAP, fixture for VST2. The clean-room VST3/CLAP
+> bundle fixtures described in Tasks 2–3 below were **not built**; Surge also surfaced two pre-existing,
+> platform-agnostic host findings (CLAP `start/stop_processing` thread; `EditorSession` `gui.size` before
+> `create`) — flagged, not fixed.
+
 ## Global Constraints
 
 - **Build/test/run with `dotnet`** (the .NET 10 SDK is on `PATH`, `dotnet --version` → `10.0.301`). `timeout`/`gtimeout` is absent on this Mac.

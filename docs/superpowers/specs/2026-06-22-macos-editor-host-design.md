@@ -4,7 +4,8 @@
 and **Win32** (Windows) backends, for the three GUI-capable formats — **CLAP, VST2, VST3** — both in-process
 and through the out-of-process sandbox worker.
 
-**Status:** draft 2026-06-22. This is the macOS half of Phase 7 ("Native plugin GUIs") from
+**Status:** implemented 2026-06-22 on `feature/macos-editor-host` (see the Plan B "Implementation outcome" note
+for how VST3/CLAP were verified). This is the macOS half of Phase 7 ("Native plugin GUIs") from
 [`docs/plugin-hosting-plan.md`](../../plugin-hosting-plan.md), and the last platform the plan lists as
 remaining (Win32/Cocoa windowing). The Win32 design ([`2026-06-21-windows-editor-host-design.md`](2026-06-21-windows-editor-host-design.md))
 was written to be "a clean template" for this; this document is that follow-up. **AU (Audio Units) is out of
