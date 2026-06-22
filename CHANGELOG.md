@@ -40,6 +40,15 @@ editors on Linux, Windows, and macOS.
 - 320 tests across the suite (adds the Hosting suite); CI green on Linux, Windows, and macOS; platform-specific
   editor/plugin tests self-skip off their OS.
 
+### Fixed
+
+- **CLAP host thread/order compliance**, surfaced by hosting Surge XT (a strict, self-checking plugin); both
+  issues were pre-existing and platform-agnostic. `start_processing`/`stop_processing` (CLAP `[audio-thread]`
+  calls) are now reported on the audio thread — the lock-step worker distinguishes thread roles by context, so
+  they enter the same audio-thread bracket as `process()`. And the host no longer queries `gui.size()` before
+  `gui.create()`: the editor window opens at a provisional size and resizes to the plugin's real size after
+  create (before it is mapped) and again after show.
+
 ### Notes
 
 - **AU (Audio Units)** is the one major plugin format not yet adapted (macOS-only); **AAX** is parked.
