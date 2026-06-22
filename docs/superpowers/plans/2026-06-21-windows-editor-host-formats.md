@@ -238,9 +238,18 @@ git commit -m "VST3: embed editors via HWND on Windows (Linux IRunLoop gated off
 
 ---
 
-### Task 2: CLAP `win32` editor verification (ChowMultiTool)
+### Task 2: CLAP `win32` editor verification (clean-room fixture)
 
-CLAP passes the window API straight to the plugin, so this should need **no adapter change** — prove it with a real plugin. If it fails, make the minimal fix.
+> **Deviation (2026-06-21, recorded in the SDD ledger):** the real CLAP plugin (ChowMultiTool) **hangs when
+> hosted in-process** — its `gui.create`/`set_parent` blocks and `EditorWindow.Open` never returns (the
+> out-of-process-sandbox scenario; VST3/Podolski embedded fine through the same backend). Per the user's
+> decision, CLAP is verified with a **clean-room CLAP fixture** instead (using the official `clap.h` at
+> `C:\Users\jorda\clap`). This task therefore authors the fixture + the shared fixture-build infra
+> (`build-fixtures.ps1`, `WinFixtures.cs`, the `.gitignore` `out/` entry — Task 3's VST2 fixture then extends
+> the same script). CLAP's adapter still needs **no change**; the fixture's `win32` editor embeds through the
+> unchanged `ClapPlugin` pass-through. See the dispatched task brief for the concrete steps.
+
+CLAP passes the window API straight to the plugin, so the adapter should need **no change** — prove it with a well-behaved clean-room fixture whose editor parents a child HWND. If `ClapPlugin`/`ClapHost` turn out to need a minimal win32 fix, make it and document why.
 
 **Files:**
 - Test: `tests/MidiSharp.Hosting.Tests/ClapWindowsEditorTests.cs`
@@ -332,6 +341,8 @@ git commit -m "CLAP: verify win32 editor embedding against a real plugin"
 ### Task 3: VST2 `win32` editor embedding + clean-room fixture
 
 VST2 has no real plugin installed, so build a clean-room gain `.dll` whose editor creates a child HWND, then teach the adapter `"win32"` and verify the embed.
+
+> **Note (updated):** the shared fixture-build infra — `tests/fixtures/win/build-fixtures.ps1`, `tests/MidiSharp.Hosting.Tests/WinFixtures.cs`, and the `.gitignore` `tests/fixtures/win/out/` entry — was created in Task 2 (the CLAP fixture). This task **extends** `build-fixtures.ps1` with a second clang line for the VST2 fixture and does NOT recreate `WinFixtures.cs`/`.gitignore`. See the dispatched task brief for the exact, adjusted steps.
 
 **Files:**
 - Create: `tests/fixtures/win/vst2_gain_fixture.c`
