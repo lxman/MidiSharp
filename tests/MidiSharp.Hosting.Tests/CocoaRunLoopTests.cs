@@ -1,5 +1,6 @@
 using System;
 using MidiSharp.Hosting.EditorHost;
+using MidiSharp.Hosting.EditorHost.MacArm;
 using Xunit;
 
 namespace MidiSharp.Hosting.Tests;

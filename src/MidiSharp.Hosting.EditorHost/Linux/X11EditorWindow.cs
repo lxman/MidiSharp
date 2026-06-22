@@ -1,7 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace MidiSharp.Hosting.EditorHost;
+namespace MidiSharp.Hosting.EditorHost.Linux;
 
 /// <summary>The X11 (Linux/BSD, and macOS via XQuartz) windowing backend.</summary>
 internal sealed class X11Platform : IEditorPlatform

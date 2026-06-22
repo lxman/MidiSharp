@@ -3,12 +3,12 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 // ReSharper disable InconsistentNaming
 
-namespace MidiSharp.Hosting.EditorHost;
+namespace MidiSharp.Hosting.EditorHost.MacArm;
 
 /// <summary>
 /// The slice of the Objective-C runtime + AppKit needed to host a plugin editor on macOS: create an NSWindow
 /// with a content NSView, embed the plugin's NSView under it, show/resize it, pump the NSApp event queue, and
-/// tear it down. The macOS analogue of <see cref="X11"/>/<see cref="Win32"/>; all libobjc/AppKit P/Invoke lives
+/// tear it down. The macOS analogue of <see cref="Linux.X11"/>/<see cref="Windows.Win32"/>; all libobjc/AppKit P/Invoke lives
 /// here and in <see cref="CocoaEditorWindow"/>. arm64 only — objc_msgSend is uniform (an NSRect is an HFA
 /// returned in v0–v3, so there is no objc_msgSend_stret). All of it is main-thread work, off the audio path.
 /// </summary>

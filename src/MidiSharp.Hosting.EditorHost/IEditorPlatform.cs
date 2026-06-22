@@ -61,9 +61,9 @@ public static class EditorPlatform
 
     private static IEditorPlatform Select()
     {
-        if (OperatingSystem.IsLinux() || OperatingSystem.IsFreeBSD()) return new X11Platform();
-        if (OperatingSystem.IsWindows()) return new Win32Platform();
-        if (OperatingSystem.IsMacOS()) return new CocoaPlatform();
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsFreeBSD()) return new Linux.X11Platform();
+        if (OperatingSystem.IsWindows()) return new Windows.Win32Platform();
+        if (OperatingSystem.IsMacOS()) return new MacArm.CocoaPlatform();
         return new UnsupportedPlatform();
     }
 

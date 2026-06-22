@@ -2,9 +2,10 @@
 
   <!--
     Native plugin-editor host (Phase 7). Opens an OS window and embeds a plugin's editor through the
-    format-agnostic IPluginGui. Linux/X11 is implemented here (Xlib via P/Invoke); other platforms are
-    stubs for now. Used by the out-of-process worker (which holds the live plugin instance) and by tests.
-    Editor work is all off the audio thread. See docs/plugin-hosting-plan.md (Phase 7).
+    format-agnostic IPluginGui. Per-OS backends live in Linux/ (X11/Xlib), Windows/ (Win32), and MacArm/
+    (Cocoa/AppKit), all via P/Invoke; shared, windowing-agnostic code stays in the project root. Used by the
+    out-of-process worker (which holds the live plugin instance) and by tests. Editor work is all off the
+    audio thread. See docs/plugin-hosting-plan.md (Phase 7).
   -->
 
   <PropertyGroup>

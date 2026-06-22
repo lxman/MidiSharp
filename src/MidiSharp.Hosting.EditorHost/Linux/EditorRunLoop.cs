@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
-namespace MidiSharp.Hosting.EditorHost;
+namespace MidiSharp.Hosting.EditorHost.Linux;
 
 /// <summary>
 /// The editor UI thread's run loop. A real plugin editor doesn't draw once and stop — it registers its

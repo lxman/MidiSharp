@@ -1,9 +1,9 @@
 using System;
 using System.Runtime.InteropServices;
 using MidiSharp.Hosting;
-using static MidiSharp.Hosting.EditorHost.Cocoa;
+using static MidiSharp.Hosting.EditorHost.MacArm.Cocoa;
 
-namespace MidiSharp.Hosting.EditorHost;
+namespace MidiSharp.Hosting.EditorHost.MacArm;
 
 /// <summary>The macOS (Cocoa) windowing backend. arm64 only.</summary>
 internal sealed class CocoaPlatform : IEditorPlatform
@@ -31,8 +31,8 @@ internal sealed class CocoaPlatform : IEditorPlatform
 /// <summary>
 /// A top-level NSWindow that hosts an embedded plugin editor: it owns the window and its content NSView (the
 /// view the plugin parents into), and an <see cref="CocoaRunLoop"/> that services the NSApp event queue
-/// alongside the plugin's timers. The macOS analogue of <see cref="X11EditorWindow"/>/<see
-/// cref="Win32EditorWindow"/>; all Cocoa detail is confined to this class (and <see cref="Cocoa"/>). Created and
+/// alongside the plugin's timers. The macOS analogue of <see cref="Linux.X11EditorWindow"/>/<see
+/// cref="Windows.Win32EditorWindow"/>; all Cocoa detail is confined to this class (and <see cref="Cocoa"/>). Created and
 /// pumped on the process main thread.
 /// </summary>
 internal sealed class CocoaEditorWindow : INativeEditorWindow

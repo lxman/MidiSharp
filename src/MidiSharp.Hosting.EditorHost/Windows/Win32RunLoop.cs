@@ -1,23 +1,22 @@
 using System;
 using System.Collections.Generic;
-using MidiSharp.Hosting;
+using static MidiSharp.Hosting.EditorHost.Windows.Win32;
 
-namespace MidiSharp.Hosting.EditorHost;
+namespace MidiSharp.Hosting.EditorHost.Windows;
 
 /// <summary>
-/// The editor UI thread's run loop on macOS. The macOS analogue of <see cref="EditorRunLoop"/>/<see
-/// cref="Win32RunLoop"/>: it waits up to the nearest due timer, services window events, fires due timers, and
-/// runs posted work — all on the UI thread. On the main thread it drives the <c>NSApp</c> event queue
-/// (<see cref="Cocoa.PumpEvents"/>); off it (unit tests) it just sleeps the timeout via <c>poll()</c>, so the
-/// timer/posted logic is provable without AppKit. CLAP <c>clap.timer-support</c> and VST2 <c>effEditIdle</c>
-/// map onto the timers; VST3 editors self-drive via the run loop. <c>RegisterFd</c> is a no-op: CLAP
-/// <c>clap.posix-fd-support</c> integration (CFFileDescriptor) is deferred on macOS.
+/// The editor UI thread's run loop on Windows. The Windows analogue of <see cref="Linux.EditorRunLoop"/>: instead
+/// of <c>poll()</c>ing fds it waits on the thread's message queue with <c>MsgWaitForMultipleObjectsEx</c>
+/// (timeout = the nearest due timer), then drains the queue with <c>PeekMessage</c>, fires due timers, and
+/// runs posted work — all on the UI thread. CLAP <c>clap.timer-support</c> and VST2 <c>effEditIdle</c> map
+/// onto the timers; VST3 editors self-drive via the message pump. <c>RegisterFd</c> is a no-op: CLAP
+/// <c>clap.posix-fd-support</c> is POSIX-only and Windows plugins do not register fds.
 /// </summary>
 /// <remarks>
 /// Timers/posted work are mutated on the UI thread (from plugin callbacks); a lock still guards them against
 /// the rare cross-thread <see cref="Post"/>.
 /// </remarks>
-internal sealed class CocoaRunLoop : IEditorRunLoop
+internal sealed class Win32RunLoop : IEditorRunLoop
 {
     private sealed class Timer { public long Period; public long NextDue; public object Token = null!; public Action OnTick = null!; }
 
@@ -25,7 +24,7 @@ internal sealed class CocoaRunLoop : IEditorRunLoop
     private readonly List<Timer> _timers = [];
     private readonly Queue<Action> _posted = [];
 
-    // No-op on macOS: CLAP posix-fd-support integration is deferred; editors animate via timers + the NSApp loop.
+    // No-op on Windows: plugins drive their editors via the message pump, not POSIX fds.
     public void RegisterFd(int fd, Action onReady) { }
     public void UnregisterFd(int fd) { }
 
@@ -50,8 +49,8 @@ internal sealed class CocoaRunLoop : IEditorRunLoop
     }
 
     /// <summary>
-    /// One iteration: wait up to <paramref name="maxWaitMs"/> (capped to the nearest due timer) servicing window
-    /// events, then fire due timers and run posted work.
+    /// One iteration: wait on the thread's message queue (timeout = nearest due timer, capped at
+    /// <paramref name="maxWaitMs"/>), drain all queued window messages, fire due timers, then run posted work.
     /// </summary>
     public void Pump(int maxWaitMs)
     {
@@ -62,20 +61,16 @@ internal sealed class CocoaRunLoop : IEditorRunLoop
         lock (_lock)
         {
             timeout = maxWaitMs;
-            foreach (Timer t in _timers) { var d = (int)Math.Max(0, t.NextDue - now); if (d < timeout) timeout = d; }
+            foreach (Timer t in _timers) { var d = (int)Math.Min(int.MaxValue, Math.Max(0, t.NextDue - now)); if (d < timeout) timeout = d; }
         }
 
-        // On the main thread (the worker) drive the NSApp queue so the editor is responsive, wrapped in an
-        // autorelease pool. Off it (tests) just sleep — never touch AppKit from a non-main thread.
-        if (Cocoa.IsMainThread)
+        MsgWaitForMultipleObjectsEx(0, IntPtr.Zero, (uint)timeout, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+
+        // Drain every queued message; the window's WndProc handles WM_CLOSE etc. during dispatch.
+        while (PeekMessageW(out MSG msg, IntPtr.Zero, 0, 0, PM_REMOVE))
         {
-            IntPtr pool = Cocoa.NewPool();
-            try { Cocoa.PumpEvents(timeout); }
-            finally { Cocoa.DrainPool(pool); }
-        }
-        else
-        {
-            Cocoa.Sleep(timeout);
+            TranslateMessage(in msg);
+            DispatchMessageW(in msg);
         }
 
         // Fire due timers (snapshot so a callback can register/unregister without disturbing iteration).

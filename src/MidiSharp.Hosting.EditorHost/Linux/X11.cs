@@ -1,7 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace MidiSharp.Hosting.EditorHost;
+namespace MidiSharp.Hosting.EditorHost.Linux;
 
 /// <summary>
 /// The slice of Xlib needed to host a plugin editor: open a display, create a top-level window of a given

@@ -2,12 +2,12 @@ using System;
 using System.Runtime.InteropServices;
 // ReSharper disable InconsistentNaming
 
-namespace MidiSharp.Hosting.EditorHost;
+namespace MidiSharp.Hosting.EditorHost.Windows;
 
 /// <summary>
 /// The slice of Win32 (user32/gdi32) needed to host a plugin editor: register a window class, create a
 /// top-level window to embed the editor into, show/resize it, pump its message queue (so resize/close work),
-/// and tear it down. This is the Windows analogue of <see cref="X11"/>; all Win32 P/Invoke lives here and in
+/// and tear it down. This is the Windows analogue of <see cref="Linux.X11"/>; all Win32 P/Invoke lives here and in
 /// <see cref="Win32EditorWindow"/>. All of it is main-thread work, off the audio path.
 /// </summary>
 internal static partial class Win32

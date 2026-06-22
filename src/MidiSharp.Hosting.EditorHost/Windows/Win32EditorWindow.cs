@@ -1,8 +1,8 @@
 using System;
 using System.Threading;
-using static MidiSharp.Hosting.EditorHost.Win32;
+using static MidiSharp.Hosting.EditorHost.Windows.Win32;
 
-namespace MidiSharp.Hosting.EditorHost;
+namespace MidiSharp.Hosting.EditorHost.Windows;
 
 /// <summary>The Windows (Win32) windowing backend.</summary>
 internal sealed class Win32Platform : IEditorPlatform
@@ -46,7 +46,7 @@ internal sealed class Win32Platform : IEditorPlatform
 /// <summary>
 /// A top-level Win32 window that hosts an embedded plugin editor: it owns the window, a per-instance window
 /// class with a black background, and a message-pump <see cref="Win32RunLoop"/> that services the window's
-/// messages alongside the plugin's timers. The Windows analogue of <see cref="X11EditorWindow"/>; all Win32
+/// messages alongside the plugin's timers. The Windows analogue of <see cref="Linux.X11EditorWindow"/>; all Win32
 /// detail is confined to this class (and <see cref="Win32"/>), so the rest of the editor host is
 /// windowing-agnostic. Created and pumped on a single UI thread.
 /// </summary>
