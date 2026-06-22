@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.11.0] - 2026-06-22
 
 A plugin-hosting subsystem — load and run third-party audio plugins inside the mixer — and native plugin
 editors on Linux, Windows, and macOS.
@@ -48,6 +48,19 @@ editors on Linux, Windows, and macOS.
   they enter the same audio-thread bracket as `process()`. And the host no longer queries `gui.size()` before
   `gui.create()`: the editor window opens at a provisional size and resizes to the plugin's real size after
   create (before it is mapped) and again after show.
+- **MidiSharp.OwnAudio output-device selection.** Choosing an output device now actually opens *that* device.
+  The wrapper applies the selection by index after engine init — the backend ignores the device id at init, and
+  on Windows each endpoint is enumerated once per host API (MME/DirectSound/WASAPI/WDM-KS) so names aren't
+  unique. Engine bring-up is now transactional: a failed open rolls back and surfaces a clear, actionable error
+  instead of leaving a poisoned engine that crashes the next play.
+- **MidiSharp.OwnAudio per-device sample rate.** The pipeline now runs at the device's native rate instead of a
+  hardcoded 48 kHz. Exact-format backends (WASAPI / WDM-KS do no implicit resampling) refused to open a device
+  whose native rate differed (e.g. a 44.1 kHz endpoint), failing with `paInvalidSampleRate`; the rate is now
+  queried up front (PortAudio device info, falling back to MiniAudio's converter) and the rate-dependent graph
+  is built to match.
+- **MidiSharp.OwnAudio teardown race.** A teardown gate drains any in-flight audio callback before the mixer is
+  stopped, preventing a use-after-free of the memory-mapped SoundFont (an `AccessViolationException` that took
+  down the whole process) when a callback raced shutdown — e.g. rapid device switching during playback.
 
 ### Notes
 
@@ -166,6 +179,7 @@ The Ogg Vorbis decoder (`MidiSharp.Audio.Vorbis`) is a maintained fork of
 
 **License:** MIT.
 
-[Unreleased]: https://github.com/lxman/MidiSharp/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/lxman/MidiSharp/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/lxman/MidiSharp/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/lxman/MidiSharp/releases/tag/v0.10.0
 [0.9.0]: https://github.com/lxman/MidiSharp/releases/tag/v0.9.0
