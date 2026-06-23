@@ -564,8 +564,10 @@ effects and instruments, the hosted instrument carries the full channel strip, d
 crash-isolated out-of-process, and state persists into setups. Native plugin editors (Phase 7) open from
 the web player too — CLAP, VST3, and VST2, hosted in the sandbox worker, on **X11 (Linux), Win32 (Windows,
 2026-06-21), and Cocoa (macOS/arm64, 2026-06-22)**. **AU v2 hosting shipped 2026-06-22** (effects, instruments,
-Cocoa editor; v0.12.0). **AU v3 (`AUAudioUnit`) audio hosting** landed next (2026-06-23): v3 effects and
-instruments load via async `AudioComponentInstantiate` (effects out-of-process) and run through the unchanged
-`AudioUnitPlugin` over Apple's bridge — verified against `DimChorus`/`AudMod`; the v3 editor is the remaining
-piece. The remaining items are narrower: **the AU v3 editor, AAX (parked)**, and per-plugin host services beyond
-the run loop, discovered iteratively.
+Cocoa editor; v0.12.0). **AU v3 (`AUAudioUnit`) hosting** landed next (2026-06-23): v3 effects and instruments
+load via async instantiation (effects out-of-process) and run through a dedicated `AudioUnitV3Plugin` on the
+modern `AUAudioUnit` front-end — `renderBlock` audio, `AUParameterTree` params, `fullState`, `scheduleMIDIEventBlock`
+MIDI, and the plugin's **own custom editor** via `requestViewControllerWithCompletionHandler:` — verified against
+`DimChorus`/`AudMod`. (The front-end is required: an OOP v3 AU exposes no v2 instance, so one object serves both
+audio and the editor.) The remaining items are narrower: **AAX (parked)** and per-plugin host services beyond the
+run loop, discovered iteratively.

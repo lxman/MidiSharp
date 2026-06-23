@@ -174,12 +174,6 @@ internal static unsafe class AudioUnitAbi
     [DllImport(AudioToolbox)]
     public static extern int AudioComponentInstanceNew(IntPtr inComponent, out IntPtr outInstance);
 
-    /// <summary>Async instantiation (AU v3 / any component with <see cref="CompFlagRequiresAsync"/>). The
-    /// completion handler is an Obj-C block (<see cref="AuBlocks.MakeGlobalBlock"/>) whose invoke is
-    /// <c>void (block, AudioComponentInstance, OSStatus)</c>; it fires on the run loop being pumped.</summary>
-    [DllImport(AudioToolbox)]
-    public static extern void AudioComponentInstantiate(IntPtr inComponent, uint inOptions, IntPtr inCompletionHandler);
-
     [DllImport(AudioToolbox)]
     public static extern int AudioComponentInstanceDispose(IntPtr inInstance);
 

@@ -8,14 +8,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- **AU v3 (`AUAudioUnit`) audio hosting on macOS.** Host modern **AU v3 effects and instruments** — which the
-  component registry delivers over Apple's bridge and which must be instantiated *asynchronously* (effects
-  out-of-process) — through the **same `AudioUnitPlugin`** as AU v2. The only v3-specific code is an async-load
-  branch in `Load`: `AudioComponentInstantiate` driven by one hand-built Obj-C completion block, with the v2
-  C API (render shim, parameters, `kAudioUnitProperty_ClassInfo` state, `MusicDeviceMIDIEvent`) working
-  unchanged over the bridge — out-of-process render latency is ~18 µs/block (negligible). Verified against real
-  v3 plugins (`DimChorus` effect OOP, `AudMod` instrument in-process). The v3 *editor* (which needs the
-  `AUAudioUnit` view-controller path) is not yet adapted; AAX remains parked.
+- **AU v3 (`AUAudioUnit`) hosting on macOS — audio, parameters, state, MIDI, and the plugin's own custom
+  editor.** Host modern **AU v3 effects and instruments**, which the registry delivers over Apple's bridge and
+  must be instantiated *asynchronously* (effects out-of-process). They run through a dedicated
+  `AudioUnitV3Plugin` driven by the modern `AUAudioUnit` front-end: realtime audio via `renderBlock` (with a host
+  pull-input block for effects), parameters via `AUParameterTree`, state via `fullState`, instrument MIDI via
+  `scheduleMIDIEventBlock`, and the unit's **own custom view** via `requestViewControllerWithCompletionHandler:`,
+  embedded through the existing Cocoa editor host. The front-end is required, not a preference: an out-of-process
+  v3 AU exposes no v2 instance, so a single `AUAudioUnit` must serve both audio and the editor. Out-of-process
+  render latency is ~21 µs/block (negligible). Legacy AU v2 hosting is unchanged. Verified against real v3
+  plugins (`DimChorus` effect OOP, `AudMod` instrument in-process). AAX remains parked.
 
 ## [0.12.0] - 2026-06-22
 

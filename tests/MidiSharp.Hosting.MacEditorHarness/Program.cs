@@ -45,10 +45,12 @@ failures += EmbedReal("VST3", new Vst3Format(), "Surge XT", "VST3 cocoa editor")
 failures += EmbedReal("CLAP", new ClapFormat(), "Surge XT", "CLAP cocoa editor");
 failures += EmbedAu("AU", new AudioUnitFormat(), "aufx:lpas", "AU cocoa editor (AULowpass)");
 
-// AU v3 audio (async instantiation): also a main-thread proof — the completion lands on the main dispatch
-// queue, which xUnit's pool threads can't drain. An effect (OOP) and an instrument (in-process).
+// AU v3 (the AUAudioUnit front-end, AudioUnitV3Plugin) — production routing sends async/v3 components here. Also a
+// main-thread proof: instantiation + editor land on the main dispatch queue, which xUnit's pool threads can't
+// drain. An effect (OOP), an instrument (in-process), and the plugin's own custom editor.
 failures += RenderAuV3("AU v3 effect", "aufx:DIMC", isInstrument: false);
 failures += RenderAuV3("AU v3 instrument", "aumu:audM", isInstrument: true);
+failures += EmbedAu("AU v3 editor", new AudioUnitFormat(), "aufx:DIMC", "AU v3 custom editor (DimChorus)");
 
 return failures == 0 ? 0 : 1;
 
@@ -90,11 +92,11 @@ static int EmbedReal(string label, IPluginFormat format, string nameContains, st
     return DoEmbed(label, format, desc, title);
 }
 
-// AU v3 plugins are async-instantiated (effects out-of-process) via AudioComponentInstantiate, whose completion
-// is delivered on the MAIN dispatch queue — so AudioUnitFormat.Load's run-loop pump only sees it on the thread
-// draining that queue, which this harness's Main (thread 0) provides and xUnit cannot. Loads the unit through the
-// UNCHANGED v2 AudioUnitPlugin and asserts it renders real audio over the bridge (an effect alters a dry tone; an
-// instrument sounds a note). SKIPs when the unit isn't installed. Returns 1 on FAIL, 0 on PASS/SKIP.
+// AU v3 plugins are async-instantiated (effects out-of-process), whose completion is delivered on the MAIN
+// dispatch queue — so AudioUnitFormat.Load's run-loop pump only sees it on the thread draining that queue, which
+// this harness's Main (thread 0) provides and xUnit cannot. Loads the unit through the AUAudioUnit front-end
+// (AudioUnitV3Plugin) and asserts it renders real audio (an effect alters a dry tone; an instrument sounds a
+// note) plus a fullState round-trip. SKIPs when the unit isn't installed. Returns 1 on FAIL, 0 on PASS/SKIP.
 static unsafe int RenderAuV3(string label, string idPrefix, bool isInstrument)
 {
     var format = new AudioUnitFormat();
@@ -105,7 +107,7 @@ static unsafe int RenderAuV3(string label, string idPrefix, bool isInstrument)
 
     const int frames = 512;
     const double sr = 48000.0, amp = 0.5, freq = 1000.0;
-    using IHostedPlugin plugin = format.Load(desc, new AudioConfig((int)sr, frames, ChannelCount: 2));   // async over the v3 bridge
+    using IHostedPlugin plugin = format.Load(desc, new AudioConfig((int)sr, frames, ChannelCount: 2));   // async via the AUAudioUnit front-end
 
     var in0 = (float*)NativeMemory.AllocZeroed((nuint)frames, sizeof(float));
     var in1 = (float*)NativeMemory.AllocZeroed((nuint)frames, sizeof(float));
@@ -170,10 +172,10 @@ static unsafe int RenderAuV3(string label, string idPrefix, bool isInstrument)
             double restored = plugin.GetParameter(q.Index);
             if (Math.Abs(restored - saved) > 0.05)
             { Console.WriteLine($"FAIL {label}: ClassInfo did not restore param '{q.Name}' (saved={saved:F3} → reloaded={restored:F3})."); return 1; }
-            stateNote = $"ClassInfo round-trips ('{q.Name}')";
+            stateNote = $"state round-trips ('{q.Name}')";
             break;
         }
-        Console.WriteLine($"PASS {label}: '{desc.Name}' rendered over the v3 bridge (out RMS={outRms:F4}, diff-from-dry={diffRms:F4}; {stateNote}).");
+        Console.WriteLine($"PASS {label}: '{desc.Name}' via the AUAudioUnit front-end (out RMS={outRms:F4}, diff-from-dry={diffRms:F4}; {stateNote}).");
         return 0;
     }
     finally

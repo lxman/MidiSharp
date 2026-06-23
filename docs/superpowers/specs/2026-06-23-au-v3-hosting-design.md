@@ -46,6 +46,17 @@ shares that adapter's discovery and `IHostedPlugin`/`IPluginGui` seams and **add
 > editor. The current authoritative tasks live in the **plan files**; §2/§5 are kept for the record only. See
 > `plans/2026-06-23-au-v3-core.md` Task 0 for the measured spike results.
 
+> ## ⚠ Plan B outcome (2026-06-23) — the editor decision reinstated `AudioUnitV3Plugin`
+>
+> Plan A shipped the v2-bridge audio path above. **Plan B then chose the plugin's _custom_ editor over Apple's
+> generic view**, and its Task 0 spike found the catch: `requestViewControllerWithCompletionHandler:` only binds
+> to an `AUAudioUnit` object, and **an OOP v3 AU's `[AUAudioUnit audioUnit]` (the v2 handle) is null** — so the
+> custom view can't ride the v2-bridge instance. To bind one instance to both audio and the custom view, v3 now
+> hosts through the **`AUAudioUnit` front-end** after all: a real **`AudioUnitV3Plugin`** driving `renderBlock`
+> (with a host pull-input block), `AUParameterTree`, `fullState`, and `scheduleMIDIEventBlock`, plus the view
+> controller. This **supersedes Plan A's v3 audio branch** (removed); legacy AU v2 is untouched. OOP renderBlock
+> latency ~21 µs/block. Authoritative tasks: `plans/2026-06-23-au-v3-editor.md` (now the front-end plan).
+
 ## 1. Where it plugs in
 
 Discovery is **already shared and v3-aware**: `AudioComponentFindNext` (in `AudioUnitFormat.Scan`) enumerates v3
