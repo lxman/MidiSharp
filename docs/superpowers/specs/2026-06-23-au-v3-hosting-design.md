@@ -15,15 +15,16 @@ shares that adapter's discovery and `IHostedPlugin`/`IPluginGui` seams and **add
 1. **The v2 `AudioComponent` bridge already hosts every v3 AU that also exposes v2:** such a v3 AU loads through
    the shipped `AudioUnitPlugin` via `AudioComponentInstanceNew`. So v3 support is **not** a new adapter — it's
    the genuinely-v3-only surface.
-2. **Four real v3 AUs are installed** — `DimChorus`, `FakeTake`, `LevLr` (music4sport / Rob Jackson) and
-   `J_NO Chorus` (b3ll), **all effects (`aufx`)** — and **all are `RequiresAsync` = true and
-   `CanLoadInProcess` = false** (`sandbox-safe`). So they **cannot** load via the synchronous v2 bridge and
-   **cannot** load in-process: **async + out-of-process is the *required, primary* path**, not an opt-in edge.
-   This corrects an earlier assumption that OOP was redundant/optional — for the actual plugins we have it is
-   the only way to load them.
-3. **`AUAudioUnit` also wraps v2 components** (`AUAudioUnitV2Bridge`), giving an in-process synchronous target
-   (`AULowpass`/Surge) for exercising the `AUAudioUnit` API basics. **No v3 *instrument* is installed** (all
-   four are effects), so Plan B verifies against a v2-wrapped `DLSMusicDevice` until a v3 instrument appears.
+2. **Five real v3 AUs are installed**, covering both load profiles: four **effects** (`DimChorus`, `FakeTake`,
+   `LevLr`, `J_NO Chorus`) that are `RequiresAsync` + `CanLoadInProcess` = **false** → **out-of-process-only**;
+   and one **instrument**, **`AudMod`** (Unlikelyware, `aumu:audM:nLkL`), that is `RequiresAsync` +
+   `CanLoadInProcess` = **true** → loadable **in-process**. **All are `RequiresAsync`**, so none load through
+   the synchronous v2 bridge — confirming async + flag-honored loading is the *required* path (correcting an
+   earlier assumption that OOP/async was optional). The design's load-flag routing is now exercised by **both**
+   profiles.
+3. **`AUAudioUnit` also wraps v2 components** (`AUAudioUnitV2Bridge`), an extra in-process synchronous sanity
+   target (`AULowpass`). **Every slice now has a real v3 target** — effects (Plan A), instrument (Plan B,
+   `AudMod`), editor (Plan C) — so the clean-room fixture (Plan D) is **unnecessary**.
 
 ---
 
@@ -150,11 +151,12 @@ background), `TryGetSize` from the view's frame. AUs that vend no view controlle
 |---|---|---|
 | **Async + OOP instantiation, renderBlock, params, state** | the real v3 effects (`DimChorus` etc.) | async-instantiate `LoadOutOfProcess`, render a block (the chorus audibly alters the signal), sweep a param, round-trip `fullState` |
 | `AUAudioUnit` API basics (in-process, sync) | `AULowpass` **wrapped by `AUAudioUnitV2Bridge`** | instantiate as `AUAudioUnit`, render (filter acts) — a fast non-XPC sanity path |
-| Instruments (Plan B) | Apple `DLSMusicDevice` **wrapped as `AUAudioUnit`** | a note via `scheduleMIDIEventBlock` renders non-silence (real-v3-instrument arm self-skips — none installed) |
-| Editor (Plan C) | a real v3 AU's view controller via `requestViewController…` | child `NSView` embeds (`EmbeddedChildCount ≥ 1`) on the main-thread harness |
+| Instruments (Plan B) | the real v3 instrument **`AudMod`** (in-process) | a note via `scheduleMIDIEventBlock` renders non-silence |
+| Editor (Plan C) | a real v3 AU's view controller (`DimChorus`/`AudMod`) via `requestViewController…` | child `NSView` embeds (`EmbeddedChildCount ≥ 1`) on the main-thread harness |
 
-All four installed v3 AUs are effects, so the audio/editor paths get **real v3** coverage; only the v3
-*instrument* arm still waits on a v3 instrument (or Plan D's fixture).
+**Every slice gets real v3 coverage** — and the two load profiles (`AudMod` in-process, the effects
+out-of-process) exercise both instantiation paths. The v2-wrapped `AULowpass` remains a fast in-process sanity
+check.
 
 ## 7. Tests
 
@@ -220,7 +222,6 @@ v3 view controller embeds a child `NSView` through the unchanged `EditorSession`
 - **Plan B — v3 instruments** (`…au-v3-instruments.md`): `scheduleMIDIEventBlock`, no input bus. Small after A.
 - **Plan C — v3 editor** (`…au-v3-editor.md`): `requestViewControllerWithCompletionHandler:` riding the existing
   Cocoa backend; generic fallback.
-- **Plan D — clean-room v3 fixture** (optional, deferred, `…au-v3-fixture.md`): a minimal AUv3 app-extension —
-  now needed **only for a v3 *instrument*** (the four installed v3 AUs are effects, so Plan A/C already get real
-  v3 coverage; only Plan B's real-v3-instrument arm lacks a target). Heavy (app bundle + Info.plist extension
-  point + signing + registration); skip unless a v3 instrument arm specifically needs proving.
+- ~~**Plan D — clean-room v3 fixture**~~ — **not needed.** Real v3 targets now cover every slice (effects for
+  Plan A, the `AudMod` instrument for Plan B, view controllers for Plan C), and both load profiles
+  (in-process + out-of-process). Dropped.

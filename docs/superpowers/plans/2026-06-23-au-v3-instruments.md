@@ -3,8 +3,9 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** host **AU v3 instruments** (music-device `AUAudioUnit`s) — report `IsInstrument`, deliver MIDI via the
-vended `scheduleMIDIEventBlock`, and render without an audio input bus. Verified against Apple's `DLSMusicDevice`
-**wrapped as an `AUAudioUnit`**.
+vended `scheduleMIDIEventBlock`, and render without an audio input bus. Verified against the **real v3 instrument
+`AudMod`** (`aumu:audM:nLkL`, Unlikelyware — installed; `RequiresAsync` + `CanLoadInProcess`, so it loads
+in-process, unlike the OOP-only v3 effects). A v2-wrapped `DLSMusicDevice` is a secondary sanity check.
 
 **Architecture:** a music-device v3 AU has no input bus → no `pullInputBlock` and no input `AVAudioFormat`;
 everything else (output format, the `renderBlock` path, params, state) is Plan A. The only new surface is MIDI:
@@ -25,8 +26,9 @@ block the AU vends, **invoked** via `AuBlocks`) immediately before `InvokeRender
 - [ ] In `AudioUnitV3Plugin`, branch on `IsInstrument` (component type ∈ {`'aumu'`,`'augn'`}): set **only** the
       output bus `AVAudioFormat`; register **no** `pullInputBlock` and no input format. Otherwise identical to
       Plan A's activate.
-- [ ] **Test** `Dls_v3_instrument_loads` (macOS-only): `DLSMusicDevice` as `AUAudioUnit` loads, activates,
-      reports `IsInstrument`. Commit.
+- [ ] **Test** `Audmod_v3_instrument_loads` (macOS-only): the real v3 **`AudMod`** (`aumu:audM:nLkL`)
+      async-loads (in-process), activates, reports `IsInstrument`; a v2-wrapped `DLSMusicDevice` arm is a
+      secondary check. SKIPs when no v3 instrument is installed. Commit.
 
 ## Task 2 — MIDI delivery (`scheduleMIDIEventBlock`)
 
@@ -36,7 +38,8 @@ block the AU vends, **invoked** via `AuBlocks`) immediately before `InvokeRender
 
 ## Task 3 — Verify a note renders & acceptance
 
-- [ ] **Acceptance gate (spec §10, Plan B):** `DLSMusicDevice`-as-`AUAudioUnit` reports `IsInstrument`; a note-on
+- [ ] **Acceptance gate (spec §10, Plan B):** the real v3 **`AudMod`** reports `IsInstrument`; a note-on
       (`0x90, 60, 100`) via `scheduleMIDIEventBlock` renders **non-silent** output (near-silent before the note).
+      (`AudMod` is in-process-capable, so this also covers the in-process v3 load path the effects can't.)
 - [ ] **Test** asserts the above (self-skips off macOS). Solution **0/0**; v2 path + other suites unchanged.
 - [ ] Update `docs/plugin-hosting-plan.md` and `CHANGELOG.md`. Commit. **Do not merge/push unless asked.**
