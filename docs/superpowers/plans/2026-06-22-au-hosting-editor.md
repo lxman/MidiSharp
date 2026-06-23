@@ -30,42 +30,48 @@ shipped.
   (Plan A) is untouched.
 - **Surge-dependent checks self-skip** when Surge's `.component` is absent (like `ClapLiveTests`).
 
-## Task 1 — Resolve the AU's Cocoa view
+> **Key finding (probe, 2026-06-22):** no third-party AU is needed. **Apple's own built-in AUs ship custom Cocoa
+> views** via `kAudioUnitProperty_CocoaUI` — `AULowpass` and 22 others on this Mac — so the *custom-view* path is
+> verifiable against a built-in. (Surge XT is also registered as an AU, AUv3-style with no `.component` file, but
+> it isn't needed.) New interop lives in the AU adapter (`AuAppKit.cs` objc slice + `CoreFoundation` CFBundle
+> calls), **not** by reusing EditorHost's internal `MacArm/Cocoa.cs` — keeps the adapter assembly-independent,
+> consistent with `ClapAbi`/`Vst3Abi`.
 
-- [ ] Add to `AudioUnitAbi`: `AudioUnitCocoaViewInfo`, `kAudioUnitProperty_CocoaUI=31`, and the CFBundle/CFURL/
-      CFString calls needed to load a bundle and look up an Obj-C class by name.
-- [ ] Helper `TryCreateCocoaView(au) → NSView*`: `AudioUnitGetProperty(CocoaUI)`; if present, `CFBundleCreate`
-      from the URL, get the named view-factory class, `[[cls alloc] init]`, `[factory uiViewForAudioUnit:au
-      withSize:NSMakeSize(w,h)]` (via `objc_msgSend` from `MacArm/Cocoa.cs`); else return null. `CFRelease` the
-      info's CF members.
+## Task 1 — Resolve the AU's Cocoa view  ✅ 2026-06-22
 
-## Task 2 — Generic-view fallback
+- [x] `CoreFoundation` gained `CFBundleCreate`/`CFBundleLoadExecutable`; the `CocoaUI` property is read as raw
+      bytes (`CFURLRef` bundle + `CFStringRef[]` class names), avoiding a fixed struct for the variable tail.
+- [x] `TryCustomCocoaView()`: `AudioUnitGetProperty(PropCocoaUI)` → `CFBundleCreate`+`CFBundleLoadExecutable` →
+      `objc_getClass(className)` → `[[cls alloc] init]` → `[factory uiViewForAudioUnit:au withSize:0]` (via the
+      new `AuAppKit` objc slice). All the property's CF refs (`CFURLRef` + every `CFStringRef`) are released.
 
-- [ ] When `TryCreateCocoaView` returns null (no custom UI — Apple built-ins), create CoreAudioKit's generic
-      `AUGenericView` bound to the AU. Confirm the exact init selector during implementation (§12 open item).
-- [ ] The editor path always yields *some* `NSView` for an AU that exists.
+## Task 2 — Generic-view fallback  ✅ 2026-06-22
 
-## Task 3 — `IPluginGui` on the AU adapter
+- [x] When no custom view, `GenericView()` builds CoreAudioKit's `[[AUGenericView alloc] initWithAudioUnit:au]`.
+      CoreAudioKit is loaded lazily (only when the generic path runs).
 
-- [ ] Implement `IPluginGui` on `AudioUnitPlugin` (and expose it via `IHostedPlugin.Gui`): `HasEditor` true when
-      an AU view is obtainable; `IsApiSupported("cocoa")` true (AU editors are Cocoa-only); `Create` obtains the
-      view (Task 1/2) but does **not** parent it; `SetParent("cocoa", contentView)` adds the AU view as a subview
-      of the host content `NSView`; `TryGetSize` from the view's `frame`; `Show`/`Hide`/`Destroy` toggle hidden /
-      `removeFromSuperview` / release; `BindRunLoop`/`SetScale` are no-ops (AU self-drives the AppKit loop).
-- [ ] Make `Gui` non-null only when a view is available, so non-GUI AUs report no editor.
+## Task 3 — `IPluginGui` on the AU adapter  ✅ 2026-06-22
 
-## Task 4 — Verify embedding & acceptance
+- [x] `AudioUnitPlugin : IHostedPlugin, IPluginGui`; `Gui => this`. `HasEditor => true` (every AU can present at
+      least a generic view); `IsApiSupported` true only for `("cocoa", embedded)`; `Create` obtains the view
+      (custom→generic) and retains it without parenting; `SetParent("cocoa", contentView)` adds it as a subview
+      (the host view then retains it); `TryGetSize` from the view's `frame`; `Show`/`Hide` toggle hidden;
+      `Destroy` removes + releases the view and releases the bundle; `BindRunLoop`/`SetScale` are no-ops.
 
-- [ ] Extend `tests/MidiSharp.Hosting.MacEditorHarness/Program.cs` with an `EmbedReal("AU", new AudioUnitFormat(),
-      "Surge XT", "AU cocoa editor")` arm (reusing the existing `EmbedReal` shape): load the AU, open an
-      `EditorSession` on the main thread, pump, assert `EmbeddedChildCount ≥ 1`. SKIP when no AU with a Cocoa view
-      is installed.
-- [ ] **Acceptance gate (spec §10, Plan C):** an AU with a Cocoa view embeds a child `NSView` through the
-      unchanged `EditorSession` (`EmbeddedChildCount ≥ 1`); the generic-view fallback covers a built-in AU; the
-      `MacEditorHarness` prints `PASS AU`. Solution builds **0/0**; CLAP/VST2/VST3 editor paths and the Cocoa
-      backend are behaviorally unchanged.
-- [ ] Update `docs/plugin-hosting-plan.md` (AU editor done; AU adapter complete) and `CHANGELOG.md`. Commit.
-      **Do not merge/push unless asked.**
+## Task 4 — Verify embedding & acceptance  ✅ 2026-06-22
+
+- [x] `MacEditorHarness` gained an `EmbedAu` arm that finds `AULowpass` via `Scan` (registry — AU has no file
+      path) and reuses `DoEmbed`. Plus an AppKit-free xUnit test `Reports_a_cocoa_editor` (Gui/HasEditor/
+      IsApiSupported surface).
+- [x] **Acceptance gate (spec §10, Plan C):** `MacEditorHarness` prints **`PASS AU: 'AULowpass' embedded 1 child
+      NSView(s)`** through the **unchanged** `EditorSession`/Cocoa backend. Solution **0/0**; hosting suite 34→… ;
+      CLAP/VST2/VST3 editor paths and the Cocoa backend behaviorally unchanged.
+
+> **Benign artifact:** hosting Apple's built-in AU views logs `objc[]: Class … implemented in both CoreAudioKit
+> and CoreAudioAUUI` to stderr — Apple's own framework/bundle overlap (their AU view bundle pulls in
+> CoreAudioKit), not from our code; the embed passes. Not silenceable from the host side.
+
+**Plan C (AU Cocoa editor) is complete — the AU adapter (effects + instruments + editor) is done.**
 
 ## Notes
 

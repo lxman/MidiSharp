@@ -494,7 +494,7 @@ solid.
 **LV2** (the current Linux standard; RDF/Turtle metadata, more involved). Cheap once the planar/event
 plumbing exists; Linux-only, so additive rather than foundational.
 
-### macOS adapter: Audio Units (AU v2)  — Plan A (effects) + Plan B (instruments) ✅ 2026-06-22; editor pending
+### macOS adapter: Audio Units (AU v2)  — effects + instruments + Cocoa editor ✅ 2026-06-22 (adapter complete)
 
 `MidiSharp.Hosting.AudioUnit` (macOS-only) over the AudioToolbox C API. AU is a **pull** format — the unit
 pulls input from a host-registered `AURenderCallback` — bridged to the engine's **push** `Process` by an
@@ -503,9 +503,11 @@ always-present system AUs, so no fixtures). **Plan A done:** discovery (`AudioCo
 `.component` Info.plist), the render shim, parameters (`AudioUnitGet/SetParameter`), and state
 (`kAudioUnitProperty_ClassInfo` ↔ binary plist). Registered in the worker + server registry under
 `OperatingSystem.IsMacOS()`. **Plan B done:** instruments via `MusicDeviceMIDIEvent` (verified against
-`DLSMusicDevice`). See `docs/superpowers/specs/2026-06-22-au-hosting-design.md`.
-**Pending:** Plan C (Cocoa view via `kAudioUnitProperty_CocoaUI` on the existing EditorHost). **Known gap:**
-the *sandboxed* scan path
+`DLSMusicDevice`). **Plan C done:** the AU Cocoa editor — `IPluginGui` over `kAudioUnitProperty_CocoaUI` (custom
+view) with an `AUGenericView` fallback, riding the **unchanged** EditorHost/Cocoa backend; verified by embedding
+`AULowpass`'s built-in Cocoa view via the main-thread `MacEditorHarness` (`PASS AU`). Apple's built-in AUs ship
+custom Cocoa views, so no third-party AU is needed. See `docs/superpowers/specs/2026-06-22-au-hosting-design.md`.
+**Known gap:** the *sandboxed* scan path
 enumerates files per-format, so it finds third-party `.component` AUs but **not** Apple built-ins (which have
 no file on disk); built-ins surface on the in-process (`MIDISHARP_SANDBOX=0`) path. Teaching the sandbox
 worker a registry-scan mode for AU is a follow-up.

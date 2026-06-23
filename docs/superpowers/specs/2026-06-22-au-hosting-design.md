@@ -260,8 +260,13 @@ through it **changes** the output (filter audibly acts); sweeping its cutoff par
 - **Confirm `AudioComponentFindNext` enumerates** Apple built-ins and that an `.component` Info.plist yields the
   3-tuple without `AudioComponentInstanceNew`.
 - **Confirm the `ClassInfo` plist round-trips** through `CFPropertyListCreateData`/`…WithData` losslessly.
-- **(Plan C)** Confirm `kAudioUnitProperty_CocoaUI` on Surge's AU yields a loadable view class, and pick the
-  generic-view fallback API for Apple built-ins.
+- ~~**(Plan C)** Confirm `kAudioUnitProperty_CocoaUI` … and pick the generic-view fallback~~ — **resolved
+  2026-06-22.** A probe found **Apple's built-in AUs ship custom Cocoa views** (`AULowpass` + 22 others), so the
+  custom path is verified against a built-in — no third-party AU needed (Surge is also registered as an AU, but
+  unused). Fallback is `[[AUGenericView alloc] initWithAudioUnit:]` (CoreAudioKit). The AU adapter owns its objc
+  interop (`AuAppKit.cs`) rather than reusing EditorHost's internal Cocoa slice, keeping assemblies independent.
+  **Benign artifact:** hosting Apple AU views logs an `objc[]` duplicate-class warning (CoreAudioKit vs their
+  `CoreAudioAUUI` view bundle) — Apple's, not ours; embed still succeeds.
 - **Sandboxed discovery of Apple built-in AUs (found during Plan A Task 6).** AU discovery is registry-based
   (`AudioComponentFindNext`, in `Scan`), but the sandbox worker scans **per file** via `EnumerateFiles`, which
   for AU returns only on-disk `.component` bundles. So under the default sandbox, third-party AUs surface but

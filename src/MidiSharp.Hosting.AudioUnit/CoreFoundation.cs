@@ -29,6 +29,8 @@ internal static unsafe class CoreFoundation
     [DllImport(Lib)] private static extern IntPtr CFPropertyListCreateData(IntPtr alloc, IntPtr plist, nint format, nuint options, out IntPtr error);
     [DllImport(Lib)] private static extern nint CFDataGetLength(IntPtr data);
     [DllImport(Lib)] private static extern byte* CFDataGetBytePtr(IntPtr data);
+    [DllImport(Lib)] public static extern IntPtr CFBundleCreate(IntPtr alloc, IntPtr bundleUrl);
+    [DllImport(Lib)] public static extern byte CFBundleLoadExecutable(IntPtr bundle);
 
     /// <summary>Copy a <c>CFStringRef</c> into a managed string. Returns empty for null, a non-string object
     /// (plist values may be numbers/data — calling CFStringGetCString on those traps), or conversion failure.</summary>

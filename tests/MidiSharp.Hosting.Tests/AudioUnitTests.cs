@@ -103,6 +103,26 @@ public sealed unsafe class AudioUnitTests
     }
 
     [Fact]
+    public void Reports_a_cocoa_editor()
+    {
+        // The editor surface is AppKit-free (no view is created here); the actual embed is proven by the
+        // main-thread MacEditorHarness, since xUnit can't host AppKit on the main thread.
+        Assert.SkipWhen(!OperatingSystem.IsMacOS(), "Audio Units are macOS-only.");
+
+        var format = new AudioUnitFormat();
+        PluginDescriptor lowpass = format.Scan(format.DefaultSearchPaths)
+            .First(d => d.Id.StartsWith("aufx:lpas", StringComparison.Ordinal));
+        using IHostedPlugin plugin = format.Load(lowpass, new AudioConfig(48000, 512, 2));
+
+        IPluginGui? gui = plugin.Gui;
+        Assert.NotNull(gui);
+        Assert.True(gui!.HasEditor);
+        Assert.True(gui.IsApiSupported("cocoa", floating: false));
+        Assert.False(gui.IsApiSupported("cocoa", floating: true), "AU editors embed; they don't float.");
+        Assert.False(gui.IsApiSupported("x11", floating: false), "AU editors are Cocoa-only.");
+    }
+
+    [Fact]
     public void Dls_instrument_renders_a_note()
     {
         Assert.SkipWhen(!OperatingSystem.IsMacOS(), "Audio Units are macOS-only.");

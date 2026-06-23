@@ -30,13 +30,14 @@ editors on Linux, Windows, and macOS.
   (u-he Podolski on Windows; Surge XT VST3 + CLAP on macOS).
 - **macOS plugin discovery** now also searches the system `/Library/Audio/Plug-Ins/{VST3,CLAP}` directories and
   resolves `.clap` **bundles** (`Contents/MacOS/<name>`), not just per-user flat files.
-- **Audio Unit (AU v2) hosting on macOS (`MidiSharp.Hosting.AudioUnit`).** Host **AU effects and instruments** —
-  discovered via the system component registry (and on-disk `.component` bundles), run through the engine as any
-  other plugin, with parameters, state (`kAudioUnitProperty_ClassInfo`), and MIDI for instruments
-  (`MusicDeviceMIDIEvent`). AU is a *pull* format (the unit pulls input from a host render callback); a small
-  shim bridges that to the engine's *push* processing, with audio kept in non-interleaved float so it maps
-  straight onto the planar bus. Registered alongside CLAP/VST on macOS only. The AU *Cocoa editor* is the next
-  slice; AU v3 and AAX remain unadapted.
+- **Audio Unit (AU v2) hosting on macOS (`MidiSharp.Hosting.AudioUnit`).** Host **AU effects and instruments**,
+  including their **native Cocoa editor** — discovered via the system component registry (and on-disk
+  `.component` bundles), run through the engine as any other plugin, with parameters, state
+  (`kAudioUnitProperty_ClassInfo`), MIDI for instruments (`MusicDeviceMIDIEvent`), and the unit's own Cocoa view
+  (`kAudioUnitProperty_CocoaUI`, with an `AUGenericView` fallback) embedded through the existing editor host. AU
+  is a *pull* format (the unit pulls input from a host render callback); a small shim bridges that to the
+  engine's *push* processing, with audio kept in non-interleaved float so it maps straight onto the planar bus.
+  Registered alongside CLAP/VST on macOS only. AU v3 and AAX remain unadapted.
 
 ### Changed
 

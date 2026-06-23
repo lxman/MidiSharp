@@ -20,12 +20,15 @@ namespace MidiSharp.Hosting.AudioUnit;
 /// "unsupported" — correct behavior for the capabilities built so far. The editor (<see cref="Gui"/>) arrives
 /// in Plan C.
 /// </remarks>
-public sealed unsafe class AudioUnitPlugin : IHostedPlugin
+public sealed unsafe class AudioUnitPlugin : IHostedPlugin, IPluginGui
 {
     private IntPtr _au;
     private GCHandle _self;                          // refCon for the unmanaged input callback
     private readonly List<PluginParameter> _parameters = [];
     private readonly List<uint> _paramIds = [];     // parallel to _parameters: the AudioUnitParameterID per index
+
+    private IntPtr _view;                            // the AU's Cocoa NSView while the editor is open
+    private IntPtr _viewBundle;                      // the custom view's CFBundle (kept loaded while open)
 
     private float* _inCh0, _inCh1;                   // this block's input channels (read by the callback)
     private int _inFrames;
@@ -196,10 +199,100 @@ public sealed unsafe class AudioUnitPlugin : IHostedPlugin
         finally { CoreFoundation.CFRelease(plist); }
     }
 
+    // ── Editor (clap.gui-equivalent: an AU Cocoa NSView embedded by the host) ──────────────────────────
+    // Every AU can present at least a generic parameter view, so the editor is always available on macOS.
+    public IPluginGui? Gui => this;
+
+    bool IPluginGui.HasEditor => true;
+
+    bool IPluginGui.IsApiSupported(string windowApi, bool floating) => windowApi == "cocoa" && !floating;
+
+    bool IPluginGui.Create(string windowApi, bool floating)
+    {
+        if (windowApi != "cocoa" || floating || _view != IntPtr.Zero) return _view != IntPtr.Zero;
+        IntPtr view = TryCustomCocoaView() is var v && v != IntPtr.Zero ? v : GenericView();   // custom first, else generic
+        _view = view == IntPtr.Zero ? IntPtr.Zero : AuAppKit.Retain(view);                      // own it until Destroy
+        return _view != IntPtr.Zero;
+    }
+
+    bool IPluginGui.SetScale(double scale) => true;   // AppKit views are in points; the window handles backing scale
+
+    bool IPluginGui.TryGetSize(out int width, out int height)
+    {
+        width = height = 0;
+        if (_view == IntPtr.Zero) return false;
+        CGRect f = AuAppKit.Frame(_view);
+        width = (int)f.Width; height = (int)f.Height;
+        return width > 0 && height > 0;
+    }
+
+    bool IPluginGui.SetParent(string windowApi, ulong windowHandle)
+    {
+        if (_view == IntPtr.Zero || windowHandle == 0) return false;
+        AuAppKit.AddSubview((IntPtr)windowHandle, _view);   // parent NSView (the host content view) retains it
+        return true;
+    }
+
+    bool IPluginGui.Show() { if (_view != IntPtr.Zero) AuAppKit.SetHidden(_view, false); return true; }
+    bool IPluginGui.Hide() { if (_view != IntPtr.Zero) AuAppKit.SetHidden(_view, true); return true; }
+
+    void IPluginGui.Destroy()
+    {
+        if (_view != IntPtr.Zero) { AuAppKit.RemoveFromSuperview(_view); AuAppKit.Release(_view); _view = IntPtr.Zero; }
+        if (_viewBundle != IntPtr.Zero) { CoreFoundation.CFRelease(_viewBundle); _viewBundle = IntPtr.Zero; }
+    }
+
+    // The AU's own Cocoa view, when it ships one (kAudioUnitProperty_CocoaUI → an AUCocoaUIBase factory class in
+    // a bundle). Apple's built-in AUs and most third-parties provide this; returns Zero when absent.
+    private IntPtr TryCustomCocoaView()
+    {
+        uint size = 0;
+        if (AudioUnitGetPropertyInfo(_au, PropCocoaUI, ScopeGlobal, 0, &size, null) != 0) return IntPtr.Zero;
+        if (size < (uint)(IntPtr.Size * 2)) return IntPtr.Zero;   // need at least a bundle URL + one class name
+
+        byte* buf = stackalloc byte[(int)size];
+        uint got = size;
+        if (AudioUnitGetProperty(_au, PropCocoaUI, ScopeGlobal, 0, buf, &got) != 0) return IntPtr.Zero;
+
+        IntPtr bundleUrl = *(IntPtr*)buf;                       // CFURLRef mCocoaAUViewBundleLocation
+        IntPtr classNameRef = *(IntPtr*)(buf + IntPtr.Size);   // CFStringRef mCocoaAUViewClass[0]
+        int classCount = (int)((size - (uint)IntPtr.Size) / (uint)IntPtr.Size);
+        try
+        {
+            if (bundleUrl == IntPtr.Zero || classNameRef == IntPtr.Zero) return IntPtr.Zero;
+            string className = CoreFoundation.ToManaged(classNameRef);
+            IntPtr bundle = CoreFoundation.CFBundleCreate(IntPtr.Zero, bundleUrl);
+            if (bundle == IntPtr.Zero) return IntPtr.Zero;
+            CoreFoundation.CFBundleLoadExecutable(bundle);     // realize the factory class
+
+            IntPtr factoryClass = AuAppKit.objc_getClass(className);
+            if (factoryClass == IntPtr.Zero) { CoreFoundation.CFRelease(bundle); return IntPtr.Zero; }
+            _viewBundle = bundle;                              // keep loaded while the view lives
+
+            IntPtr factory = AuAppKit.New(factoryClass);
+            IntPtr view = AuAppKit.UiViewForAudioUnit(factory, _au, new CGSize { Width = 0, Height = 0 });
+            AuAppKit.Release(factory);
+            return view;
+        }
+        finally
+        {
+            CoreFoundation.CFRelease(bundleUrl);                                       // we own the property's CF refs
+            for (int i = 0; i < classCount; i++) CoreFoundation.CFRelease(*(IntPtr*)(buf + (i + 1) * IntPtr.Size));
+        }
+    }
+
+    // CoreAudioKit's generic parameter view — works for any AU that ships no custom Cocoa view.
+    private IntPtr GenericView()
+    {
+        IntPtr cls = AuAppKit.GenericViewClass();
+        return cls == IntPtr.Zero ? IntPtr.Zero : AuAppKit.NewWithAudioUnit(cls, _au);
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
+        ((IPluginGui)this).Destroy();
         Deactivate();
         if (_au != IntPtr.Zero) { AudioComponentInstanceDispose(_au); _au = IntPtr.Zero; }
         if (_self.IsAllocated) _self.Free();

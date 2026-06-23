@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using MidiSharp.Hosting;
+using MidiSharp.Hosting.AudioUnit;
 using MidiSharp.Hosting.Clap;
 using MidiSharp.Hosting.EditorHost;
 using MidiSharp.Hosting.MacEditorHarness;
@@ -40,8 +41,20 @@ var failures = 0;
 failures += EmbedFixture("VST2", new Vst2Format(), "midisharp_gui_vst2.so", "MidiSharp VST2 Gain", "VST2 cocoa editor");
 failures += EmbedReal("VST3", new Vst3Format(), "Surge XT", "VST3 cocoa editor");
 failures += EmbedReal("CLAP", new ClapFormat(), "Surge XT", "CLAP cocoa editor");
+failures += EmbedAu("AU", new AudioUnitFormat(), "aufx:lpas", "AU cocoa editor (AULowpass)");
 
 return failures == 0 ? 0 : 1;
+
+// AU discovery is registry-based (no file path), so find the unit by its type:subtype id prefix via Scan, then
+// embed its Cocoa view (custom kAudioUnitProperty_CocoaUI view, or the generic fallback) through DoEmbed.
+static int EmbedAu(string label, AudioUnitFormat format, string idPrefix, string title)
+{
+    PluginDescriptor? desc = null;
+    foreach (PluginDescriptor d in format.Scan(format.DefaultSearchPaths))
+        if (d.Id.StartsWith(idPrefix, StringComparison.Ordinal)) { desc = d; break; }
+    if (desc == null) { Console.WriteLine($"SKIP {label}: no AU matching '{idPrefix}'."); return 0; }
+    return DoEmbed(label, format, desc, title);
+}
 
 // Resolve a fixture from the built-fixtures dir by exact name, then embed it.
 static int EmbedFixture(string label, IPluginFormat format, string fixtureFile, string pluginName, string title)
