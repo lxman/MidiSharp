@@ -30,6 +30,12 @@ editors on Linux, Windows, and macOS.
   (u-he Podolski on Windows; Surge XT VST3 + CLAP on macOS).
 - **macOS plugin discovery** now also searches the system `/Library/Audio/Plug-Ins/{VST3,CLAP}` directories and
   resolves `.clap` **bundles** (`Contents/MacOS/<name>`), not just per-user flat files.
+- **Audio Unit (AU v2) hosting on macOS (`MidiSharp.Hosting.AudioUnit`).** Host **AU effects** — discovered via
+  the system component registry (and on-disk `.component` bundles), run through the engine as any other plugin,
+  with parameters and state (`kAudioUnitProperty_ClassInfo`). AU is a *pull* format (the unit pulls input from a
+  host render callback); a small shim bridges that to the engine's *push* processing, with audio kept in
+  non-interleaved float so it maps straight onto the planar bus. Registered alongside CLAP/VST on macOS only.
+  AU *instruments* and the AU *Cocoa editor* are the next slices; AU v3 and AAX remain unadapted.
 
 ### Changed
 

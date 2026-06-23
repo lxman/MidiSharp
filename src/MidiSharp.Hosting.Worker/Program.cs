@@ -5,6 +5,7 @@ using System.IO.MemoryMappedFiles;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using MidiSharp.Hosting;
+using MidiSharp.Hosting.AudioUnit;
 using MidiSharp.Hosting.Clap;
 using MidiSharp.Hosting.EditorHost;
 using MidiSharp.Hosting.Ladspa;
@@ -29,6 +30,7 @@ if (args.Length >= 4 && args[0] == "--scan")
             "CLAP" => new ClapFormat(),
             "VST3" => new Vst3Format(),
             "VST2" => new Vst2Format(),
+            "AU" => new AudioUnitFormat(),
             "LADSPA" => new LadspaFormat(),
             _ => throw new NotSupportedException(args[1]),
         };
@@ -98,6 +100,7 @@ unsafe
         "CLAP" => new ClapFormat(),
         "VST3" => new Vst3Format(),
         "VST2" => new Vst2Format(),
+        "AU" => new AudioUnitFormat(),
         "LADSPA" => new LadspaFormat(),
         _ => throw new NotSupportedException($"Unknown plugin format '{format}'."),
     };

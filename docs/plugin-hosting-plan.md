@@ -494,6 +494,21 @@ solid.
 **LV2** (the current Linux standard; RDF/Turtle metadata, more involved). Cheap once the planar/event
 plumbing exists; Linux-only, so additive rather than foundational.
 
+### macOS adapter: Audio Units (AU v2)  — Plan A (effects) ✅ 2026-06-22; instruments + editor pending
+
+`MidiSharp.Hosting.AudioUnit` (macOS-only) over the AudioToolbox C API. AU is a **pull** format — the unit
+pulls input from a host-registered `AURenderCallback` — bridged to the engine's **push** `Process` by an
+`[UnmanagedCallersOnly]` input callback (de-risked by a render-shim spike; verified against Apple's
+always-present system AUs, so no fixtures). **Plan A done:** discovery (`AudioComponentFindNext` registry +
+`.component` Info.plist), the render shim, parameters (`AudioUnitGet/SetParameter`), and state
+(`kAudioUnitProperty_ClassInfo` ↔ binary plist). Registered in the worker + server registry under
+`OperatingSystem.IsMacOS()`. See `docs/superpowers/specs/2026-06-22-au-hosting-design.md`.
+**Pending:** Plan B (instruments via `MusicDeviceMIDIEvent`, against `DLSMusicDevice`), Plan C (Cocoa view
+via `kAudioUnitProperty_CocoaUI` on the existing EditorHost). **Known gap:** the *sandboxed* scan path
+enumerates files per-format, so it finds third-party `.component` AUs but **not** Apple built-ins (which have
+no file on disk); built-ins surface on the in-process (`MIDISHARP_SANDBOX=0`) path. Teaching the sandbox
+worker a registry-scan mode for AU is a follow-up.
+
 ---
 
 ## 7. Cross-cutting concerns

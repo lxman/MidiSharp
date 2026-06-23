@@ -114,11 +114,20 @@ render-shim spike) gates the rest** — do not write adapter code until the shim
 - [x] **Test** `State_round_trips_through_classinfo`: set the cutoff to 0.7, `SaveState` (non-empty), move it to
       0.1, `LoadState`, assert the cutoff is restored (~0.7, within 0.05). Hosting suite 32→33; solution 0/0.
 
-## Task 6 — Registry wiring + acceptance
+## Task 6 — Registry wiring + acceptance  ✅ 2026-06-22
 
-- [ ] Register `AudioUnitFormat` in the `PluginRegistry`/worker **guarded by `OperatingSystem.IsMacOS()`** so AU
-      plugins surface in discovery alongside CLAP/VST on macOS only.
-- [ ] **Acceptance gate (spec §10, Plan A):** discovery lists `AULowpass`; load+activate; render changes output;
-      param sweep changes output; state round-trips; **solution builds 0/0**; Linux/Windows suites unchanged.
-- [ ] Update `docs/plugin-hosting-plan.md` (AU effects done) and `CHANGELOG.md` (`[Unreleased]` → Added).
-      Commit. **Do not merge/push unless asked.**
+- [x] Registered `AudioUnitFormat` in the sandbox worker's two name→format switches (`Worker/Program.cs`) and the
+      server's `PluginRegistry` + `Formats` list (`PluginHost.cs`), all **guarded by `OperatingSystem.IsMacOS()`**
+      (worker switch arm is only reached for AU descriptors, which exist only on macOS). Project references added
+      to the Worker and Server csprojs.
+- [x] **Acceptance gate (spec §10, Plan A):** discovery lists `AULowpass`; load+activate; render changes output;
+      param sweep changes output; state round-trips — all green (4 AU tests). **Solution builds 0/0**; full
+      solution suite passes; Linux/Windows behavior unchanged (AU registered only on macOS).
+- [x] Updated `docs/plugin-hosting-plan.md` (AU effects done + the sandbox gap) and `CHANGELOG.md`.
+
+> **Known gap (documented, follow-up):** the sandboxed scan enumerates files per format, so it finds third-party
+> `.component` AUs but **not** Apple built-ins (no file on disk); built-ins surface on the in-process path
+> (`MIDISHARP_SANDBOX=0`). AU registry discovery is already crash-safe (no instantiation), so the fix is a
+> registry-scan mode in the worker — not a Plan A blocker. See spec §12.
+
+**Plan A (AU effects) is complete.** Next: Plan B (instruments), Plan C (editor).

@@ -262,6 +262,13 @@ through it **changes** the output (filter audibly acts); sweeping its cutoff par
 - **Confirm the `ClassInfo` plist round-trips** through `CFPropertyListCreateData`/`…WithData` losslessly.
 - **(Plan C)** Confirm `kAudioUnitProperty_CocoaUI` on Surge's AU yields a loadable view class, and pick the
   generic-view fallback API for Apple built-ins.
+- **Sandboxed discovery of Apple built-in AUs (found during Plan A Task 6).** AU discovery is registry-based
+  (`AudioComponentFindNext`, in `Scan`), but the sandbox worker scans **per file** via `EnumerateFiles`, which
+  for AU returns only on-disk `.component` bundles. So under the default sandbox, third-party AUs surface but
+  Apple built-ins (no file) do **not**; they surface on the in-process path (`MIDISHARP_SANDBOX=0`). Since AU
+  registry discovery instantiates nothing (already crash-safe), the fix is to give the sandbox worker a
+  registry-scan mode for AU rather than forcing it through the per-file protocol — **follow-up, not a Plan A
+  blocker** (the format is registered and loads correctly either way).
 
 ## 13. Plan breakdown (three shippable slices)
 

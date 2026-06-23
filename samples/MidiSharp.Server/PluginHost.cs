@@ -1,4 +1,5 @@
 using MidiSharp.Hosting;
+using MidiSharp.Hosting.AudioUnit;
 using MidiSharp.Hosting.Clap;
 using MidiSharp.Hosting.Ladspa;
 using MidiSharp.Hosting.Sandbox;
@@ -31,7 +32,10 @@ public sealed class PluginHost
         .Register(new Vst2Format())
         .Register(new LadspaFormat());
 
-    private static readonly string[] Formats = ["CLAP", "VST3", "VST2", "LADSPA"];
+    // AU is macOS-only; it joins the list (and the registry, in the ctor) only there.
+    private static readonly string[] Formats = OperatingSystem.IsMacOS()
+        ? ["CLAP", "VST3", "VST2", "AU", "LADSPA"]
+        : ["CLAP", "VST3", "VST2", "LADSPA"];
 
     private int _sampleRate;
     private readonly string? _workerDll;
@@ -41,6 +45,7 @@ public sealed class PluginHost
     public PluginHost(int sampleRate)
     {
         _sampleRate = sampleRate;
+        if (OperatingSystem.IsMacOS()) _registry.Register(new AudioUnitFormat());   // before Rescan below
         // Sandbox plugins out-of-process by default (a crashing plugin then can't take down the server),
         // when the worker is locatable and not explicitly disabled. Falls back to in-process otherwise.
         _workerDll = ResolveWorker();
