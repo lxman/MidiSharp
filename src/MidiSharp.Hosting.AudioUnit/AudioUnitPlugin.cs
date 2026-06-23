@@ -230,6 +230,11 @@ public sealed unsafe class AudioUnitPlugin : IHostedPlugin, IPluginGui
     {
         if (_view == IntPtr.Zero || windowHandle == 0) return false;
         AuAppKit.AddSubview((IntPtr)windowHandle, _view);   // parent NSView (the host content view) retains it
+
+        // The shared Cocoa backend paints the editor window black (good for opaque dark plugin UIs). Many AU
+        // views are transparent and draw dark controls, which then vanish on black — give the AU window a
+        // neutral, appearance-aware background instead. AU-only; other formats keep the black surround.
+        AuAppKit.SetNeutralWindowBackground(AuAppKit.WindowOf((IntPtr)windowHandle));
         return true;
     }
 

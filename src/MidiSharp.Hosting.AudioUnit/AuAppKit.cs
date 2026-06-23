@@ -35,6 +35,9 @@ internal static unsafe class AuAppKit
     private static readonly IntPtr SelSetHidden = sel_registerName("setHidden:");
     private static readonly IntPtr SelInitWithAudioUnit = sel_registerName("initWithAudioUnit:");
     private static readonly IntPtr SelUiViewForAudioUnit = sel_registerName("uiViewForAudioUnit:withSize:");
+    private static readonly IntPtr SelWindow = sel_registerName("window");
+    private static readonly IntPtr SelSetBackgroundColor = sel_registerName("setBackgroundColor:");
+    private static readonly IntPtr SelWindowBackgroundColor = sel_registerName("windowBackgroundColor");
 
     private static bool _coreAudioKitLoaded;
 
@@ -72,4 +75,15 @@ internal static unsafe class AuAppKit
     public static void RemoveFromSuperview(IntPtr view) => Send(view, SelRemoveFromSuperview);
     public static void SetHidden(IntPtr view, bool hidden) => SendSetBool(view, SelSetHidden, (byte)(hidden ? 1 : 0));
     public static CGRect Frame(IntPtr view) => SendRect(view, SelFrame);
+
+    public static IntPtr WindowOf(IntPtr view) => Send(view, SelWindow);
+
+    /// <summary>Set an NSWindow's background to the appearance-aware system <c>windowBackgroundColor</c> — neutral
+    /// contrast behind a transparent AU view (some draw dark controls that vanish on the default black surround).</summary>
+    public static void SetNeutralWindowBackground(IntPtr window)
+    {
+        if (window == IntPtr.Zero) return;
+        IntPtr color = Send(objc_getClass("NSColor"), SelWindowBackgroundColor);
+        SendArg(window, SelSetBackgroundColor, color);
+    }
 }

@@ -73,6 +73,13 @@ shipped.
 
 **Plan C (AU Cocoa editor) is complete — the AU adapter (effects + instruments + editor) is done.**
 
+> **Follow-up (2026-06-22, user-verified visually):** the shared Cocoa backend paints the editor window black
+> (good for opaque dark plugin UIs), but many AU views are transparent and draw dark controls that then vanish
+> on black. `AudioUnitPlugin.SetParent` now sets the AU editor window's background to the appearance-aware
+> `[NSColor windowBackgroundColor]` (`AuAppKit.SetNeutralWindowBackground`). AU-only — CLAP/VST3 keep the black
+> surround. Confirmed by eye against `AULowpass`. (Forced light/Aqua appearance is the fallback if dark mode
+> still looks muddy; not needed.)
+
 ## Notes
 
 - This slice touches the AU adapter and the harness **only**; if it needs any change to `EditorSession` or the
