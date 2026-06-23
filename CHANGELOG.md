@@ -4,6 +4,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Audio Unit (AU v2) hosting on macOS (`MidiSharp.Hosting.AudioUnit`).** Host **AU effects and instruments**,
+  including their **native Cocoa editor** — discovered via the system component registry (and on-disk
+  `.component` bundles), run through the engine as any other plugin, with parameters, state
+  (`kAudioUnitProperty_ClassInfo`), MIDI for instruments (`MusicDeviceMIDIEvent`), and the unit's own Cocoa view
+  (`kAudioUnitProperty_CocoaUI`, with an `AUGenericView` fallback) embedded through the existing editor host. AU
+  is a *pull* format (the unit pulls input from a host render callback); a small shim bridges that to the
+  engine's *push* processing, with audio kept in non-interleaved float so it maps straight onto the planar bus.
+  AU editor windows use a neutral, appearance-aware background so transparent views with dark controls stay
+  legible. Registered alongside CLAP/VST on macOS only; discovered in-process (crash-safe) even under the
+  sandbox. AU v3 and AAX remain unadapted.
+
 ## [0.11.0] - 2026-06-22
 
 A plugin-hosting subsystem — load and run third-party audio plugins inside the mixer — and native plugin
@@ -30,14 +45,6 @@ editors on Linux, Windows, and macOS.
   (u-he Podolski on Windows; Surge XT VST3 + CLAP on macOS).
 - **macOS plugin discovery** now also searches the system `/Library/Audio/Plug-Ins/{VST3,CLAP}` directories and
   resolves `.clap` **bundles** (`Contents/MacOS/<name>`), not just per-user flat files.
-- **Audio Unit (AU v2) hosting on macOS (`MidiSharp.Hosting.AudioUnit`).** Host **AU effects and instruments**,
-  including their **native Cocoa editor** — discovered via the system component registry (and on-disk
-  `.component` bundles), run through the engine as any other plugin, with parameters, state
-  (`kAudioUnitProperty_ClassInfo`), MIDI for instruments (`MusicDeviceMIDIEvent`), and the unit's own Cocoa view
-  (`kAudioUnitProperty_CocoaUI`, with an `AUGenericView` fallback) embedded through the existing editor host. AU
-  is a *pull* format (the unit pulls input from a host render callback); a small shim bridges that to the
-  engine's *push* processing, with audio kept in non-interleaved float so it maps straight onto the planar bus.
-  Registered alongside CLAP/VST on macOS only. AU v3 and AAX remain unadapted.
 
 ### Changed
 
