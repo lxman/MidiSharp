@@ -1,3 +1,6 @@
+using System.IO;
+using System.IO.MemoryMappedFiles;
+
 namespace MidiSharp.Hosting.Sandbox;
 
 /// <summary>
@@ -39,4 +42,20 @@ public static class SandboxProtocol
 
     /// <summary>Byte offset of a channel region in the shared block. region: 0=inL,1=inR,2=outL,3=outR.</summary>
     public static long RegionOffset(int region, int maxFrames) => (long)region * maxFrames * sizeof(float);
+
+    /// <summary>
+    /// Open the shared audio block's backing file as a read-write memory map. The host process and the
+    /// worker process both call this on the same path and map it at the same time, so the file must be
+    /// opened sharing read+write. The <c>CreateFromFile(string, FileMode, …)</c> overload opens with
+    /// <see cref="FileShare.Read"/>, which on Windows makes the second opener fail with "being used by
+    /// another process" (Unix doesn't enforce share modes, so it happened to work there). Opening through
+    /// a <see cref="FileShare.ReadWrite"/> <see cref="FileStream"/> lets both maps coexist.
+    /// </summary>
+    public static MemoryMappedFile OpenSharedBlock(string path, long size)
+    {
+        var fs = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite);
+        // leaveOpen: false — the returned map owns the stream and closes it when the map is disposed.
+        return MemoryMappedFile.CreateFromFile(fs, mapName: null, size, MemoryMappedFileAccess.ReadWrite,
+            HandleInheritability.None, leaveOpen: false);
+    }
 }

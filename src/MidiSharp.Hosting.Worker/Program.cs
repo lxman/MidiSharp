@@ -86,7 +86,7 @@ using var reader = new BinaryReader(pipeIn);
 using var writer = new BinaryWriter(pipeOut);
 
 long size = SharedSize(maxFrames);
-using var mmf = MemoryMappedFile.CreateFromFile(mmfPath, FileMode.Open, null, size, MemoryMappedFileAccess.ReadWrite);
+using var mmf = OpenSharedBlock(mmfPath, size);   // shared read+write: the host process holds the same map open
 using MemoryMappedViewAccessor view = mmf.CreateViewAccessor(0, size, MemoryMappedFileAccess.ReadWrite);
 
 IHostedPlugin plugin;

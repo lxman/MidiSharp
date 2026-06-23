@@ -59,66 +59,75 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
     {
         _maxFrames = config.MaxBlockFrames;
         _mmfPath = Path.Combine(Path.GetTempPath(), "midisharp-sbx-" + Guid.NewGuid().ToString("N") + ".bin");
-
-        long size = SharedSize(_maxFrames);
-        using (var fs = new FileStream(_mmfPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.ReadWrite))
-            fs.SetLength(size);
-        _mmf = MemoryMappedFile.CreateFromFile(_mmfPath, FileMode.Open, null, size, MemoryMappedFileAccess.ReadWrite);
-        _view = _mmf.CreateViewAccessor(0, size, MemoryMappedFileAccess.ReadWrite);
-        _view.SafeMemoryMappedViewHandle.AcquirePointer(ref _base);
-
-        _toWorker = new AnonymousPipeServerStream(PipeDirection.Out, HandleInheritability.Inheritable);
-        _fromWorker = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
-
-        var psi = new ProcessStartInfo("dotnet")
-        {
-            UseShellExecute = false,
-        };
-        psi.ArgumentList.Add(workerDll);
-        psi.ArgumentList.Add(_toWorker.GetClientHandleAsString());     // worker reads commands here
-        psi.ArgumentList.Add(_fromWorker.GetClientHandleAsString());   // worker writes responses here
-        psi.ArgumentList.Add(_mmfPath);
-        psi.ArgumentList.Add(_maxFrames.ToString());
-        psi.ArgumentList.Add(descriptor.Format);
-        psi.ArgumentList.Add(descriptor.Id);
-        psi.ArgumentList.Add(descriptor.Path);
-        psi.ArgumentList.Add(config.SampleRate.ToString());
-        psi.ArgumentList.Add(descriptor.Name);
-        psi.ArgumentList.Add(descriptor.IsInstrument ? "1" : "0");
-
-        _worker = SysProcess.Start(psi) ?? throw new InvalidOperationException("Failed to start sandbox worker.");
-        _toWorker.DisposeLocalCopyOfClientHandle();
-        _fromWorker.DisposeLocalCopyOfClientHandle();
-        _writer = new BinaryWriter(_toWorker);
-        _reader = new BinaryReader(_fromWorker);
-
-        _watchdog = new System.Threading.Thread(WatchdogLoop) { IsBackground = true, Name = "midisharp-sandbox-watchdog" };
-        _watchdog.Start();
-
-        // Read the worker's ready message (or an error), bounded by the load timeout (a hung load → throw).
-        Arm(LoadTimeoutMs);
         try
         {
-            byte tag = _reader.ReadByte();
-            if (tag == RespError) throw new InvalidOperationException("Sandbox worker failed to load plugin: " + _reader.ReadString());
-            if (tag != RespReady) throw new InvalidOperationException($"Unexpected sandbox handshake byte 0x{tag:X2}.");
-            string name = _reader.ReadString();
-            IsInstrument = _reader.ReadBoolean();
-            int count = _reader.ReadInt32();
-            for (var i = 0; i < count; i++)
+            long size = SharedSize(_maxFrames);
+            using (var fs = new FileStream(_mmfPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.ReadWrite))
+                fs.SetLength(size);
+            _mmf = OpenSharedBlock(_mmfPath, size);   // shared read+write so the worker process can map it too
+            _view = _mmf.CreateViewAccessor(0, size, MemoryMappedFileAccess.ReadWrite);
+            _view.SafeMemoryMappedViewHandle.AcquirePointer(ref _base);
+
+            _toWorker = new AnonymousPipeServerStream(PipeDirection.Out, HandleInheritability.Inheritable);
+            _fromWorker = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
+
+            var psi = new ProcessStartInfo("dotnet")
             {
-                int idx = _reader.ReadInt32();
-                string pname = _reader.ReadString();
-                double min = _reader.ReadDouble();
-                double max = _reader.ReadDouble();
-                double def = _reader.ReadDouble();
-                _parameters.Add(new PluginParameter(idx, pname, "", min, max, def));
+                UseShellExecute = false,
+            };
+            psi.ArgumentList.Add(workerDll);
+            psi.ArgumentList.Add(_toWorker.GetClientHandleAsString());     // worker reads commands here
+            psi.ArgumentList.Add(_fromWorker.GetClientHandleAsString());   // worker writes responses here
+            psi.ArgumentList.Add(_mmfPath);
+            psi.ArgumentList.Add(_maxFrames.ToString());
+            psi.ArgumentList.Add(descriptor.Format);
+            psi.ArgumentList.Add(descriptor.Id);
+            psi.ArgumentList.Add(descriptor.Path);
+            psi.ArgumentList.Add(config.SampleRate.ToString());
+            psi.ArgumentList.Add(descriptor.Name);
+            psi.ArgumentList.Add(descriptor.IsInstrument ? "1" : "0");
+
+            _worker = SysProcess.Start(psi) ?? throw new InvalidOperationException("Failed to start sandbox worker.");
+            _toWorker.DisposeLocalCopyOfClientHandle();
+            _fromWorker.DisposeLocalCopyOfClientHandle();
+            _writer = new BinaryWriter(_toWorker);
+            _reader = new BinaryReader(_fromWorker);
+
+            _watchdog = new System.Threading.Thread(WatchdogLoop) { IsBackground = true, Name = "midisharp-sandbox-watchdog" };
+            _watchdog.Start();
+
+            // Read the worker's ready message (or an error), bounded by the load timeout (a hung load → throw).
+            Arm(LoadTimeoutMs);
+            try
+            {
+                byte tag = _reader.ReadByte();
+                if (tag == RespError) throw new InvalidOperationException("Sandbox worker failed to load plugin: " + _reader.ReadString());
+                if (tag != RespReady) throw new InvalidOperationException($"Unexpected sandbox handshake byte 0x{tag:X2}.");
+                string name = _reader.ReadString();
+                IsInstrument = _reader.ReadBoolean();
+                int count = _reader.ReadInt32();
+                for (var i = 0; i < count; i++)
+                {
+                    int idx = _reader.ReadInt32();
+                    string pname = _reader.ReadString();
+                    double min = _reader.ReadDouble();
+                    double max = _reader.ReadDouble();
+                    double def = _reader.ReadDouble();
+                    _parameters.Add(new PluginParameter(idx, pname, "", min, max, def));
+                }
+                HasEditor = _reader.ReadBoolean();
+                Descriptor = descriptor with { Name = name };
             }
-            HasEditor = _reader.ReadBoolean();
-            Descriptor = descriptor with { Name = name };
+            catch (EndOfStreamException) { throw new InvalidOperationException("Sandbox worker exited or hung during startup."); }
+            finally { Disarm(); }
         }
-        catch (EndOfStreamException) { throw new InvalidOperationException("Sandbox worker exited or hung during startup."); }
-        finally { Disarm(); }
+        catch
+        {
+            // A failed start (worker errored, died, or hung) must not leak the worker process, the shared
+            // map + pipes, or the temp file. Dispose is null-safe over a partially-constructed instance.
+            Dispose();
+            throw;
+        }
     }
 
     private void WatchdogLoop()
@@ -305,6 +314,7 @@ public sealed unsafe class SandboxedPlugin : IHostedPlugin
             if (_base != null) { _view.SafeMemoryMappedViewHandle.ReleasePointer(); _base = null; }
             try { _view.Dispose(); } catch { }
             try { _mmf.Dispose(); } catch { }
+            try { _worker.WaitForExit(1000); } catch { }   // let the killed worker release the map before we delete it
             try { File.Delete(_mmfPath); } catch { }
             try { _worker.Dispose(); } catch { }
         }

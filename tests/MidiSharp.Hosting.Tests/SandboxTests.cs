@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.MemoryMappedFiles;
 using System.Linq;
 using MidiSharp.Hosting.Clap;
 using MidiSharp.Hosting.Sandbox;
@@ -232,5 +233,55 @@ public sealed class SandboxTests
         Assert.True(plugin.IsDead, "the proxy should have latched dead after the worker died.");
         Assert.All(buf, v => Assert.Equal(0f, v));   // silence, not a crash
         _out.WriteLine("worker killed → proxy emits silence, host alive.");
+    }
+
+    [Fact]
+    public void Host_and_worker_can_map_the_same_shared_block_at_once()
+    {
+        // Regression (Windows): the sandbox shares one backing file between the host process and the worker.
+        // Both map it read-write at the same time. The string-path CreateFromFile overload opens with
+        // FileShare.Read, so the worker's read-write open failed with "being used by another process".
+        // OpenSharedBlock opens through a FileShare.ReadWrite stream, so the two maps coexist — and back the
+        // SAME memory. Pure unit test: no worker process or plugin fixture, so it always runs.
+        long size = SandboxProtocol.SharedSize(Block);
+        string path = Path.Combine(Path.GetTempPath(), "midisharp-sbxtest-" + Guid.NewGuid().ToString("N") + ".bin");
+        using (var fs = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.ReadWrite))
+            fs.SetLength(size);
+        try
+        {
+            using MemoryMappedFile host = SandboxProtocol.OpenSharedBlock(path, size);     // host holds it for the session
+            using MemoryMappedFile worker = SandboxProtocol.OpenSharedBlock(path, size);   // the worker opens the same file
+
+            using MemoryMappedViewAccessor hv = host.CreateViewAccessor(0, size, MemoryMappedFileAccess.ReadWrite);
+            using MemoryMappedViewAccessor wv = worker.CreateViewAccessor(0, size, MemoryMappedFileAccess.ReadWrite);
+            wv.Write(0, 0x12345678);
+            Assert.Equal(0x12345678, hv.ReadInt32(0));   // a write through one map is visible through the other
+        }
+        finally { try { File.Delete(path); } catch { } }
+    }
+
+    [Fact]
+    public void A_failed_start_maps_the_block_then_cleans_up_without_leaking_a_temp_file()
+    {
+        // End-to-end across the real process boundary with a bogus plugin. The worker maps the shared block
+        // (past the old Windows file-sharing crash at Program.cs:89) and only THEN fails to load the plugin,
+        // so the host throws "failed to load plugin" — not "exited or hung during startup" (the symptom when
+        // the worker died at the map). The throwing constructor must also clean up: no orphaned temp .bin.
+        string? worker = WorkerDll();
+        Assert.SkipWhen(worker == null, "sandbox worker not built.");
+
+        string TempBins() => string.Join("|", Directory.GetFiles(Path.GetTempPath(), "midisharp-sbx-*.bin").OrderBy(s => s));
+        var before = new HashSet<string>(TempBins().Split('|', StringSplitOptions.RemoveEmptyEntries));
+
+        var bogus = new PluginDescriptor("CLAP", "does.not.exist", "Bogus", "", false,
+            Path.Combine(Path.GetTempPath(), "midisharp-no-such-" + Guid.NewGuid().ToString("N") + ".clap"));
+
+        var ex = Assert.Throws<InvalidOperationException>(() => new SandboxedPlugin(bogus, worker!, Config));
+        _out.WriteLine("failed-start result: " + ex.Message);
+        Assert.Contains("failed to load plugin", ex.Message);          // worker cleared the shared-block map
+        Assert.DoesNotContain("exited or hung during startup", ex.Message);
+
+        string[] leaked = TempBins().Split('|', StringSplitOptions.RemoveEmptyEntries).Where(f => !before.Contains(f)).ToArray();
+        Assert.Empty(leaked);                                          // the throwing constructor deleted its temp file
     }
 }
