@@ -32,10 +32,11 @@ public sealed class PluginHost
         .Register(new Vst2Format())
         .Register(new LadspaFormat());
 
-    // AU is macOS-only; it joins the list (and the registry, in the ctor) only there.
-    private static readonly string[] Formats = OperatingSystem.IsMacOS()
-        ? ["CLAP", "VST3", "VST2", "AU", "LADSPA"]
-        : ["CLAP", "VST3", "VST2", "LADSPA"];
+    // The file-based formats — scanned out-of-process, one file at a time, for crash isolation. AU is NOT here:
+    // its discovery is registry-based (AudioComponentFindNext) and instantiates nothing, so Rescan scans it
+    // in-process even under the sandbox. The per-file worker scan would miss Apple built-ins and AUv3 units that
+    // have no .component file on disk.
+    private static readonly string[] Formats = ["CLAP", "VST3", "VST2", "LADSPA"];
 
     private int _sampleRate;
     private readonly string? _workerDll;
@@ -74,7 +75,18 @@ public sealed class PluginHost
     {
         if (_sandbox && _workerDll != null)
         {
-            _plugins = SandboxScanner.ScanAll(Formats, _workerDll);
+            // File-based formats scan out-of-process (per-file crash isolation). AU discovery is registry-based
+            // and instantiates nothing, so it's scanned in-process even under the sandbox — that surfaces Apple
+            // built-ins / AUv3 units the per-file worker scan can't see. AU *loading* still goes through the
+            // worker (crash-isolated), exactly like the other formats.
+            List<PluginDescriptor> found = SandboxScanner.ScanAll(Formats, _workerDll);
+            if (OperatingSystem.IsMacOS())
+            {
+                var au = new AudioUnitFormat();
+                try { found.AddRange(au.Scan(au.DefaultSearchPaths)); }
+                catch { /* a discovery failure must not sink startup */ }
+            }
+            _plugins = found;
         }
         else
         {

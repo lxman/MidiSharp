@@ -125,9 +125,10 @@ render-shim spike) gates the rest** — do not write adapter code until the shim
       solution suite passes; Linux/Windows behavior unchanged (AU registered only on macOS).
 - [x] Updated `docs/plugin-hosting-plan.md` (AU effects done + the sandbox gap) and `CHANGELOG.md`.
 
-> **Known gap (documented, follow-up):** the sandboxed scan enumerates files per format, so it finds third-party
-> `.component` AUs but **not** Apple built-ins (no file on disk); built-ins surface on the in-process path
-> (`MIDISHARP_SANDBOX=0`). AU registry discovery is already crash-safe (no instantiation), so the fix is a
-> registry-scan mode in the worker — not a Plan A blocker. See spec §12.
+> **Sandbox discovery (gap found here, FIXED 2026-06-22):** the sandboxed scan enumerates files per format, so it
+> couldn't see Apple built-ins / AUv3 AUs (no file on disk). Since AU registry discovery instantiates nothing
+> (crash-safe), `PluginHost.Rescan` now scans AU **in-process** even under the sandbox (file-based formats still
+> scan out-of-process; AU *loading* still goes through the worker). AU was removed from the worker's `--scan`
+> `Formats` list. See spec §12.
 
 **Plan A (AU effects) is complete.** Next: Plan B (instruments), Plan C (editor).

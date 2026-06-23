@@ -267,13 +267,12 @@ through it **changes** the output (filter audibly acts); sweeping its cutoff par
   interop (`AuAppKit.cs`) rather than reusing EditorHost's internal Cocoa slice, keeping assemblies independent.
   **Benign artifact:** hosting Apple AU views logs an `objc[]` duplicate-class warning (CoreAudioKit vs their
   `CoreAudioAUUI` view bundle) — Apple's, not ours; embed still succeeds.
-- **Sandboxed discovery of Apple built-in AUs (found during Plan A Task 6).** AU discovery is registry-based
-  (`AudioComponentFindNext`, in `Scan`), but the sandbox worker scans **per file** via `EnumerateFiles`, which
-  for AU returns only on-disk `.component` bundles. So under the default sandbox, third-party AUs surface but
-  Apple built-ins (no file) do **not**; they surface on the in-process path (`MIDISHARP_SANDBOX=0`). Since AU
-  registry discovery instantiates nothing (already crash-safe), the fix is to give the sandbox worker a
-  registry-scan mode for AU rather than forcing it through the per-file protocol — **follow-up, not a Plan A
-  blocker** (the format is registered and loads correctly either way).
+- ~~**Sandboxed discovery of Apple built-in AUs (found during Plan A Task 6).**~~ — **fixed 2026-06-22.** AU
+  discovery is registry-based (`AudioComponentFindNext`, in `Scan`) and instantiates nothing, so it's crash-safe
+  to run in-process. `PluginHost.Rescan` now scans the file-based formats out-of-process (per-file isolation) and
+  AU **in-process** via the registry even under the sandbox — surfacing Apple built-ins / AUv3 units the per-file
+  worker scan can't see. AU **loading** still goes through the worker (crash-isolated), so the safety model is
+  unchanged; only discovery moved in-process. (AU was removed from the worker's `--scan` `Formats` list.)
 
 ## 13. Plan breakdown (three shippable slices)
 

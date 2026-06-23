@@ -507,10 +507,9 @@ always-present system AUs, so no fixtures). **Plan A done:** discovery (`AudioCo
 view) with an `AUGenericView` fallback, riding the **unchanged** EditorHost/Cocoa backend; verified by embedding
 `AULowpass`'s built-in Cocoa view via the main-thread `MacEditorHarness` (`PASS AU`). Apple's built-in AUs ship
 custom Cocoa views, so no third-party AU is needed. See `docs/superpowers/specs/2026-06-22-au-hosting-design.md`.
-**Known gap:** the *sandboxed* scan path
-enumerates files per-format, so it finds third-party `.component` AUs but **not** Apple built-ins (which have
-no file on disk); built-ins surface on the in-process (`MIDISHARP_SANDBOX=0`) path. Teaching the sandbox
-worker a registry-scan mode for AU is a follow-up.
+**Discovery under sandbox:** AU registry discovery instantiates nothing (crash-safe), so `PluginHost.Rescan`
+scans the file-based formats out-of-process but AU **in-process** even when the sandbox is on — Apple built-ins
+and AUv3 units (no file on disk) surface either way. AU *loading* still goes through the worker (crash-isolated).
 
 ---
 
