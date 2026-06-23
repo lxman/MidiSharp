@@ -186,4 +186,8 @@ internal static unsafe class AudioUnitAbi
 
     [DllImport(AudioToolbox)]
     public static extern int AudioUnitRender(IntPtr inUnit, uint* ioActionFlags, AudioTimeStamp* inTimeStamp, uint inOutputBusNumber, uint inNumberFrames, void* ioData);
+
+    // ── instruments (Plan B) ── deliver a short MIDI message to a music-device AU, sample-accurate within the block.
+    [DllImport(AudioToolbox)]
+    public static extern int MusicDeviceMIDIEvent(IntPtr inUnit, uint inStatus, uint inData1, uint inData2, uint inOffsetSampleFrame);
 }

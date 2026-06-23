@@ -103,6 +103,55 @@ public sealed unsafe class AudioUnitTests
     }
 
     [Fact]
+    public void Dls_instrument_renders_a_note()
+    {
+        Assert.SkipWhen(!OperatingSystem.IsMacOS(), "Audio Units are macOS-only.");
+
+        var format = new AudioUnitFormat();
+        PluginDescriptor dls = format.Scan(format.DefaultSearchPaths)
+            .First(d => d.Id.StartsWith("aumu:dls", StringComparison.Ordinal));   // DLSMusicDevice (built-in synth)
+        Assert.True(dls.IsInstrument);
+
+        const int frames = 512;
+        using IHostedPlugin plugin = format.Load(dls, new AudioConfig(48000, frames, 2));
+        Assert.True(plugin.IsInstrument);
+
+        float* in0 = Alloc(frames), in1 = Alloc(frames), out0 = Alloc(frames), out1 = Alloc(frames);
+        float** ins = AllocPtrs(in0, in1), outs = AllocPtrs(out0, out1);
+        try
+        {
+            var input = new PlanarBuffers(ins, 2, frames);     // instruments have no input bus; unused
+            var output = new PlanarBuffers(outs, 2, frames);
+
+            double silent = RenderBlock(plugin, input, output, out0, ReadOnlySpan<HostEvent>.Empty);
+
+            // Middle C, velocity 100, at the start of the block; let it ring for a few blocks.
+            double playing = 0;
+            for (int blk = 0; blk < 12; blk++)
+            {
+                ReadOnlySpan<HostEvent> ev = blk == 0 ? [HostEvent.Midi(0, 0x90, 60, 100)] : default;
+                playing = RenderBlock(plugin, input, output, out0, ev);
+            }
+
+            Assert.True(playing > 1e-3, $"DLSMusicDevice should render audible output after a note-on (RMS={playing:F5}).");
+            Assert.True(silent < playing * 0.5, $"output should be quiet before the note (silent={silent:F5}, playing={playing:F5}) — the note drove the sound.");
+        }
+        finally
+        {
+            NativeMemory.Free(in0); NativeMemory.Free(in1); NativeMemory.Free(out0); NativeMemory.Free(out1);
+            NativeMemory.Free(ins); NativeMemory.Free(outs);
+        }
+    }
+
+    private static double RenderBlock(IHostedPlugin plugin, PlanarBuffers input, PlanarBuffers output, float* out0, ReadOnlySpan<HostEvent> events)
+    {
+        plugin.Process(input, output, events);
+        double sum = 0;
+        for (int i = 0; i < output.Frames; i++) sum += out0[i] * (double)out0[i];
+        return Math.Sqrt(sum / output.Frames);
+    }
+
+    [Fact]
     public void State_round_trips_through_classinfo()
     {
         Assert.SkipWhen(!OperatingSystem.IsMacOS(), "Audio Units are macOS-only.");

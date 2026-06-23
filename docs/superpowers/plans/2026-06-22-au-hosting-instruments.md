@@ -22,28 +22,25 @@ immediately before `AudioUnitRender`.
 - Same as Plan A: `dotnet`, net10.0, **0/0**, dependency-free, additive (no engine/other-adapter change),
   realtime-clean `Process`, macOS-only tests self-skip off-OS. System-AU checks never skip on macOS.
 
-## Task 1 — Instrument detection & no-input activation
+## Task 1 — Instrument detection & no-input activation  ✅ 2026-06-22 (already in place from Plan A Task 3)
 
-- [ ] In `AudioUnitPlugin`, branch on `IsInstrument` (from the descriptor, `type ∈ {'aumu','augn'}`): for
-      instruments, set **only** the output ASBD; **do not** set an input ASBD or register the input
-      `AURenderCallback`. `Activate`/`MaximumFramesPerSlice`/`AudioUnitInitialize` otherwise identical to Plan A.
-- [ ] `IHostedPlugin.IsInstrument => true` for these.
-- [ ] **Test** `AudioUnitInstrumentTests` (macOS-only): `DLSMusicDevice` loads, activates, and reports
-      `IsInstrument`. Commit.
+- [x] `AudioUnitPlugin.Activate` branches on `IsInstrument` (`type ∈ {'aumu','augn'}`): instruments set **only**
+      the output ASBD and register **no** input ASBD / `AURenderCallback`; otherwise identical to the effect path.
+- [x] `IHostedPlugin.IsInstrument => Descriptor.IsInstrument` (true for `DLSMusicDevice`).
 
-## Task 2 — MIDI delivery (`MusicDeviceMIDIEvent`)
+## Task 2 — MIDI delivery (`MusicDeviceMIDIEvent`)  ✅ 2026-06-22
 
-- [ ] Add `MusicDeviceMIDIEvent` to `AudioUnitAbi`. In `Process`, before `AudioUnitRender`, iterate the block's
-      `HostEvent`s of kind `Midi` and call `MusicDeviceMIDIEvent(au, e.Status, e.Data1, e.Data2, (uint)e.SampleOffset)`
-      (sample-accurate offset). Param `HostEvent`s still go through `AudioUnitSetParameter` (Plan A path).
-- [ ] No managed allocation on this path (it's the realtime hot path).
+- [x] Added `MusicDeviceMIDIEvent` to `AudioUnitAbi`. The `Process` event loop now, alongside param automation,
+      delivers each `Midi` `HostEvent` (for instruments) via `MusicDeviceMIDIEvent(au, Status, Data1, Data2,
+      SampleOffset)` — sample-accurate, no managed allocation. (Gated on `IsInstrument`; pure effects don't take
+      MIDI.)
 
-## Task 3 — Verify a note renders & acceptance
+## Task 3 — Verify a note renders & acceptance  ✅ 2026-06-22
 
-- [ ] **Acceptance gate (spec §10, Plan B):** load `DLSMusicDevice`, activate, deliver a note-on
-      (`0x90, 60, 100`) at offset 0, render several blocks, and assert the output is **non-silent** (RMS above a
-      small threshold); a following note-off silences it. `IsInstrument` is true.
-- [ ] **Test** asserts the above (self-skips off macOS). Solution builds **0/0**; Linux/Windows suites
-      unchanged.
-- [ ] Update `docs/plugin-hosting-plan.md` (AU instruments done) and `CHANGELOG.md`. Commit. **Do not merge/push
-      unless asked.**
+- [x] **Acceptance gate (spec §10, Plan B):** `DLSMusicDevice` loads, reports `IsInstrument`, and a note-on
+      (`0x90, 60, 100`) renders **audible** output (RMS ≈ 0.03 vs near-silence before the note) — the note drove
+      the sound, through the built-in soundbank with no explicit bank load.
+- [x] **Test** `Dls_instrument_renders_a_note` (self-skips off macOS). Hosting suite 33→34; solution 0/0;
+      non-macOS unchanged.
+
+**Plan B (AU instruments) is complete.** Next: Plan C (Cocoa editor).

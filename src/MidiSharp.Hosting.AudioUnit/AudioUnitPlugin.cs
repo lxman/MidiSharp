@@ -111,12 +111,16 @@ public sealed unsafe class AudioUnitPlugin : IHostedPlugin
     {
         if (!_active) return;
 
-        // Sample-accurate parameter automation: AudioUnitSetParameter is realtime-safe and the buffer-offset
-        // schedules the change within this block.
+        // Block events, sample-accurate within the block: parameter automation (realtime-safe
+        // AudioUnitSetParameter with a buffer offset) and — for instruments — MIDI via MusicDeviceMIDIEvent.
         foreach (HostEvent e in events)
+        {
             if (e.Kind == HostEventKind.Param && (uint)e.ParamIndex < (uint)_parameters.Count)
                 AudioUnitSetParameter(_au, _paramIds[e.ParamIndex], ScopeGlobal, 0,
                     (float)_parameters[e.ParamIndex].Denormalize(e.ParamValue), (uint)e.SampleOffset);
+            else if (e.Kind == HostEventKind.Midi && IsInstrument)
+                MusicDeviceMIDIEvent(_au, e.Status, e.Data1, e.Data2, (uint)e.SampleOffset);
+        }
 
         // Stash this block's input for the pull callback (mono in → both sides; no input → silence).
         _inFrames = input.Frames;
