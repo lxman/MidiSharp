@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
 using MidiSharp.Hosting;
 using MidiSharp.Hosting.AudioUnit;
 using MidiSharp.Hosting.Clap;
@@ -43,6 +45,11 @@ failures += EmbedReal("VST3", new Vst3Format(), "Surge XT", "VST3 cocoa editor")
 failures += EmbedReal("CLAP", new ClapFormat(), "Surge XT", "CLAP cocoa editor");
 failures += EmbedAu("AU", new AudioUnitFormat(), "aufx:lpas", "AU cocoa editor (AULowpass)");
 
+// AU v3 audio (async instantiation): also a main-thread proof — the completion lands on the main dispatch
+// queue, which xUnit's pool threads can't drain. An effect (OOP) and an instrument (in-process).
+failures += RenderAuV3("AU v3 effect", "aufx:DIMC", isInstrument: false);
+failures += RenderAuV3("AU v3 instrument", "aumu:audM", isInstrument: true);
+
 return failures == 0 ? 0 : 1;
 
 // AU discovery is registry-based (no file path), so find the unit by its type:subtype id prefix via Scan, then
@@ -81,6 +88,99 @@ static int EmbedReal(string label, IPluginFormat format, string nameContains, st
     foreach (PluginDescriptor d in format.ScanFile(file)) { desc = d; break; }
     if (desc == null) { Console.WriteLine($"SKIP {label}: '{Path.GetFileName(file)}' yielded no {format.Name} plugin."); return 0; }
     return DoEmbed(label, format, desc, title);
+}
+
+// AU v3 plugins are async-instantiated (effects out-of-process) via AudioComponentInstantiate, whose completion
+// is delivered on the MAIN dispatch queue — so AudioUnitFormat.Load's run-loop pump only sees it on the thread
+// draining that queue, which this harness's Main (thread 0) provides and xUnit cannot. Loads the unit through the
+// UNCHANGED v2 AudioUnitPlugin and asserts it renders real audio over the bridge (an effect alters a dry tone; an
+// instrument sounds a note). SKIPs when the unit isn't installed. Returns 1 on FAIL, 0 on PASS/SKIP.
+static unsafe int RenderAuV3(string label, string idPrefix, bool isInstrument)
+{
+    var format = new AudioUnitFormat();
+    PluginDescriptor? desc = null;
+    foreach (PluginDescriptor d in format.Scan(format.DefaultSearchPaths))
+        if (d.Id.StartsWith(idPrefix, StringComparison.Ordinal)) { desc = d; break; }
+    if (desc == null) { Console.WriteLine($"SKIP {label}: no AU matching '{idPrefix}'."); return 0; }
+
+    const int frames = 512;
+    const double sr = 48000.0, amp = 0.5, freq = 1000.0;
+    using IHostedPlugin plugin = format.Load(desc, new AudioConfig((int)sr, frames, ChannelCount: 2));   // async over the v3 bridge
+
+    var in0 = (float*)NativeMemory.AllocZeroed((nuint)frames, sizeof(float));
+    var in1 = (float*)NativeMemory.AllocZeroed((nuint)frames, sizeof(float));
+    var out0 = (float*)NativeMemory.AllocZeroed((nuint)frames, sizeof(float));
+    var out1 = (float*)NativeMemory.AllocZeroed((nuint)frames, sizeof(float));
+    var ins = (float**)NativeMemory.Alloc(2, (nuint)IntPtr.Size);
+    var outs = (float**)NativeMemory.Alloc(2, (nuint)IntPtr.Size);
+    ins[0] = in0; ins[1] = in1; outs[0] = out0; outs[1] = out1;
+    try
+    {
+        var input = new PlanarBuffers(ins, 2, frames);
+        var output = new PlanarBuffers(outs, 2, frames);
+
+        double outRms = 0, diffRms = 0;
+        long pos = 0;
+        for (var blk = 0; blk < 16; blk++)
+        {
+            if (!isInstrument)
+                for (var i = 0; i < frames; i++)
+                {
+                    var s = (float)(amp * Math.Sin(2.0 * Math.PI * freq * (pos + i) / sr));
+                    in0[i] = s; in1[i] = s;
+                }
+            ReadOnlySpan<HostEvent> ev = isInstrument && blk == 0 ? [HostEvent.Midi(0, 0x90, 60, 100)] : default;
+            plugin.Process(input, output, ev);
+            pos += frames;
+            if (blk == 15)
+            {
+                double so = 0, sd = 0;
+                for (var i = 0; i < frames; i++)
+                {
+                    so += out0[i] * (double)out0[i];
+                    double dry = isInstrument ? 0 : amp * Math.Sin(2.0 * Math.PI * freq * (pos - frames + i) / sr);
+                    sd += (out0[i] - dry) * (out0[i] - dry);
+                }
+                outRms = Math.Sqrt(so / frames);
+                diffRms = Math.Sqrt(sd / frames);
+            }
+        }
+
+        bool ok = isInstrument
+            ? outRms > 1e-3
+            : outRms > 0.05 && diffRms > 0.01;   // effect must be non-silent AND differ from the dry signal
+        if (!ok) { Console.WriteLine($"FAIL {label}: '{desc.Name}' silent/unprocessed (out RMS={outRms:F4}, diff={diffRms:F4})."); return 1; }
+
+        // State over the bridge (kAudioUnitProperty_ClassInfo). Parameters are normalized [0..1]; find one that
+        // actually responds, snapshot, move it, reload, and expect ClassInfo to restore it.
+        string stateNote = "no responsive param";
+        foreach (PluginParameter q in plugin.Parameters)
+        {
+            double saved = plugin.GetParameter(q.Index);
+            double moved = saved < 0.5 ? 0.9 : 0.1;
+            plugin.SetParameter(q.Index, moved);
+            // "Responds" = the readback actually CHANGED (stepped params quantize, so don't require the exact target).
+            if (Math.Abs(plugin.GetParameter(q.Index) - saved) < 0.05) { plugin.SetParameter(q.Index, saved); continue; }   // inert → next
+
+            plugin.SetParameter(q.Index, saved);          // snapshot the unit with this param at `saved`
+            byte[] blob = plugin.SaveState();
+            if (blob.Length == 0) { stateNote = "no ClassInfo"; break; }
+            plugin.SetParameter(q.Index, moved);          // move away, then reload
+            plugin.LoadState(blob);
+            double restored = plugin.GetParameter(q.Index);
+            if (Math.Abs(restored - saved) > 0.05)
+            { Console.WriteLine($"FAIL {label}: ClassInfo did not restore param '{q.Name}' (saved={saved:F3} → reloaded={restored:F3})."); return 1; }
+            stateNote = $"ClassInfo round-trips ('{q.Name}')";
+            break;
+        }
+        Console.WriteLine($"PASS {label}: '{desc.Name}' rendered over the v3 bridge (out RMS={outRms:F4}, diff-from-dry={diffRms:F4}; {stateNote}).");
+        return 0;
+    }
+    finally
+    {
+        NativeMemory.Free(in0); NativeMemory.Free(in1); NativeMemory.Free(out0); NativeMemory.Free(out1);
+        NativeMemory.Free(ins); NativeMemory.Free(outs);
+    }
 }
 
 // Load the plugin, open its editor on this (main) thread, and assert a child NSView embeds. Returns 1 on FAIL,

@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **AU v3 (`AUAudioUnit`) audio hosting on macOS.** Host modern **AU v3 effects and instruments** — which the
+  component registry delivers over Apple's bridge and which must be instantiated *asynchronously* (effects
+  out-of-process) — through the **same `AudioUnitPlugin`** as AU v2. The only v3-specific code is an async-load
+  branch in `Load`: `AudioComponentInstantiate` driven by one hand-built Obj-C completion block, with the v2
+  C API (render shim, parameters, `kAudioUnitProperty_ClassInfo` state, `MusicDeviceMIDIEvent`) working
+  unchanged over the bridge — out-of-process render latency is ~18 µs/block (negligible). Verified against real
+  v3 plugins (`DimChorus` effect OOP, `AudMod` instrument in-process). The v3 *editor* (which needs the
+  `AUAudioUnit` view-controller path) is not yet adapted; AAX remains parked.
+
 ## [0.12.0] - 2026-06-22
 
 ### Added

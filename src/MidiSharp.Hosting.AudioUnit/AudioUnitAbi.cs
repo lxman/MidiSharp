@@ -149,6 +149,18 @@ internal static unsafe class AudioUnitAbi
     [DllImport(AudioToolbox)]
     public static extern int AudioUnitSetParameter(IntPtr inUnit, uint inId, uint inScope, uint inElement, float inValue, uint inBufferOffsetInFrames);
 
+    // ── AudioComponentFlags (the registry's per-component capability bits, in AudioComponentDescription.ComponentFlags) ──
+    // An AU v3 component is delivered by Apple's bridge; v3 effects are typically out-of-process-only and require
+    // the async AudioComponentInstantiate path. (Values from AudioComponent.h; spike-verified against real v3 AUs.)
+    public const uint CompFlagSandboxSafe = 2;                 // kAudioComponentFlag_SandboxSafe
+    public const uint CompFlagIsV3AudioUnit = 4;              // kAudioComponentFlag_IsV3AudioUnit
+    public const uint CompFlagRequiresAsync = 8;              // kAudioComponentFlag_RequiresAsyncInstantiation
+    public const uint CompFlagCanLoadInProcess = 0x10;       // kAudioComponentFlag_CanLoadInProcess
+
+    // ── AudioComponentInstantiationOptions (the async-load placement; honor the component's CanLoadInProcess bit) ──
+    public const uint InstantiationLoadInProcess = 1;        // kAudioComponentInstantiation_LoadInProcess
+    public const uint InstantiationLoadOutOfProcess = 2;     // kAudioComponentInstantiation_LoadOutOfProcess
+
     // ── discovery / instantiation ──
     [DllImport(AudioToolbox)]
     public static extern IntPtr AudioComponentFindNext(IntPtr inComponent, AudioComponentDescription* inDesc);
@@ -161,6 +173,12 @@ internal static unsafe class AudioUnitAbi
 
     [DllImport(AudioToolbox)]
     public static extern int AudioComponentInstanceNew(IntPtr inComponent, out IntPtr outInstance);
+
+    /// <summary>Async instantiation (AU v3 / any component with <see cref="CompFlagRequiresAsync"/>). The
+    /// completion handler is an Obj-C block (<see cref="AuBlocks.MakeGlobalBlock"/>) whose invoke is
+    /// <c>void (block, AudioComponentInstance, OSStatus)</c>; it fires on the run loop being pumped.</summary>
+    [DllImport(AudioToolbox)]
+    public static extern void AudioComponentInstantiate(IntPtr inComponent, uint inOptions, IntPtr inCompletionHandler);
 
     [DllImport(AudioToolbox)]
     public static extern int AudioComponentInstanceDispose(IntPtr inInstance);

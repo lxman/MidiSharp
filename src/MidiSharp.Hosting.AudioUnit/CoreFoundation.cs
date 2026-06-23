@@ -31,6 +31,25 @@ internal static unsafe class CoreFoundation
     [DllImport(Lib)] private static extern byte* CFDataGetBytePtr(IntPtr data);
     [DllImport(Lib)] public static extern IntPtr CFBundleCreate(IntPtr alloc, IntPtr bundleUrl);
     [DllImport(Lib)] public static extern byte CFBundleLoadExecutable(IntPtr bundle);
+    [DllImport(Lib)] private static extern int CFRunLoopRunInMode(IntPtr mode, double seconds, byte returnAfterSourceHandled);
+
+    /// <summary>The default run-loop mode (<c>kCFRunLoopDefaultMode</c>), dereferenced from its exported
+    /// <c>CFStringRef</c> data symbol.</summary>
+    private static readonly IntPtr DefaultRunLoopMode = ResolveStringConstant("kCFRunLoopDefaultMode");
+
+    /// <summary>Pump the calling thread's run loop in the default mode for up to <paramref name="seconds"/>,
+    /// returning as soon as one source is handled. Async AudioToolbox completions (e.g. AU v3's
+    /// <c>AudioComponentInstantiate</c>) are delivered on the run loop, so a caller awaiting one spins this
+    /// until its completion flag is set.</summary>
+    public static void PumpRunLoop(double seconds) => CFRunLoopRunInMode(DefaultRunLoopMode, seconds, 1);
+
+    /// <summary>Resolve an exported <c>CFStringRef</c> constant (a data symbol holding the pointer).</summary>
+    private static IntPtr ResolveStringConstant(string symbol)
+    {
+        IntPtr handle = NativeLibrary.Load(Lib);
+        if (NativeLibrary.TryGetExport(handle, symbol, out IntPtr p)) return *(IntPtr*)p;
+        throw new InvalidOperationException($"Symbol '{symbol}' not found in CoreFoundation.");
+    }
 
     /// <summary>Copy a <c>CFStringRef</c> into a managed string. Returns empty for null, a non-string object
     /// (plist values may be numbers/data — calling CFStringGetCString on those traps), or conversion failure.</summary>

@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using static MidiSharp.Hosting.AudioUnit.AudioUnitAbi;
 
 namespace MidiSharp.Hosting.AudioUnit;
@@ -98,10 +100,74 @@ public sealed unsafe class AudioUnitFormat : IPluginFormat
         if (comp == IntPtr.Zero)
             throw new InvalidOperationException($"No installed Audio Unit matches '{descriptor.Id}'.");
 
+        // AU v3 components are delivered by Apple's bridge and must be instantiated asynchronously (and the
+        // effects out-of-process); a legacy v2 AU keeps the synchronous path. Either way the resulting
+        // AudioComponentInstance is driven by the same AudioUnitPlugin — the v2 C API works over the v3 bridge
+        // (Plan A Task 0 spike). See AudioUnitAbi for the AudioComponentFlags meanings.
+        IntPtr au = RequiresAsyncLoad(comp, out bool inProcess)
+            ? InstantiateAsync(comp, inProcess ? InstantiationLoadInProcess : InstantiationLoadOutOfProcess, descriptor.Id)
+            : InstantiateSync(comp, descriptor.Id);
+        return new AudioUnitPlugin(au, descriptor, config);
+    }
+
+    private static IntPtr InstantiateSync(IntPtr comp, string id)
+    {
         int st = AudioComponentInstanceNew(comp, out IntPtr au);
         if (st != 0 || au == IntPtr.Zero)
-            throw new InvalidOperationException($"AudioComponentInstanceNew failed ({st}) for '{descriptor.Id}'.");
-        return new AudioUnitPlugin(au, descriptor, config);
+            throw new InvalidOperationException($"AudioComponentInstanceNew failed ({st}) for '{id}'.");
+        return au;
+    }
+
+    /// <summary>True when a component must take the async <c>AudioComponentInstantiate</c> path: any AU that
+    /// requires async, plus a v3 AU that can't load in-process. A legacy v2 AU (neither bit set) stays
+    /// synchronous. <paramref name="inProcess"/> is the placement to request when async.</summary>
+    private static bool RequiresAsyncLoad(IntPtr comp, out bool inProcess)
+    {
+        inProcess = true;
+        AudioComponentDescription d;
+        if (AudioComponentGetDescription(comp, &d) != 0) return false;   // can't read flags → treat as legacy/sync
+        bool isV3 = (d.ComponentFlags & CompFlagIsV3AudioUnit) != 0;
+        bool requiresAsync = (d.ComponentFlags & CompFlagRequiresAsync) != 0;
+        inProcess = (d.ComponentFlags & CompFlagCanLoadInProcess) != 0;
+        return requiresAsync || (isV3 && !inProcess);
+    }
+
+    // ── async (AU v3) instantiation ──
+    // AudioComponentInstantiate delivers its result on the run loop via an Obj-C completion block. We use one
+    // process-global block; a gate serializes the (rare, and worker-thread-single) loads so the static handshake
+    // fields are unambiguous.
+    private static readonly object s_asyncGate = new();
+    private static IntPtr s_asyncInstance;
+    private static int s_asyncStatus;
+    private static volatile bool s_asyncDone;
+    private static readonly IntPtr s_completionBlock =
+        AuBlocks.MakeGlobalBlock((IntPtr)(delegate* unmanaged[Cdecl]<IntPtr, IntPtr, int, void>)&AsyncInstantiateCompleted);
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static void AsyncInstantiateCompleted(IntPtr block, IntPtr instance, int status)
+    {
+        s_asyncInstance = instance;
+        s_asyncStatus = status;
+        s_asyncDone = true;
+    }
+
+    private static IntPtr InstantiateAsync(IntPtr comp, uint options, string id)
+    {
+        lock (s_asyncGate)
+        {
+            s_asyncInstance = IntPtr.Zero;
+            s_asyncStatus = 0;
+            s_asyncDone = false;
+            AudioComponentInstantiate(comp, options, s_completionBlock);
+            // The completion fires on this thread's run loop — pump it (≤ ~20 s) until the handshake flips.
+            for (int i = 0; i < 400 && !s_asyncDone; i++)
+                CoreFoundation.PumpRunLoop(0.05);
+            if (!s_asyncDone)
+                throw new InvalidOperationException($"Async instantiation of '{id}' timed out.");
+            if (s_asyncStatus != 0 || s_asyncInstance == IntPtr.Zero)
+                throw new InvalidOperationException($"AudioComponentInstantiate failed ({s_asyncStatus}) for '{id}'.");
+            return s_asyncInstance;
+        }
     }
 
     // ── discovery internals ──
