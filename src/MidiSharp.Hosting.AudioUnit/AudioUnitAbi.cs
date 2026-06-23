@@ -123,6 +123,32 @@ internal static unsafe class AudioUnitAbi
         public void* InputProcRefCon;
     }
 
+    // ── parameters (Task 4) ──
+    // AudioUnitParameterUnit values used to flag stepped controls.
+    public const uint ParamUnitIndexed = 1;   // a list/menu (discrete)
+    public const uint ParamUnitBoolean = 2;   // on/off
+
+    /// <summary><c>AudioUnitParameterInfo</c>. Natural C alignment: the <c>char[52]</c> name is followed by 4
+    /// bytes of padding so <c>UnitName</c> (a pointer) lands 8-aligned — declared verbatim so the runtime lays
+    /// it out identically.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct AudioUnitParameterInfo
+    {
+        public fixed byte Name[52];
+        public IntPtr UnitName;        // CFStringRef
+        public uint ClumpId;
+        public IntPtr CfNameString;    // CFStringRef (preferred display name)
+        public uint Unit;
+        public float MinValue, MaxValue, DefaultValue;
+        public uint Flags;
+    }
+
+    [DllImport(AudioToolbox)]
+    public static extern int AudioUnitGetParameter(IntPtr inUnit, uint inId, uint inScope, uint inElement, float* outValue);
+
+    [DllImport(AudioToolbox)]
+    public static extern int AudioUnitSetParameter(IntPtr inUnit, uint inId, uint inScope, uint inElement, float inValue, uint inBufferOffsetInFrames);
+
     // ── discovery / instantiation ──
     [DllImport(AudioToolbox)]
     public static extern IntPtr AudioComponentFindNext(IntPtr inComponent, AudioComponentDescription* inDesc);

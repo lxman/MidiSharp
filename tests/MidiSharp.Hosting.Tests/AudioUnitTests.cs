@@ -62,6 +62,46 @@ public sealed unsafe class AudioUnitTests
         }
     }
 
+    [Fact]
+    public void Sweeping_the_cutoff_parameter_changes_the_filter_output()
+    {
+        Assert.SkipWhen(!OperatingSystem.IsMacOS(), "Audio Units are macOS-only.");
+
+        var format = new AudioUnitFormat();
+        PluginDescriptor lowpass = format.Scan(format.DefaultSearchPaths)
+            .First(d => d.Id.StartsWith("aufx:lpas", StringComparison.Ordinal));
+
+        const int frames = 512;
+        using IHostedPlugin plugin = format.Load(lowpass, new AudioConfig(48000, frames, 2));
+
+        Assert.NotEmpty(plugin.Parameters);
+        int cutoff = plugin.Parameters
+            .FirstOrDefault(p => p.Name.Contains("cutoff", StringComparison.OrdinalIgnoreCase))?.Index ?? 0;
+
+        float* in0 = Alloc(frames), in1 = Alloc(frames), out0 = Alloc(frames), out1 = Alloc(frames);
+        float** ins = AllocPtrs(in0, in1), outs = AllocPtrs(out0, out1);
+        try
+        {
+            var input = new PlanarBuffers(ins, 2, frames);
+            var output = new PlanarBuffers(outs, 2, frames);
+
+            // 1 kHz sits below the default cutoff (~6.9 kHz), so it passes; dropping the cutoff to its minimum
+            // pushes 1 kHz into the stopband.
+            double atDefault = RenderTone(plugin, input, output, in0, in1, out0, 1000.0, frames);
+            plugin.SetParameter(cutoff, 0.0);
+            double atMinCutoff = RenderTone(plugin, input, output, in0, in1, out0, 1000.0, frames);
+
+            Assert.True(atDefault > 0.1, $"1 kHz should pass at the default cutoff (out RMS={atDefault:F4}).");
+            Assert.True(atMinCutoff < atDefault * 0.5,
+                $"lowering the cutoff parameter should attenuate 1 kHz (min={atMinCutoff:F4} vs default={atDefault:F4}).");
+        }
+        finally
+        {
+            NativeMemory.Free(in0); NativeMemory.Free(in1); NativeMemory.Free(out0); NativeMemory.Free(out1);
+            NativeMemory.Free(ins); NativeMemory.Free(outs);
+        }
+    }
+
     // Render 16 blocks of a sine (phase-continuous across blocks) so the filter settles; return the last block's
     // output RMS on channel 0.
     private static double RenderTone(IHostedPlugin plugin, PlanarBuffers input, PlanarBuffers output,

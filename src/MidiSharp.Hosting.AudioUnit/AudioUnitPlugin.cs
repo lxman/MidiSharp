@@ -25,6 +25,7 @@ public sealed unsafe class AudioUnitPlugin : IHostedPlugin
     private IntPtr _au;
     private GCHandle _self;                          // refCon for the unmanaged input callback
     private readonly List<PluginParameter> _parameters = [];
+    private readonly List<uint> _paramIds = [];     // parallel to _parameters: the AudioUnitParameterID per index
 
     private float* _inCh0, _inCh1;                   // this block's input channels (read by the callback)
     private int _inFrames;
@@ -63,8 +64,41 @@ public sealed unsafe class AudioUnitPlugin : IHostedPlugin
 
         int st = AudioUnitInitialize(_au);
         if (st != 0) throw new InvalidOperationException($"AudioUnitInitialize failed ({st}) for '{Descriptor.Name}'.");
+        BuildParameters();
         _active = true;
     }
+
+    // Read the unit's global parameter list and build a normalized PluginParameter (+ the native id) per entry.
+    private void BuildParameters()
+    {
+        _parameters.Clear();
+        _paramIds.Clear();
+
+        uint bytes = 0;
+        if (AudioUnitGetPropertyInfo(_au, PropParameterList, ScopeGlobal, 0, &bytes, null) != 0 || bytes == 0) return;
+        int count = (int)(bytes / sizeof(uint));
+        var ids = new uint[count];
+        fixed (uint* idp = ids)
+        {
+            uint size = bytes;
+            if (AudioUnitGetProperty(_au, PropParameterList, ScopeGlobal, 0, idp, &size) != 0) return;
+        }
+
+        foreach (uint id in ids)
+        {
+            AudioUnitParameterInfo info;
+            uint size = (uint)sizeof(AudioUnitParameterInfo);
+            if (AudioUnitGetProperty(_au, PropParameterInfo, ScopeGlobal, id, &info, &size) != 0) continue;
+
+            string name = info.CfNameString != IntPtr.Zero ? CoreFoundation.ToManaged(info.CfNameString) : ReadName(&info);
+            bool stepped = info.Unit is ParamUnitIndexed or ParamUnitBoolean;
+            _parameters.Add(new PluginParameter(_paramIds.Count, name, label: "",
+                info.MinValue, info.MaxValue, info.DefaultValue, isStepped: stepped));
+            _paramIds.Add(id);
+        }
+    }
+
+    private static string ReadName(AudioUnitParameterInfo* info) => Marshal.PtrToStringUTF8((IntPtr)info->Name) ?? "";
 
     public void Deactivate()
     {
@@ -76,6 +110,13 @@ public sealed unsafe class AudioUnitPlugin : IHostedPlugin
     public void Process(PlanarBuffers input, PlanarBuffers output, ReadOnlySpan<HostEvent> events)
     {
         if (!_active) return;
+
+        // Sample-accurate parameter automation: AudioUnitSetParameter is realtime-safe and the buffer-offset
+        // schedules the change within this block.
+        foreach (HostEvent e in events)
+            if (e.Kind == HostEventKind.Param && (uint)e.ParamIndex < (uint)_parameters.Count)
+                AudioUnitSetParameter(_au, _paramIds[e.ParamIndex], ScopeGlobal, 0,
+                    (float)_parameters[e.ParamIndex].Denormalize(e.ParamValue), (uint)e.SampleOffset);
 
         // Stash this block's input for the pull callback (mono in → both sides; no input → silence).
         _inFrames = input.Frames;
@@ -117,10 +158,20 @@ public sealed unsafe class AudioUnitPlugin : IHostedPlugin
         if (n < want) new Span<float>(dst + n, (int)(want - n)).Clear();              // zero-pad any shortfall
     }
 
-    // Parameters: not yet wired (Task 4). An empty set means GetParameter is out of range (→ 0) and SetParameter
-    // is a no-op — correct behavior for "no parameters exposed yet".
-    public double GetParameter(int index) => 0;
-    public void SetParameter(int index, double normalized) { }
+    public double GetParameter(int index)
+    {
+        if ((uint)index >= (uint)_parameters.Count) return 0;
+        float v;
+        if (AudioUnitGetParameter(_au, _paramIds[index], ScopeGlobal, 0, &v) != 0) return 0;
+        return _parameters[index].Normalize(v);
+    }
+
+    public void SetParameter(int index, double normalized)
+    {
+        if ((uint)index >= (uint)_parameters.Count) return;
+        float v = (float)_parameters[index].Denormalize(normalized);
+        AudioUnitSetParameter(_au, _paramIds[index], ScopeGlobal, 0, v, 0);
+    }
 
     // State: not yet wired (Task 5). [] is the IHostedPlugin "unsupported" return.
     public byte[] SaveState() => [];

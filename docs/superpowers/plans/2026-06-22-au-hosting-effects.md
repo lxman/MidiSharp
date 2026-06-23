@@ -94,13 +94,16 @@ render-shim spike) gates the rest** — do not write adapter code until the shim
       proving input was pulled and output captured through the real `IHostedPlugin`. Parameters (Task 4) and
       state (Task 5) are empty-but-correct for now (`Parameters` empty, `SaveState` → `[]`).
 
-## Task 4 — Parameters
+## Task 4 — Parameters  ✅ 2026-06-22
 
-- [ ] Build the table from `kAudioUnitProperty_ParameterList` + `…ParameterInfo` → `PluginParameter[]` +
-      parallel `AudioUnitParameterID[]`. `GetParameter`/`SetParameter` via `AudioUnitGetParameter`/
-      `AudioUnitSetParameter` (scope Global), normalized; sample-accurate param `HostEvent`s pass `SampleOffset`
-      as `bufferOffsetInFrames`.
-- [ ] **Test:** sweeping `AULowpass` cutoff changes the rendered output. Commit.
+- [x] `BuildParameters` (after `AudioUnitInitialize`) reads `PropParameterList` (via `GetPropertyInfo` for the
+      byte count, then `GetProperty`) + `PropParameterInfo` per id → `PluginParameter[]` + parallel
+      `_paramIds` (`AudioUnitParameterID`). Name from `CfNameString` (CF) falling back to the inline `char[52]`;
+      `isStepped` from `Unit ∈ {Indexed, Boolean}`. `GetParameter`/`SetParameter` via `AudioUnitGetParameter`/
+      `AudioUnitSetParameter` (scope Global), normalized; param `HostEvent`s apply in `Process` with
+      `SampleOffset` as the buffer offset (realtime-safe).
+- [x] **Test** `Sweeping_the_cutoff_parameter_changes_the_filter_output`: 1 kHz passes at the default cutoff,
+      then dropping the cutoff parameter to its minimum attenuates it (< 0.5×). Hosting suite 31→32; solution 0/0.
 
 ## Task 5 — State
 
