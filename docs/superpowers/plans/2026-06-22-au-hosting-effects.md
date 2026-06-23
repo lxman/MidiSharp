@@ -62,30 +62,37 @@ render-shim spike) gates the rest** — do not write adapter code until the shim
 - [x] Builds **0/0** — both the project alone and the whole solution. Single assembly compiled everywhere, called
       only on macOS (registry guard lands in Task 6), mirroring the platform-guarded EditorHost backends.
 
-## Task 2 — Format & discovery (`AudioUnitFormat.cs`)
+## Task 2 — Format & discovery (`AudioUnitFormat.cs`)  ✅ 2026-06-22 (done with Task 3 — coupled via `Load`)
 
-- [ ] `IPluginFormat` with `Name => "AU"`, the component `DefaultSearchPaths`, `EnumerateFiles` (sorted
+- [x] `IPluginFormat` with `Name => "AU"`, the component `DefaultSearchPaths`, `EnumerateFiles` (sorted
       `*.component` bundles), and `ScanFile` reading `Contents/Info.plist`'s `AudioComponents` array via CF plist
-      (**no native code loaded**) → a `PluginDescriptor` per entry carrying the type/subtype/manufacturer 3-tuple
-      and `IsInstrument = type ∈ {'aumu','augn'}`.
-- [ ] `Scan` also walks `AudioComponentFindNext` to surface system AUs (no on-disk bundle), de-duplicated by
-      3-tuple, so `AULowpass` appears.
-- [ ] `Load` → `AudioComponentFindNext`(3-tuple) → `AudioComponentInstanceNew` → `AudioUnitPlugin`.
-- [ ] **Test** `AudioUnitFormatTests` (macOS-only): discovery surfaces `AULowpass` **and** `DLSMusicDevice`;
-      `ScanFile` of an installed `.component` (if any) yields a descriptor without instantiating. Commit.
+      (**no native code loaded**) → a `PluginDescriptor` per entry carrying the type:subtype:manufacturer triple
+      in `Id` and `IsInstrument = type ∈ {'aumu','augn'}`.
+- [x] `Scan` walks `AudioComponentFindNext` (the real AU discovery; surfaces Apple built-ins that aren't files on
+      disk) unioned with the on-disk `ScanFile` pass, de-duplicated by triple. `AULowpass`/`DLSMusicDevice` appear.
+- [x] `Load` → parse the triple → `AudioComponentFindNext` → `AudioComponentInstanceNew` → `AudioUnitPlugin`.
+- [x] **Test** `AudioUnitTests.Discovers_apple_system_audio_units` (macOS-only): discovery surfaces `AULowpass`
+      **and** `DLSMusicDevice` (instrument). (32 AUs scanned on this Mac.)
 
-## Task 3 — Plugin: activate + render shim (`AudioUnitPlugin.cs`)
+> **Note:** a new `CoreFoundation.cs` interop slice was needed for the Info.plist parse (reused later by Task 5
+> state + Plan C editor). **Bug found & fixed during bring-up:** `ToManaged` must type-check with `CFGetTypeID`
+> before `CFStringGetCString` — some plist values are CFNumber/CFData, and stringifying them traps as an
+> Obj-C `NSException` (SIGABRT). Dict/array accessors are likewise type-guarded.
 
-- [ ] `Activate`: set output/input ASBD (stereo non-interleaved float32), `MaximumFramesPerSlice`, register the
-      input `AURenderCallbackStruct` (`RefCon = GCHandle(this)`), `AudioUnitInitialize`; allocate the reusable
-      `AudioBufferList` + `AudioTimeStamp`.
-- [ ] `Process`: stash `input.Channel(0/1)` + frame count; point `ioData.mBuffers[c].mData` at
-      `output.Channel(c)`; bump `mSampleTime`; `AudioUnitRender`. The `[UnmanagedCallersOnly]` input callback
-      fills `ioData` from the stashed input, honoring `inNumberFrames`/`inBusNumber`. Mirror mono→stereo.
-- [ ] `Deactivate`/`Dispose`: `AudioUnitUninitialize` + `AudioComponentInstanceDispose`; free the buffer list;
-      free the `GCHandle`.
-- [ ] **Test** `AudioUnitEffectTests` (macOS-only): load `AULowpass`, render a non-zero block, assert the output
-      is non-silent and differs from the input (filter acts). Commit.
+## Task 3 — Plugin: activate + render shim (`AudioUnitPlugin.cs`)  ✅ 2026-06-22
+
+- [x] `Activate`: set output (+ input, for effects) ASBD (stereo non-interleaved float32),
+      `MaximumFramesPerSlice`, register the input `AURenderCallbackStruct` (`RefCon = GCHandle(this)`),
+      `AudioUnitInitialize`.
+- [x] `Process`: stash `input.Channel(0/1)` + frame count; point the output `StereoBufferList` at
+      `output.Channel(c)`; bump `SampleTime`; `AudioUnitRender`. The `[UnmanagedCallersOnly]` input callback
+      serves the stashed input, honoring `inNumberFrames` and zero-padding any shortfall.
+- [x] `Deactivate`/`Dispose`: `AudioUnitUninitialize` + `AudioComponentInstanceDispose`; free the `GCHandle`.
+      (Buffer list / timestamp are stack locals per block — no heap to free.)
+- [x] **Test** `AudioUnitTests.Loads_aulowpass_and_filters_audio_through_the_render_shim` (macOS-only): a 200 Hz
+      tone passes (out RMS 0.3465), an 18 kHz tone is attenuated (0.0146) — **identical to the Task 0 spike**,
+      proving input was pulled and output captured through the real `IHostedPlugin`. Parameters (Task 4) and
+      state (Task 5) are empty-but-correct for now (`Parameters` empty, `SaveState` → `[]`).
 
 ## Task 4 — Parameters
 
