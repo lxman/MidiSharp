@@ -11,14 +11,19 @@ async instantiation + audio + params + state), **Plan B — instruments**, **Pla
 with an optional **Plan D — clean-room v3 fixture**. Builds on the shipped **AU v2 adapter** (v0.12.0); AU v3
 shares that adapter's discovery and `IHostedPlugin`/`IPluginGui` seams and **adds no new project**.
 
-**The two facts that shape everything (probe, 2026-06-23):**
-1. **The v2 `AudioComponent` bridge already hosts every v3 AU that also exposes v2** (the majority): a v3 AU
-   loads through the shipped `AudioUnitPlugin` via `AudioComponentInstanceNew`, with audio/params/state/CocoaUI
-   editor all working. So v3 support is **not** a new adapter — it's the genuinely-v3-only surface.
-2. **No v3 AU is installed on this Mac** (Apple ships none hostable; Surge/OldSkoolVerb are v2; `pluginkit`
-   shows no AUv3 extensions). **But `AUAudioUnit` wraps v2 components too** (`AUAudioUnitV2Bridge`), so the v3
-   code path is verifiable against `AULowpass`/Surge *wrapped as an `AUAudioUnit`* — only async-*required*
-   instantiation and out-of-process loading stay unverifiable here.
+**The facts that shape everything (probe, 2026-06-23):**
+1. **The v2 `AudioComponent` bridge already hosts every v3 AU that also exposes v2:** such a v3 AU loads through
+   the shipped `AudioUnitPlugin` via `AudioComponentInstanceNew`. So v3 support is **not** a new adapter — it's
+   the genuinely-v3-only surface.
+2. **Four real v3 AUs are installed** — `DimChorus`, `FakeTake`, `LevLr` (music4sport / Rob Jackson) and
+   `J_NO Chorus` (b3ll), **all effects (`aufx`)** — and **all are `RequiresAsync` = true and
+   `CanLoadInProcess` = false** (`sandbox-safe`). So they **cannot** load via the synchronous v2 bridge and
+   **cannot** load in-process: **async + out-of-process is the *required, primary* path**, not an opt-in edge.
+   This corrects an earlier assumption that OOP was redundant/optional — for the actual plugins we have it is
+   the only way to load them.
+3. **`AUAudioUnit` also wraps v2 components** (`AUAudioUnitV2Bridge`), giving an in-process synchronous target
+   (`AULowpass`/Surge) for exercising the `AUAudioUnit` API basics. **No v3 *instrument* is installed** (all
+   four are effects), so Plan B verifies against a v2-wrapped `DLSMusicDevice` until a v3 instrument appears.
 
 ---
 
@@ -46,16 +51,20 @@ the sandbox, the registry, and the Cocoa editor backend are all untouched.
   `AuAppKit`/`CoreFoundation` slices. `AUAudioUnit`/`AUParameter*`/`AVAudioFormat` are Obj-C classes messaged via
   `objc_msgSend`; no binding package. Audio stays **non-interleaved float32**, mapping straight onto the planar
   bus (an `AVAudioFormat` standard format is non-interleaved float).
-- **Route by the v3 flag; default in-process.** `Load` picks `AudioUnitV3Plugin` when
-  `componentFlags & kAudioComponentFlag_IsV3AudioUnit`. Instantiation defaults to **in-process**
-  (`kAudioComponentInstantiation_LoadInProcess`) — our own sandbox worker already provides crash isolation, so
-  the native **out-of-process** option (`LoadOutOfProcess`) is **supported but opt-in** (§11): it routes the
-  render block through Apple's XPC, whose latency/threading doesn't fit our lock-step model well, and it
-  duplicates isolation we already have.
-- **Verification against v2-wrapped-as-`AUAudioUnit`** (§6). The `AUAudioUnit` machinery is exercised end-to-end
-  against `AULowpass`/Surge wrapped by `AUAudioUnitV2Bridge`; genuinely-v3-only behaviors (async-required load,
-  OOP) self-skip until a real v3 AU is installed. Honest: the code is *proven for the API surface* but
-  *unproven against a true v3-only plugin* on this machine.
+- **Route by the v3 flag; honor the component's load flags.** `Load` picks `AudioUnitV3Plugin` when
+  `componentFlags & kAudioComponentFlag_IsV3AudioUnit`. Instantiation respects the flags: **out-of-process**
+  (`kAudioComponentInstantiation_LoadOutOfProcess`) when `CanLoadInProcess` is clear (which is the case for all
+  four installed v3 AUs), in-process otherwise; **always async** (`instantiateWithComponentDescription:options:
+  completionHandler:`) since the real units set `RequiresAsync`. The render block proxies to Apple's AU
+  extension host over XPC; our lock-step `Process` simply **invokes the block** (it blocks until the cross-process
+  render returns — acceptable for the offline/lock-step model; we measure the added latency in the spike). Our
+  sandbox worker still wraps all of this, so a v3 AU runs in Apple's extension process *and* under our worker —
+  doubled isolation, harmless.
+- **Verification against real v3 AUs + a v2-wrapped check** (§6). Plan A/C exercise the genuine async + OOP path
+  against the installed v3 effects (`DimChorus`/`FakeTake`/`LevLr`/`J_NO Chorus`); a v2-wrapped
+  `AULowpass`-as-`AUAudioUnit` adds an in-process synchronous check of the `AUAudioUnit` API basics. No v3
+  instrument is installed, so Plan B verifies against a v2-wrapped `DLSMusicDevice` (self-skipping the real-v3
+  instrument arm).
 - **arm64 only**, matching the rest of the adapter.
 
 ## 3. Invariants (regression guards)
@@ -135,17 +144,17 @@ the handler), `SetParent` adds that view under the host content view (the existi
 background), `TryGetSize` from the view's frame. AUs that vend no view controller fall back to the v2 path's
 `AUGenericView`. Rides the unchanged `EditorSession`.
 
-## 6. Verification — v2-wrapped-as-`AUAudioUnit` (no v3 plugin needed for the machinery)
+## 6. Verification — real v3 AUs (async + OOP) plus a v2-wrapped API check
 
 | Surface | Verified against | How |
 |---|---|---|
-| Async instantiation, renderBlock, params, state | `AULowpass` / Surge **wrapped by `AUAudioUnitV2Bridge`** | instantiate as `AUAudioUnit`, render a block (filter acts), sweep a param, round-trip `fullState` |
-| Instruments (Plan B) | Apple `DLSMusicDevice` wrapped as `AUAudioUnit` | a note via `scheduleMIDIEventBlock` renders non-silence |
-| Editor (Plan C) | `AULowpass`/Surge view controller via `requestViewController…` | child `NSView` embeds (`EmbeddedChildCount ≥ 1`) on the main-thread harness |
-| **v3-only:** async-*required* load, `LoadOutOfProcess` | a real v3 AU | **self-skips** — none installed; documented as unproven here |
+| **Async + OOP instantiation, renderBlock, params, state** | the real v3 effects (`DimChorus` etc.) | async-instantiate `LoadOutOfProcess`, render a block (the chorus audibly alters the signal), sweep a param, round-trip `fullState` |
+| `AUAudioUnit` API basics (in-process, sync) | `AULowpass` **wrapped by `AUAudioUnitV2Bridge`** | instantiate as `AUAudioUnit`, render (filter acts) — a fast non-XPC sanity path |
+| Instruments (Plan B) | Apple `DLSMusicDevice` **wrapped as `AUAudioUnit`** | a note via `scheduleMIDIEventBlock` renders non-silence (real-v3-instrument arm self-skips — none installed) |
+| Editor (Plan C) | a real v3 AU's view controller via `requestViewController…` | child `NSView` embeds (`EmbeddedChildCount ≥ 1`) on the main-thread harness |
 
-This is the honest split: the *entire `AUAudioUnit` API path* is provable against v2-wrapped units; only the
-truly-v3-only instantiation edges await a real v3 plugin (or Plan D's fixture).
+All four installed v3 AUs are effects, so the audio/editor paths get **real v3** coverage; only the v3
+*instrument* arm still waits on a v3 instrument (or Plan D's fixture).
 
 ## 7. Tests
 
@@ -186,9 +195,6 @@ v3 view controller embeds a child `NSView` through the unchanged `EditorSession`
 
 ## 11. Out of scope / opt-in
 
-- **Out-of-process (`LoadOutOfProcess`) loading** — supported as an opt-in flag but **off by default**: our
-  sandbox worker already isolates crashes, and routing `renderBlock` through Apple's XPC doesn't fit the
-  lock-step model. Documented, not default.
 - **`scheduleParameterBlock` sample-accurate automation** and `scheduleMIDIEventListBlock` (MIDI 2.0) — later
   refinements; `param.value` sets and 3-byte MIDI cover the host now.
 - **AUv3 user presets / `AUAudioUnitPreset`** beyond `fullState` — later.
@@ -196,15 +202,16 @@ v3 view controller embeds a child `NSView` through the unchanged `EditorSession`
 
 ## 12. Open items / risks (Task 0 spike de-risks first)
 
-- **Prove the block ABI end-to-end** (the load-bearing spike): construct a completion block and async-instantiate
-  `AULowpass` as an `AUAudioUnit`; construct a `pullInputBlock`; read and **invoke** the `renderBlock` with it;
-  confirm filtered output. Confirm the block layout (invoke @16, context @32), `_NSConcreteGlobalBlock`/
-  `_NSConcreteStackBlock` symbol, and `AudioComponentInstantiationOptions` values against the runtime. This one
-  spike validates instantiation + render + block construction before Plan A's real code.
-- Confirm `AUAudioUnitV2Bridge` exposes `parameterTree`, `fullState`, and a view controller for a v2 unit (the
-  verification strategy depends on it).
+- **Prove the block ABI + async/OOP path end-to-end** (the load-bearing spike): construct a completion block and
+  async-instantiate **`DimChorus`** (a real v3 effect, `LoadOutOfProcess`); construct a `pullInputBlock`; read
+  and **invoke** the `renderBlock` with it; confirm the chorus alters the signal. Also run the faster in-process
+  **v2-wrapped `AULowpass`** variant. Confirm the block layout (invoke @16, context @32), the
+  `_NSConcreteGlobalBlock`/`_NSConcreteStackBlock` symbol, and the `AudioComponentInstantiationOptions` values
+  against the runtime, and **measure the OOP `renderBlock` latency** (does an XPC-proxied render fit the
+  lock-step block budget?).
+- Confirm `parameterTree` + `fullState` on a real v3 AU (`DimChorus`) and on a v2-wrapped unit.
 - Confirm `requestViewControllerWithCompletionHandler:` returns a usable `NSViewController.view` on the main
-  thread for a v2-wrapped unit.
+  thread for a real v3 AU.
 
 ## 13. Plan breakdown (coherent slices)
 
@@ -213,6 +220,7 @@ v3 view controller embeds a child `NSView` through the unchanged `EditorSession`
 - **Plan B — v3 instruments** (`…au-v3-instruments.md`): `scheduleMIDIEventBlock`, no input bus. Small after A.
 - **Plan C — v3 editor** (`…au-v3-editor.md`): `requestViewControllerWithCompletionHandler:` riding the existing
   Cocoa backend; generic fallback.
-- **Plan D — clean-room v3 fixture** (optional, `…au-v3-fixture.md`): a minimal AUv3 app-extension to give true
-  v3-only verification. Heavy (app bundle + Info.plist extension point + signing + registration); only if real
-  v3-only proof is wanted before a third-party v3 AU is available.
+- **Plan D — clean-room v3 fixture** (optional, deferred, `…au-v3-fixture.md`): a minimal AUv3 app-extension —
+  now needed **only for a v3 *instrument*** (the four installed v3 AUs are effects, so Plan A/C already get real
+  v3 coverage; only Plan B's real-v3-instrument arm lacks a target). Heavy (app bundle + Info.plist extension
+  point + signing + registration); skip unless a v3 instrument arm specifically needs proving.
