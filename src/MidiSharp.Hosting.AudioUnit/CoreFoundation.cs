@@ -12,6 +12,7 @@ internal static unsafe class CoreFoundation
 {
     private const string Lib = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation";
     private const uint Utf8 = 0x08000100;   // kCFStringEncodingUTF8
+    private const nint BinaryPlist = 200;   // kCFPropertyListBinaryFormat_v1_0
 
     [DllImport(Lib)] public static extern void CFRelease(IntPtr cf);
     [DllImport(Lib)] private static extern byte CFStringGetCString(IntPtr str, byte* buffer, nint bufferSize, uint encoding);
@@ -25,6 +26,9 @@ internal static unsafe class CoreFoundation
     [DllImport(Lib)] private static extern nuint CFStringGetTypeID();
     [DllImport(Lib)] private static extern nuint CFArrayGetTypeID();
     [DllImport(Lib)] private static extern nuint CFDictionaryGetTypeID();
+    [DllImport(Lib)] private static extern IntPtr CFPropertyListCreateData(IntPtr alloc, IntPtr plist, nint format, nuint options, out IntPtr error);
+    [DllImport(Lib)] private static extern nint CFDataGetLength(IntPtr data);
+    [DllImport(Lib)] private static extern byte* CFDataGetBytePtr(IntPtr data);
 
     /// <summary>Copy a <c>CFStringRef</c> into a managed string. Returns empty for null, a non-string object
     /// (plist values may be numbers/data — calling CFStringGetCString on those traps), or conversion failure.</summary>
@@ -53,6 +57,22 @@ internal static unsafe class CoreFoundation
 
     public static bool IsDictionary(IntPtr cf) => cf != IntPtr.Zero && CFGetTypeID(cf) == CFDictionaryGetTypeID();
     public static bool IsArray(IntPtr cf) => cf != IntPtr.Zero && CFGetTypeID(cf) == CFArrayGetTypeID();
+
+    /// <summary>Serialize a property list (e.g. a unit's <c>ClassInfo</c> dictionary) to a binary-plist byte
+    /// array. Empty on failure.</summary>
+    public static byte[] ToData(IntPtr plist)
+    {
+        if (plist == IntPtr.Zero) return [];
+        IntPtr data = CFPropertyListCreateData(IntPtr.Zero, plist, BinaryPlist, 0, out IntPtr error);
+        if (error != IntPtr.Zero) CFRelease(error);
+        if (data == IntPtr.Zero) return [];
+        try
+        {
+            var len = (int)CFDataGetLength(data);
+            return new ReadOnlySpan<byte>(CFDataGetBytePtr(data), len).ToArray();
+        }
+        finally { CFRelease(data); }
+    }
 
     /// <summary>Look up a value in a <c>CFDictionary</c> by a string key (borrowed reference — do not release).</summary>
     public static IntPtr DictGet(IntPtr dict, string key)

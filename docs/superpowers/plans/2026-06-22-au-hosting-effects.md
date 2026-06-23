@@ -105,12 +105,14 @@ render-shim spike) gates the rest** — do not write adapter code until the shim
 - [x] **Test** `Sweeping_the_cutoff_parameter_changes_the_filter_output`: 1 kHz passes at the default cutoff,
       then dropping the cutoff parameter to its minimum attenuates it (< 0.5×). Hosting suite 31→32; solution 0/0.
 
-## Task 5 — State
+## Task 5 — State  ✅ 2026-06-22
 
-- [ ] `SaveState`: `AudioUnitGetProperty(ClassInfo)` → `CFPropertyListCreateData(binary)` → bytes (empty if
-      absent). `LoadState`: bytes → `CFPropertyListCreateWithData` → `AudioUnitSetProperty(ClassInfo)`. `CFRelease`
-      everything.
-- [ ] **Test:** set a parameter, `SaveState`, change it, `LoadState`, assert the parameter restored. Commit.
+- [x] `SaveState`: `AudioUnitGetProperty(ClassInfo)` (get-rule dict, we own it) → `CoreFoundation.ToData`
+      (`CFPropertyListCreateData` binary plist) → bytes; `[]` when absent. `LoadState`: bytes →
+      `CreatePropertyList` → type-check it's a dictionary → `AudioUnitSetProperty(ClassInfo)`. Every CF object
+      released. `CoreFoundation.cs` grew the `CFPropertyListCreateData`/`CFDataGetLength`/`CFDataGetBytePtr` calls.
+- [x] **Test** `State_round_trips_through_classinfo`: set the cutoff to 0.7, `SaveState` (non-empty), move it to
+      0.1, `LoadState`, assert the cutoff is restored (~0.7, within 0.05). Hosting suite 32→33; solution 0/0.
 
 ## Task 6 — Registry wiring + acceptance
 

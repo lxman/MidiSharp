@@ -173,9 +173,24 @@ public sealed unsafe class AudioUnitPlugin : IHostedPlugin
         AudioUnitSetParameter(_au, _paramIds[index], ScopeGlobal, 0, v, 0);
     }
 
-    // State: not yet wired (Task 5). [] is the IHostedPlugin "unsupported" return.
-    public byte[] SaveState() => [];
-    public void LoadState(ReadOnlySpan<byte> state) { }
+    // State = the unit's ClassInfo dictionary (its parameters/preset), serialized as a binary plist.
+    public byte[] SaveState()
+    {
+        IntPtr plist;
+        uint size = (uint)IntPtr.Size;
+        if (AudioUnitGetProperty(_au, PropClassInfo, ScopeGlobal, 0, &plist, &size) != 0 || plist == IntPtr.Zero) return [];
+        try { return CoreFoundation.ToData(plist); }     // the get-rule ClassInfo dict is owned by us
+        finally { CoreFoundation.CFRelease(plist); }
+    }
+
+    public void LoadState(ReadOnlySpan<byte> state)
+    {
+        if (state.IsEmpty) return;
+        IntPtr plist = CoreFoundation.CreatePropertyList(state);
+        if (!CoreFoundation.IsDictionary(plist)) { if (plist != IntPtr.Zero) CoreFoundation.CFRelease(plist); return; }
+        try { AudioUnitSetProperty(_au, PropClassInfo, ScopeGlobal, 0, &plist, (uint)IntPtr.Size); }
+        finally { CoreFoundation.CFRelease(plist); }
+    }
 
     public void Dispose()
     {

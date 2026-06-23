@@ -102,6 +102,33 @@ public sealed unsafe class AudioUnitTests
         }
     }
 
+    [Fact]
+    public void State_round_trips_through_classinfo()
+    {
+        Assert.SkipWhen(!OperatingSystem.IsMacOS(), "Audio Units are macOS-only.");
+
+        var format = new AudioUnitFormat();
+        PluginDescriptor lowpass = format.Scan(format.DefaultSearchPaths)
+            .First(d => d.Id.StartsWith("aufx:lpas", StringComparison.Ordinal));
+        using IHostedPlugin plugin = format.Load(lowpass, new AudioConfig(48000, 512, 2));
+
+        int cutoff = plugin.Parameters
+            .FirstOrDefault(p => p.Name.Contains("cutoff", StringComparison.OrdinalIgnoreCase))?.Index ?? 0;
+
+        plugin.SetParameter(cutoff, 0.7);
+        double saved = plugin.GetParameter(cutoff);
+
+        byte[] state = plugin.SaveState();
+        Assert.NotEmpty(state);
+
+        plugin.SetParameter(cutoff, 0.1);
+        Assert.True(plugin.GetParameter(cutoff) < saved - 0.2, "the parameter should have moved away before reload.");
+
+        plugin.LoadState(state);
+        Assert.True(Math.Abs(plugin.GetParameter(cutoff) - saved) < 0.05,
+            $"ClassInfo should restore the cutoff (got {plugin.GetParameter(cutoff):F3}, expected ~{saved:F3}).");
+    }
+
     // Render 16 blocks of a sine (phase-continuous across blocks) so the filter settles; return the last block's
     // output RMS on channel 0.
     private static double RenderTone(IHostedPlugin plugin, PlanarBuffers input, PlanarBuffers output,
