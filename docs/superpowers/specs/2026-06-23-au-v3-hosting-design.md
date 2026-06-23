@@ -28,6 +28,24 @@ shares that adapter's discovery and `IHostedPlugin`/`IPluginGui` seams and **add
 
 ---
 
+> ## ⚠ Spike outcome (2026-06-23) — design simplified; supersedes §2/§5 below
+>
+> The Plan A Task 0 spike proved a far simpler reality, so the `AUAudioUnit`-object design drafted in §2/§5 is
+> **not** what gets built:
+> - **`AudioComponentInstantiate` (async, one global completion block) + the existing v2 C API drives v3 AUs**,
+>   in- and out-of-process. `AudioUnitRender`, the input render callback, the parameter C-API, `ClassInfo` state,
+>   and `MusicDeviceMIDIEvent` all work over Apple's bridge. So **audio/params/state/MIDI need no new code** —
+>   the shipped `AudioUnitPlugin` is reused verbatim; `Load` just gains an **async-load branch**.
+> - **OOP render latency is ~18 µs / 10.67 ms block (0.2%)** — the XPC concern is moot.
+> - **`CocoaUI` is absent for v3 AUs**, so the **editor** (`requestViewControllerWithCompletionHandler:`, the one
+>   piece needing the `AUAudioUnit` Obj-C object) is the only genuinely-v3 work.
+>
+> Net: **no `AudioUnitV3Plugin`, no `renderBlock`/`pullInputBlock`/`AUParameterTree`/`fullState` Obj-C, no
+> `scheduleMIDIEventBlock`.** The block ABI shrinks to one completion block. **Plan A** = async-load branch (+
+> the completion block); v3 effects **and** instruments come for free over the bridge. **Plan B** = the v3
+> editor. The current authoritative tasks live in the **plan files**; §2/§5 are kept for the record only. See
+> `plans/2026-06-23-au-v3-core.md` Task 0 for the measured spike results.
+
 ## 1. Where it plugs in
 
 Discovery is **already shared and v3-aware**: `AudioComponentFindNext` (in `AudioUnitFormat.Scan`) enumerates v3
@@ -215,13 +233,17 @@ v3 view controller embeds a child `NSView` through the unchanged `EditorSession`
 - Confirm `requestViewControllerWithCompletionHandler:` returns a usable `NSViewController.view` on the main
   thread for a real v3 AU.
 
-## 13. Plan breakdown (coherent slices)
+## 13. Plan breakdown (post-spike — two slices)
 
-- **Plan A — v3 core** (`…au-v3-core.md`): `AuBlocks` + the **Task 0 block spike**, async instantiation, the
-  render-block audio path, parameters, state. The risky, load-bearing slice.
-- **Plan B — v3 instruments** (`…au-v3-instruments.md`): `scheduleMIDIEventBlock`, no input bus. Small after A.
-- **Plan C — v3 editor** (`…au-v3-editor.md`): `requestViewControllerWithCompletionHandler:` riding the existing
-  Cocoa backend; generic fallback.
+- **Plan A — v3 async instantiation** (`…au-v3-core.md`): the async-load branch in `AudioUnitFormat.Load` (one
+  completion block + `AudioComponentInstantiate`), routing v3 components through the **existing**
+  `AudioUnitPlugin`. v3 **effects and instruments** both come over the bridge — verified against `DimChorus`
+  (OOP) and `AudMod` (in-process). Task 0 spike **done**.
+- **Plan B — v3 editor** (`…au-v3-editor.md`): `requestViewControllerWithCompletionHandler:` via the `AUAudioUnit`
+  object (since `CocoaUI` is absent for v3), riding the existing Cocoa backend; `AUGenericView` fallback. The
+  only genuinely-v3-specific implementation.
+- ~~Plan C — instruments~~: **folded into Plan A** — v3 instruments need nothing beyond the async-load branch
+  (`MusicDeviceMIDIEvent` already works over the bridge). ~~Plan D fixture~~: dropped (real v3 targets installed).
 - ~~**Plan D — clean-room v3 fixture**~~ — **not needed.** Real v3 targets now cover every slice (effects for
   Plan A, the `AudMod` instrument for Plan B, view controllers for Plan C), and both load profiles
   (in-process + out-of-process). Dropped.
