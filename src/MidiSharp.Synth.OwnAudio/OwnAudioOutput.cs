@@ -70,8 +70,9 @@ public sealed class OwnAudioOutput : IAudioOutput
     /// <param name="bufferSizeFrames">Audio engine buffer size in frames; smaller = lower latency.</param>
     /// <param name="outputDeviceId">
     /// Output device id from <see cref="GetOutputDevices"/> (an <c>AudioDeviceInfo.DeviceId</c>),
-    /// or null for the system default. Applied via <c>SetOutputDeviceByName</c> after engine init
-    /// and before start (OwnAudio ignores <c>AudioConfig.OutputDeviceId</c> at Initialize).
+    /// or null for the system default. We select it ourselves (by id→index) after engine init and
+    /// before start, rather than via <c>AudioConfig.OutputDeviceId</c>, to get a deterministic match
+    /// and a fail-fast error instead of OwnAudio's silent fall-back to the default device.
     /// </param>
     public OwnAudioOutput(int sampleRate = 44100, int channels = 2, int bufferSizeFrames = 1024, string? outputDeviceId = null)
     {
@@ -82,7 +83,7 @@ public sealed class OwnAudioOutput : IAudioOutput
     }
 
     /// <summary>A selectable audio output device — a leak-free view of OwnAudio's AudioDeviceInfo.</summary>
-    public sealed record OutputDevice(string Id, string Name, string EngineName, bool IsDefault);
+    public sealed record OutputDevice(string Id, string Name, string EngineName, bool IsDefault, double DefaultSampleRate);
 
     /// <summary>
     /// Enumerate the available audio output devices. The OwnAudio engine must be
@@ -113,7 +114,7 @@ public sealed class OwnAudioOutput : IAudioOutput
                 foreach (AudioDeviceInfo d in OwnaudioNet.GetOutputDevices())
                 {
                     if (!d.IsOutput) continue;
-                    devices.Add(new OutputDevice(d.DeviceId, d.Name, d.EngineName, d.IsDefault));
+                    devices.Add(new OutputDevice(d.DeviceId, d.Name, d.EngineName, d.IsDefault, d.DefaultSampleRate));
                 }
                 return devices;
             }
@@ -132,14 +133,14 @@ public sealed class OwnAudioOutput : IAudioOutput
     /// pipeline should then run at. Deterministic where possible (we ask the device, not guess):
     /// <list type="bullet">
     /// <item><b>PortAudio</b> (device id is a bare index, e.g. "23") is exact-format with no implicit
-    /// resampling, so we read the device's advertised <c>defaultSampleRate</c> via PortAudio directly
-    /// and return it — the pipeline runs there with zero resampling.</item>
+    /// resampling, so we use the device's advertised native rate (<c>AudioDeviceInfo.DefaultSampleRate</c>)
+    /// — the pipeline runs there with zero resampling.</item>
     /// <item><b>MiniAudio</b> (device id "ma_output_N") opens shared-mode with a built-in converter, so
     /// any device accepts <paramref name="preferred"/> (MiniAudio resamples internally to the device's
     /// native rate) — we just return <paramref name="preferred"/>.</item>
     /// </list>
-    /// Falls back to an empirical probe only if the PortAudio query is unavailable (e.g. the bundled
-    /// library can't be reached), and to <paramref name="preferred"/> if even that can't run.
+    /// Falls back to an empirical probe only if the advertised rate can't be read, and to
+    /// <paramref name="preferred"/> if even that can't run.
     /// </summary>
     /// <remarks>Only call when no audio is playing (the fallback probe transiently opens the engine).</remarks>
     public static int NegotiateSampleRate(string outputDeviceId, int preferred)
@@ -147,14 +148,22 @@ public sealed class OwnAudioOutput : IAudioOutput
         if (string.IsNullOrEmpty(outputDeviceId)) return preferred;
 
         // MiniAudio device ids look like "ma_output_N"; PortAudio's are bare device indices. Only the
-        // PortAudio path needs (and can answer) a rate query — MiniAudio converts internally.
-        if (!int.TryParse(outputDeviceId, out int paDeviceIndex))
+        // PortAudio path needs a specific rate — MiniAudio converts internally.
+        if (!int.TryParse(outputDeviceId, out _))
             return preferred;
 
-        int queried = PortAudioInterop.TryGetDefaultSampleRate(paDeviceIndex);
-        if (queried > 0) return queried;
+        // OwnAudio 3.1.7+ surfaces the device's native rate on AudioDeviceInfo.DefaultSampleRate
+        // (populated from PortAudio's PaDeviceInfo.defaultSampleRate during enumeration). Read it
+        // straight off the enumerated device — no direct PortAudio P/Invoke needed.
+        foreach (OutputDevice d in GetOutputDevices())
+        {
+            if (d.Id != outputDeviceId) continue;
+            int rate = (int)Math.Round(d.DefaultSampleRate);
+            if (rate > 0) return rate;
+            break;   // found the device but it advertised no usable rate → probe
+        }
 
-        // Query unavailable (library/init failure): fall back to the empirical probe, then preferred.
+        // Rate unavailable (not advertised, or device vanished since): empirical probe, then preferred.
         return ProbeSampleRate(outputDeviceId, preferred);
     }
 
@@ -211,69 +220,6 @@ public sealed class OwnAudioOutput : IAudioOutput
         }
     }
 
-    // Direct PortAudio query for a device's advertised native rate. PortAudio (bundled with the app by
-    // OwnAudioSharp at runtimes/&lt;rid&gt;/native/libportaudio) populates PaDeviceInfo.defaultSampleRate
-    // from the device's mix format during enumeration — i.e. it already made the WASAPI GetMixFormat call
-    // we'd otherwise make ourselves. We bind the same library by name (resolving to the same loaded
-    // module OwnAudio uses) and read it. Pa_Initialize is reference-counted, so our transient init/term
-    // pair coexists with OwnAudio's engine. All-or-nothing: any failure (wrong backend, lib missing,
-    // not initialized) returns 0 and the caller falls back to the probe.
-    private static class PortAudioInterop
-    {
-        private const string Lib = "libportaudio";
-
-        [DllImport(Lib)] private static extern int Pa_Initialize();
-        [DllImport(Lib)] private static extern int Pa_Terminate();
-        [DllImport(Lib)] private static extern int Pa_GetDeviceCount();
-        [DllImport(Lib)] private static extern IntPtr Pa_GetDeviceInfo(int device);
-
-        // Layout must match PortAudio's PaDeviceInfo exactly (see OwnAudio's PaBinding.PaDeviceInfo).
-        [StructLayout(LayoutKind.Sequential)]
-        private struct PaDeviceInfo
-        {
-            public int StructVersion;
-            public IntPtr Name;                       // const char*
-            public int HostApi;
-            public int MaxInputChannels;
-            public int MaxOutputChannels;
-            public double DefaultLowInputLatency;
-            public double DefaultLowOutputLatency;
-            public double DefaultHighInputLatency;
-            public double DefaultHighOutputLatency;
-            public double DefaultSampleRate;
-        }
-
-        /// <summary>The device's advertised default sample rate, or 0 if it can't be read.</summary>
-        public static int TryGetDefaultSampleRate(int deviceIndex)
-        {
-            // Serialize against OwnAudio's own engine init/enumeration (shared process-wide PortAudio
-            // state); only query when the engine isn't live.
-            lock (s_initLock)
-            {
-                if (s_initRefCount != 0) return 0;
-                bool initialized = false;
-                try
-                {
-                    if (Pa_Initialize() != 0) return 0;   // paNoError == 0
-                    initialized = true;
-                    if (deviceIndex < 0 || deviceIndex >= Pa_GetDeviceCount()) return 0;
-                    IntPtr p = Pa_GetDeviceInfo(deviceIndex);
-                    if (p == IntPtr.Zero) return 0;
-                    PaDeviceInfo info = Marshal.PtrToStructure<PaDeviceInfo>(p);
-                    int rate = (int)Math.Round(info.DefaultSampleRate);
-                    return rate > 0 ? rate : 0;
-                }
-                catch (DllNotFoundException) { return 0; }       // MiniAudio-only build / lib missing
-                catch (EntryPointNotFoundException) { return 0; }
-                catch { return 0; }
-                finally
-                {
-                    if (initialized) { try { Pa_Terminate(); } catch { /* best-effort */ } }
-                }
-            }
-        }
-    }
-
     /// <inheritdoc />
     public void SetCallback(AudioCallback callback)
     {
@@ -305,11 +251,12 @@ public sealed class OwnAudioOutput : IAudioOutput
         if (!_isPlaying) return;
         _isPlaying = false;
 
-        // Disable + drain the callback FIRST. OwnAudio's mix thread isn't joined by Stop()/Dispose(),
-        // so without this an in-flight callback could keep reading the synth's memory-mapped SoundFont
-        // after the caller disposes it — a native use-after-free (AccessViolationException) that takes
-        // down the process. Once DrainCallbacks() returns, the callback can never run again, so the
-        // caller is free to tear down the synth/session even though the mix thread may briefly linger.
+        // Disable + drain the callback FIRST. As of OwnAudio 3.1.7, AudioMixer.Stop() joins the mix
+        // thread (2s timeout), so this is no longer the only guard — but we keep it as targeted
+        // defense-in-depth: once DrainCallbacks() returns, no in-flight callback can still be reading the
+        // synth's memory-mapped SoundFont, so the caller can tear down the synth/session immediately
+        // without a native use-after-free (AccessViolationException), independent of the mixer's join
+        // timeout (and the mix thread may still briefly linger).
         try { _source?.DrainCallbacks(); } catch { }
 
         try { _source?.Stop(); } catch { }

@@ -16,7 +16,7 @@
     <!-- Compile-only: MidiSharp.Synth is bundled inside the MidiSharp package, so reference it for
          compilation but keep it out of this package's dependency list (PrivateAssets=all). -->
     <ProjectReference Include="..\MidiSharp.Synth\MidiSharp.Synth.csproj" PrivateAssets="all" />
-    <PackageReference Include="OwnAudioSharp.Basic" Version="3.1.3" />
+    <PackageReference Include="OwnAudioSharp.Basic" Version="3.1.7" />
   </ItemGroup>
 
   <ItemGroup>

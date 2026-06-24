@@ -20,11 +20,12 @@ internal sealed class SynthCallbackSource(int sampleRate, int channels) : BaseAu
     };
     private float[] _temp = [];
 
-    // Teardown gate. OwnAudio's mix thread isn't joined on Stop() (AudioMixer.Stop just flips a flag),
-    // so a ReadSamples call can be mid-Callback when the host tears playback down — and the callback
-    // reads memory-mapped SoundFont samples that Stop disposes. Reading those after the mmap is
-    // released is a native use-after-free (AccessViolationException). _cbGate serializes the callback
-    // against teardown; _stopping permanently blocks further callbacks once teardown begins.
+    // Teardown gate. OwnAudio 3.1.7's AudioMixer.Stop() now joins the mix thread, but we keep this gate
+    // as targeted defense-in-depth: a ReadSamples call can be mid-Callback when the host tears playback
+    // down, and the callback reads memory-mapped SoundFont samples that Stop disposes. Reading those
+    // after the mmap is released is a native use-after-free (AccessViolationException). _cbGate serializes
+    // the callback against teardown; _stopping permanently blocks further callbacks once teardown begins
+    // — so the host can dispose immediately without depending on the mixer's join timeout.
     private readonly object _cbGate = new();
     private volatile bool _stopping;
 
