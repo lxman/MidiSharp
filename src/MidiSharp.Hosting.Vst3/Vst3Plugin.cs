@@ -411,7 +411,11 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
         if (_processor != null) Release(_processor);
         if (_component != null) Release(_component);
         _controller = _processor = _component = _factory = null;
-        if (_lib != IntPtr.Zero) NativeLibrary.Free(_lib);
+        if (_lib != IntPtr.Zero)
+        {
+            Vst3Format.RunModuleExit(_lib);   // pairs RunModuleInit: shut the module's runtime down before FreeLibrary
+            NativeLibrary.Free(_lib);
+        }
     }
 
     private void BuildParameters()

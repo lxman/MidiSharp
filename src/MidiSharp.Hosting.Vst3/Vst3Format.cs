@@ -180,6 +180,7 @@ public sealed unsafe class Vst3Format : IPluginFormat
         }
         catch
         {
+            RunModuleExit(lib);   // pair the RunModuleInit above before unloading (symmetry on the failure path)
             NativeLibrary.Free(lib);
             throw;
         }
@@ -211,5 +212,21 @@ public sealed unsafe class Vst3Format : IPluginFormat
         }
         else if (NativeLibrary.TryGetExport(lib, "ModuleEntry", out IntPtr entry))
             ((delegate* unmanaged[Cdecl]<void*, byte>)entry)(null);
+    }
+
+    // The teardown counterpart to RunModuleInit — run the module's exit export right before the library is
+    // freed. VST3 pairs them: Windows InitDll()/ExitDll(), Linux ModuleEntry()/ModuleExit() (the exit takes
+    // no handle). A plugin that starts a runtime in its init (e.g. NDI Output spins up the NDI runtime)
+    // crashes when FreeLibrary unloads the module with that runtime still live, so the exit must run first
+    // to shut it down. (macOS bundleExit lands with the Cocoa backend.)
+    internal static void RunModuleExit(IntPtr lib)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            if (NativeLibrary.TryGetExport(lib, "ExitDll", out IntPtr exit))
+                ((delegate* unmanaged[Cdecl]<byte>)exit)();
+        }
+        else if (NativeLibrary.TryGetExport(lib, "ModuleExit", out IntPtr exit))
+            ((delegate* unmanaged[Cdecl]<byte>)exit)();
     }
 }
