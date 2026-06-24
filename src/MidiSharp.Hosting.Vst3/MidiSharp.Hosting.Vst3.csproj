@@ -20,4 +20,8 @@
     <ProjectReference Include="..\MidiSharp.Hosting\MidiSharp.Hosting.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="MidiSharp.Hosting.Tests" />
+  </ItemGroup>
+
 </Project>

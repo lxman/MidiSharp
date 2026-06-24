@@ -63,7 +63,19 @@ internal static unsafe class Vst3Host
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    private static int HostCreateInstance(void* self, byte* cid, byte* iid, void** obj) { *obj = null; return NoInterface; }
+    private static int HostCreateInstance(void* self, byte* cid, byte* iid, void** obj)
+    {
+        // The component↔controller messaging system: a plugin asks the host to manufacture an IMessage (which
+        // carries an IAttributeList). Plugins that use messaging to set up their controller/editor fault
+        // without this — we used to return kNoInterface for everything. See Vst3HostMessage.
+        if (IidEq(cid, IidMessage) && (IidEq(iid, IidMessage) || IidEq(iid, IidFUnknown)))
+        {
+            *obj = Vst3HostMessage.Create();
+            return ResultOk;
+        }
+        *obj = null;
+        return NoInterface;
+    }
 
     // ── IComponentHandler ──
     private static IntPtr BuildComponentHandler()

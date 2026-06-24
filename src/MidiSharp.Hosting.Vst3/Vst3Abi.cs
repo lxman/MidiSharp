@@ -42,6 +42,8 @@ internal static unsafe class Vst3Abi
     public static readonly byte[] IidBStream = Uid(0xC3BF6EA2, 0x30994752, 0x9B6BF990, 0x1EE33E9B);
     public static readonly byte[] IidEventList = Uid(0x3A2C4214, 0x346349FE, 0xB2C4F397, 0xB9695A44);
     public static readonly byte[] IidConnectionPoint = Uid(0x70A4156F, 0x6E6E4026, 0x989148BF, 0xAA60D8D1);
+    public static readonly byte[] IidMessage = Uid(0x936F033B, 0xC6C047DB, 0xBB0882F8, 0x13C1E613);
+    public static readonly byte[] IidAttributeList = Uid(0x1E5F0AEB, 0xCC7F4533, 0xA2544011, 0x38AD5EE4);
     public static readonly byte[] IidPlugView = Uid(0x5BC32507, 0xD06049EA, 0xA6151B52, 0x2B755B29);
     public static readonly byte[] IidPlugFrame = Uid(0x367FAF01, 0xAFA94693, 0x8D4DA2A0, 0xED0882A3);
     public static readonly byte[] IidRunLoop = Uid(0x18C35366, 0x97764F1A, 0x9C5B8385, 0x7A871389);
@@ -162,6 +164,34 @@ internal static unsafe class Vst3Abi
         public IntPtr QueryInterface, AddRef, Release;
         public delegate* unmanaged[Cdecl]<void*, void*, int> Connect, Disconnect;
         public IntPtr Notify;
+    }
+
+    // IMessage + IAttributeList — these the host IMPLEMENTS and hands to the plugin from createInstance (the
+    // component↔controller messaging objects). Vst3HostMessage builds the objects; these typed vtables match
+    // its layout exactly, so the same objects can also be called (e.g. from tests).
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MessageVtbl
+    {
+        public delegate* unmanaged[Cdecl]<void*, byte*, void**, int> QueryInterface;
+        public delegate* unmanaged[Cdecl]<void*, uint> AddRef, Release;
+        public delegate* unmanaged[Cdecl]<void*, byte*> GetMessageId;          // returns FIDString (ASCII)
+        public delegate* unmanaged[Cdecl]<void*, byte*, void> SetMessageId;
+        public delegate* unmanaged[Cdecl]<void*, void*> GetAttributes;         // returns IAttributeList*
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct AttributeListVtbl
+    {
+        public delegate* unmanaged[Cdecl]<void*, byte*, void**, int> QueryInterface;
+        public delegate* unmanaged[Cdecl]<void*, uint> AddRef, Release;
+        public delegate* unmanaged[Cdecl]<void*, byte*, long, int> SetInt;     // id is ASCII; string values are UTF-16
+        public delegate* unmanaged[Cdecl]<void*, byte*, long*, int> GetInt;
+        public delegate* unmanaged[Cdecl]<void*, byte*, double, int> SetFloat;
+        public delegate* unmanaged[Cdecl]<void*, byte*, double*, int> GetFloat;
+        public delegate* unmanaged[Cdecl]<void*, byte*, char*, int> SetString;
+        public delegate* unmanaged[Cdecl]<void*, byte*, char*, uint, int> GetString;
+        public delegate* unmanaged[Cdecl]<void*, byte*, void*, uint, int> SetBinary;
+        public delegate* unmanaged[Cdecl]<void*, byte*, void**, uint*, int> GetBinary;
     }
 
     [StructLayout(LayoutKind.Sequential)]

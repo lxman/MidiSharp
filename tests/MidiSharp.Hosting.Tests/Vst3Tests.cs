@@ -1,9 +1,11 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using MidiSharp.Hosting.EditorHost;
 using MidiSharp.Hosting.Vst3;
 using Xunit;
+using static MidiSharp.Hosting.Vst3.Vst3Abi;
 
 namespace MidiSharp.Hosting.Tests;
 
@@ -243,5 +245,64 @@ public sealed class Vst3Tests
         _out.WriteLine($"note rms={rms:F4} freq={hz:F1}");
         Assert.True(rms > 0.1, $"the note should sound through the event list (rms {rms:F4}).");
         Assert.True(Math.Abs(hz - 440.0) < 5.0, $"A4 should sound at ~440 Hz (measured {hz:F1}).");
+    }
+
+    [Fact]
+    public unsafe void Host_message_round_trips_every_attribute_type_and_frees_on_release()
+    {
+        // The component↔controller messaging objects the host now manufactures from createInstance (the gap
+        // that broke advanced VST3 editors). Drive one through its own vtable exactly as a plugin would: the
+        // message id and every attribute type round-trip, and the ref-counted lifetime frees cleanly. Pure
+        // ABI/storage/lifetime check — no plugin needed, runs on every platform.
+        void* msg = Vst3HostMessage.Create();
+        Assert.True(msg != null);
+        var mv = (MessageVtbl*)*(void**)msg;
+
+        fixed (byte* id = "NDIState\0"u8.ToArray()) mv->SetMessageId(msg, id);
+        Assert.Equal("NDIState", Marshal.PtrToStringAnsi((IntPtr)mv->GetMessageId(msg)));
+
+        void* attr = mv->GetAttributes(msg);
+        Assert.True(attr != null);
+        var av = (AttributeListVtbl*)*(void**)attr;
+
+        fixed (byte* k = "i"u8.ToArray())
+        {
+            Assert.Equal(ResultOk, av->SetInt(attr, k, 0x1122334455L));
+            long got; Assert.Equal(ResultOk, av->GetInt(attr, k, &got)); Assert.Equal(0x1122334455L, got);
+        }
+        fixed (byte* k = "f"u8.ToArray())
+        {
+            av->SetFloat(attr, k, 0.75);
+            double got; Assert.Equal(ResultOk, av->GetFloat(attr, k, &got)); Assert.Equal(0.75, got);
+        }
+        fixed (byte* k = "s"u8.ToArray())
+        fixed (char* sv = "héllo")   // non-ASCII to confirm UTF-16 handling
+        {
+            av->SetString(attr, k, sv);
+            char* buf = stackalloc char[16];
+            Assert.Equal(ResultOk, av->GetString(attr, k, buf, 16));
+            Assert.Equal("héllo", new string(buf));
+        }
+        fixed (byte* k = "b"u8.ToArray())
+        {
+            byte[] payload = [1, 2, 3, 4, 250];
+            fixed (byte* pv = payload) av->SetBinary(attr, k, pv, (uint)payload.Length);
+            void* data; uint size;
+            Assert.Equal(ResultOk, av->GetBinary(attr, k, &data, &size));
+            Assert.Equal((uint)payload.Length, size);
+            var got = new byte[size];
+            Marshal.Copy((IntPtr)data, got, 0, (int)size);
+            Assert.Equal(payload, got);
+        }
+        fixed (byte* k = "absent"u8.ToArray())
+        {
+            long got; Assert.NotEqual(ResultOk, av->GetInt(attr, k, &got));   // missing key → not OK
+        }
+
+        // FUnknown lifetime: addRef → 2, release → 1, release → 0 frees the message + its attribute list + the
+        // native buffers (must not crash or leak).
+        Assert.Equal(2u, mv->AddRef(msg));
+        Assert.Equal(1u, mv->Release(msg));
+        Assert.Equal(0u, mv->Release(msg));
     }
 }
