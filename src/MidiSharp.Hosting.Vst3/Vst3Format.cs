@@ -162,6 +162,7 @@ public sealed unsafe class Vst3Format : IPluginFormat
         IntPtr lib = NativeLibrary.Load(descriptor.Path);
         try
         {
+            RunModuleInit(lib);   // initialize the module before hosting — editors and other deep features need it
             void* factory = GetFactory(lib);
             if (factory == null) throw new InvalidOperationException($"'{descriptor.Path}' has no usable VST3 factory.");
 
@@ -184,13 +185,31 @@ public sealed unsafe class Vst3Format : IPluginFormat
         }
     }
 
-    // GetPluginFactory(), after ModuleEntry() if the binary exports it.
+    // GetPluginFactory(). No module init here on purpose: scanning only reads factory metadata, and running
+    // a plugin's full module init during a metadata scan is both unnecessary and harmful — e.g. NDI Output
+    // spins up its runtime in InitDll and doesn't survive the scan's load/enumerate/free churn, dropping
+    // itself from the catalog — and we don't pair it with the module's exit anyway. Hosting initializes the
+    // module separately via RunModuleInit (see Load).
     private static void* GetFactory(IntPtr lib)
     {
-        if (NativeLibrary.TryGetExport(lib, "ModuleEntry", out IntPtr entry))
-            ((delegate* unmanaged[Cdecl]<void*, byte>)entry)(null);
         if (!NativeLibrary.TryGetExport(lib, "GetPluginFactory", out IntPtr getFactory))
             return null;
         return ((delegate* unmanaged[Cdecl]<void*>)getFactory)();
+    }
+
+    // Run the module's init entry before the plugin is hosted — it initializes module-global state (for a
+    // network/graphics plugin, its whole runtime). Skipping it loads the factory but leaves the module
+    // half-initialized, so editors and other deep features fault *inside* the plugin. The export is
+    // platform-specific: Windows InitDll() (no args); Linux ModuleEntry(handle). (macOS bundleEntry lands
+    // with the Cocoa backend.)
+    private static void RunModuleInit(IntPtr lib)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            if (NativeLibrary.TryGetExport(lib, "InitDll", out IntPtr init))
+                ((delegate* unmanaged[Cdecl]<byte>)init)();
+        }
+        else if (NativeLibrary.TryGetExport(lib, "ModuleEntry", out IntPtr entry))
+            ((delegate* unmanaged[Cdecl]<void*, byte>)entry)(null);
     }
 }
