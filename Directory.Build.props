@@ -13,7 +13,7 @@
     <RepositoryUrl>https://github.com/lxman/MidiSharp</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageTags>midi;soundfont;sf2;sf3;sfz;dls;synthesizer;audio;general-midi;gm2;vorbis</PackageTags>
+    <PackageTags>midi;soundfont;sf2;sf3;sfz;dls;synthesizer;audio;general-midi;gm2;vorbis;cross-platform;vst;vst3;clap;plugin-host</PackageTags>
 
     <!-- Reproducible builds + SourceLink (the .NET SDK ships SourceLink in-box). Debug info is embedded
          in each assembly (DebugType=embedded), so the DLLs bundled into the MidiSharp package are
