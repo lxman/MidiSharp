@@ -4,7 +4,7 @@
        (src/MidiSharp and src/MidiSharp.Synth.OwnAudio) set IsPackable=true; everything
        else inherits the IsPackable=false default below. -->
   <PropertyGroup>
-    <Version>0.12.0</Version>
+    <Version>0.13.0</Version>
     <Authors>Michael Jordan</Authors>
     <Product>MidiSharp</Product>
     <Copyright>Copyright (c) 2026 Michael Jordan</Copyright>

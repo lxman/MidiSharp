@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-06-24
+
 ### Added
 
 - **AU v3 (`AUAudioUnit`) hosting on macOS — audio, parameters, state, MIDI, and the plugin's own custom
@@ -18,6 +20,32 @@ project adheres to [Semantic Versioning](https://semver.org/).
   v3 AU exposes no v2 instance, so a single `AUAudioUnit` must serve both audio and the editor. Out-of-process
   render latency is ~21 µs/block (negligible). Legacy AU v2 hosting is unchanged. Verified against real v3
   plugins (`DimChorus` effect OOP, `AudMod` instrument in-process). AAX remains parked.
+
+### Fixed
+
+- **Windows VST3 plugin editors that depend on module initialization now open (e.g. NDI Output), and the host
+  shuts down cleanly afterwards.** A VST3 plugin's module-init export is now run after load on the *hosting*
+  path — platform-specific (`InitDll` on Windows, `ModuleEntry` on Linux) — so a plugin that keeps
+  module-global state (NDI Output spins up the NDI runtime its editor draws from) no longer faults *inside* its
+  own `createView`. It is deliberately **not** run during the metadata scan, which would spin a plugin's runtime
+  up and down per file and drop it from the catalog. The paired exit export (`ExitDll` / `ModuleExit`) now runs
+  immediately before the library is unloaded, fixing a native `0xC0000005` on shutdown that occurred when such a
+  runtime was still live as `FreeLibrary` ran. Three further VST3 host-contract gaps that crashed some editors
+  are closed too: the host hands the controller an `IComponentHandler` before `createView`, manufactures
+  `IMessage`/`IAttributeList` on request via `IHostApplication::createInstance`, and hosts plugins/editors on an
+  STA thread on Windows.
+- **Out-of-process sandbox on Windows.** The worker can now map the shared memory-mapped audio block the host
+  created — it is opened read/write **shared** — instead of failing with a file-sharing violation that aborted
+  every sandboxed plugin load on Windows.
+
+### Changed
+
+- **`MidiSharp.OwnAudio` now builds on OwnAudioSharp 3.1.7** (up from 3.1.3), which upstreams three fixes we had
+  reported: the configured output device is honored at init, the device's native rate is exposed on
+  `AudioDeviceInfo.DefaultSampleRate`, and `AudioMixer.Stop()` joins its mix thread. We read the native rate
+  from that new property and **retired our direct PortAudio P/Invoke** (and its hand-mirrored `PaDeviceInfo`
+  struct). We keep our own id→index device selection with a fail-fast error (upstream silently falls back to the
+  default device on failure) and the callback-drain gate as defense-in-depth over the new mix-thread join.
 
 ## [0.12.0] - 2026-06-22
 
