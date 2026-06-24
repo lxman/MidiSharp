@@ -128,6 +128,7 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
             if (Ok(Comp->QueryInterface(_component, iidCtrl, &ctrl)) && ctrl != null)
             {
                 _controller = ctrl;   // single-component
+                Ctrl->SetComponentHandler(_controller, Vst3Host.ComponentHandler);   // the host MUST hand the controller a handler before createView
                 return;
             }
 
@@ -144,6 +145,7 @@ public sealed unsafe class Vst3Plugin : IHostedPlugin, IPluginGui
         _controller = created;
         _controllerSeparate = true;
         Ctrl->Initialize(_controller, Vst3Host.HostApplication);
+        Ctrl->SetComponentHandler(_controller, Vst3Host.ComponentHandler);   // initialize → setComponentHandler → connect, before createView
         ConnectComponentAndController();
         SyncControllerToComponentState();
     }
