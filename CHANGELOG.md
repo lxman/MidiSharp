@@ -6,6 +6,24 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-24
+
+First stable release. The public API is considered stable from here under [SemVer](https://semver.org/):
+breaking changes will bump the major version.
+
+This release marks the point where plugin hosting is complete across every supported format —
+**CLAP, VST2, VST3, Audio Units (v2 and v3), and LADSPA** — as both effects and instruments, run
+**out-of-process** for crash isolation, with each plugin's **own native editor window** opening on all
+three desktop platforms: **Linux (X11), Windows (Win32), and macOS (Cocoa)**. The synth, the SF2/SF3/SFZ/DLS
+SoundBank IR, patch-level instrument substitution, and the per-part mixer + DSP layer round out the 1.0 surface.
+
+### Changed
+
+- **Both NuGet packages now ship a package icon** (a musical sharp, which also reads as the C# "sharp"),
+  replacing the gray placeholder on the `MidiSharp.Player` and `MidiSharp.OwnAudio` listings.
+- **Broadened the NuGet tags** with the discovery terms the library leads on but search couldn't reach:
+  `cross-platform`, `vst`, `vst3`, `clap`, `plugin-host`.
+
 ## [0.13.0] - 2026-06-24
 
 ### Added
