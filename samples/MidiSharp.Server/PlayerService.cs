@@ -48,7 +48,13 @@ public sealed record InstrumentBindingDto(int Channel, string Format, string Id)
 public sealed record EditorRequest(string InstanceId, string? Title = null);
 public sealed record PlayRequest(string? DeviceId, string MidiPath, string SoundfontPath, PatchOverrideDto[]? Overrides = null, TrackOverrideDto[]? TrackOverrides = null, PartOverrideDto[]? PartOverrides = null, InstrumentMixDto[]? Mix = null, MasterDto? Master = null, InstrumentBindingDto[]? Instruments = null);
 public sealed record PlayResponse(bool Ok, double DurationSeconds, string[] Defects, string? Error);
-public sealed record StatusDto(string State, double PositionSeconds, double DurationSeconds, string? Midi, string? Soundfont);
+// Master-output level meter, pushed with each status frame. Peak/RMS are linear amplitude (0..~1,
+// can exceed 1 if the master clips); the client converts to dB and applies its own falloff ballistics.
+// Values are accumulated on the audio thread over each poll window and reset when Status() reads them.
+// Parts is per-part MIDI activity (note-on velocity, 0..1), keyed "track:channel" to match the client's
+// strip keys. Only parts that fired a note since the last poll appear; the client decays the rest.
+public sealed record MeterDto(double PeakL, double PeakR, double RmsL, double RmsR, Dictionary<string, double> Parts);
+public sealed record StatusDto(string State, double PositionSeconds, double DurationSeconds, string? Midi, string? Soundfont, MeterDto Meter);
 public sealed record UsedPatchDto(int Bank, int Program, string? Name, bool IsDrum, int[] Channels);
 public sealed record TrackInfoDto(int TrackIndex, string? Name, int[] Channels, int[] Programs, string? BaseName);
 // One mixer strip = one song "part" = a (track, channel). Name/Sound are resolved server-side from the
@@ -109,6 +115,89 @@ public sealed class PlayerService : IDisposable
     // to the summed plugin output the same way they do to synth voices.
     private readonly List<HostedVoice> _hostedInstruments = [];
     private float[] _instScratch = [];
+
+    // Master-output meter accumulators. Written on the audio thread (AccumulateMeter, after the master
+    // rack) and drained on the status thread (Status), so a dedicated short-held lock guards them — never
+    // _lock, which the audio thread must not contend on. Peak is the max |sample| and RMS the running
+    // sum-of-squares over the window since the last drain; reset on read, so each poll reports the level
+    // for its own window (decoupled from the audio block size). The status WS is the only reader.
+    private readonly object _meterLock = new();
+    private float _meterPeakL, _meterPeakR;
+    private double _meterSumSqL, _meterSumSqR;
+    private long _meterSamples;
+
+    // Fold one finished block (master-processed, interleaved stereo) into the meter accumulators.
+    private void AccumulateMeter(ReadOnlySpan<float> interleavedStereo, int frames)
+    {
+        float pL = 0f, pR = 0f;
+        double sL = 0d, sR = 0d;
+        for (var i = 0; i < frames; i++)
+        {
+            float l = interleavedStereo[2 * i];
+            float r = interleavedStereo[2 * i + 1];
+            float al = Math.Abs(l), ar = Math.Abs(r);
+            if (al > pL) pL = al;
+            if (ar > pR) pR = ar;
+            sL += (double)l * l;
+            sR += (double)r * r;
+        }
+        lock (_meterLock)
+        {
+            if (pL > _meterPeakL) _meterPeakL = pL;
+            if (pR > _meterPeakR) _meterPeakR = pR;
+            _meterSumSqL += sL;
+            _meterSumSqR += sR;
+            _meterSamples += frames;
+        }
+    }
+
+    // Per-part MIDI activity (note-on velocity, 0..1), keyed "track:channel" to match the client's strip
+    // keys. Written on the audio thread from the player's EventDispatched hook (note-ons only); drained
+    // with the master meter, peak-since-last-poll, reset on read — the client owns the falloff. A separate
+    // lock so it never contends with the audio-level accumulators.
+    private readonly object _partLock = new();
+    private readonly Dictionary<string, float> _partActivity = new();
+    private static readonly Dictionary<string, double> EmptyParts = new();
+
+    // Record a note-on as activity for its part (max velocity within the current poll window).
+    private void RecordPartActivity(int trackIndex, int channel, int velocity)
+    {
+        string key = trackIndex + ":" + channel;
+        float v = velocity / 127f;
+        lock (_partLock)
+            if (!_partActivity.TryGetValue(key, out float cur) || v > cur) _partActivity[key] = v;
+    }
+
+    // Snapshot and clear per-part activity. Parts with no onset this window are absent (client decays
+    // them); returns a shared empty map when nothing fired, to avoid allocating while idle.
+    private Dictionary<string, double> DrainPartActivity()
+    {
+        lock (_partLock)
+        {
+            if (_partActivity.Count == 0) return EmptyParts;
+            var snap = new Dictionary<string, double>(_partActivity.Count);
+            foreach (KeyValuePair<string, float> kv in _partActivity) snap[kv.Key] = kv.Value;
+            _partActivity.Clear();
+            return snap;
+        }
+    }
+
+    // Drain the meter accumulators into a DTO and reset the window. Returns silence when nothing has
+    // been rendered since the last read (e.g. stopped/paused), so the meter falls to zero naturally.
+    private MeterDto DrainMeter()
+    {
+        Dictionary<string, double> parts = DrainPartActivity();   // own lock; kept out of _meterLock
+        lock (_meterLock)
+        {
+            double rmsL = _meterSamples > 0 ? Math.Sqrt(_meterSumSqL / _meterSamples) : 0d;
+            double rmsR = _meterSamples > 0 ? Math.Sqrt(_meterSumSqR / _meterSamples) : 0d;
+            var dto = new MeterDto(_meterPeakL, _meterPeakR, rmsL, rmsR, parts);
+            _meterPeakL = _meterPeakR = 0f;
+            _meterSumSqL = _meterSumSqR = 0d;
+            _meterSamples = 0;
+            return dto;
+        }
+    }
 
     // A hosted instrument paired with the live mixer trim of the part it plays. The InstrumentMix is the
     // same mutable instance the synth holds for that part, so live fader moves (SetInstrumentMix) flow
@@ -261,6 +350,14 @@ public sealed class PlayerService : IDisposable
                 ConfigureMaster(req.Master);
                 _masterRack.Reset();
                 var player = new RealtimePlayer(midi, synth);
+                // Per-part activity meter: tap note-ons as they're dispatched (audio thread, sample-accurate).
+                // Velocity 0 is a note-off in disguise — ignore it. Cheap: just records a per-part peak for
+                // the next status poll. Independent of any hosted-instrument hook ApplyInstrumentBindings adds.
+                player.EventDispatched += (se, _) =>
+                {
+                    if (se.Event is NoteOnEvent { Velocity: > 0 } e)
+                        RecordPartActivity(se.TrackIndex, e.Channel, e.Velocity);
+                };
                 ApplyInstrumentBindings(req.Instruments, req.Mix, synth, player);
                 // Device + rate were resolved up front (see top of Play). Open at the negotiated rate.
                 var output = new OwnAudioOutput(_sampleRate, channels: 2,
@@ -302,6 +399,7 @@ public sealed class PlayerService : IDisposable
                         }
                     }
                     _masterRack.Process(span);
+                    AccumulateMeter(span, frames);
                 });
                 output.Start();
 
@@ -689,6 +787,7 @@ public sealed class PlayerService : IDisposable
         _output = null;
         _player = null;
         _synth = null;
+        lock (_partLock) _partActivity.Clear();   // drop any un-drained activity so the next play starts clean
         // Hosted instruments outlived the audio callback (now stopped); dispose their native plugins.
         foreach (HostedVoice hv in _hostedInstruments) { try { hv.Inst.Dispose(); } catch { } }
         _hostedInstruments.Clear();
@@ -710,7 +809,8 @@ public sealed class PlayerService : IDisposable
                 _player?.Position.TotalSeconds ?? 0,
                 _player?.Duration.TotalSeconds ?? 0,
                 _midiName,
-                _soundfontName);
+                _soundfontName,
+                DrainMeter());
         }
     }
 

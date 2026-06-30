@@ -412,6 +412,7 @@ function renderMixer(parts) {
   const box = $('mixer');
   box.innerHTML = '';
   $('masterStrip').innerHTML = '';
+  partMeterEls.clear(); partDisp.clear();   // strips are rebuilt below; drop the old meter element refs + state
   closePopover();
   document.querySelectorAll('body > .pop:not(.master-pop)').forEach(p => p.remove());   // drop per-strip popovers from a prior render (keep the master rack)
   if (!parts || !parts.length) { $('mixerHint').style.display = ''; return; }
@@ -459,7 +460,24 @@ function buildMasterStrip() {
   fader.append(gIn, gVal);
   gIn.addEventListener('input', () => { master.masterGainDb = parseFloat(gIn.value); gVal.textContent = gfmt(master.masterGainDb); postMaster(); });
 
-  strip.append(name, head, fader);
+  // Stereo master-output meter, sits beside the fader. The fill is the RMS body, the thin line is a
+  // peak hold; both are driven by the status socket via a requestAnimationFrame falloff loop (see below).
+  const meter = document.createElement('div'); meter.className = 'vmeter';
+  const mkCh = () => {
+    const ch = document.createElement('div'); ch.className = 'vmeter-ch';
+    const fill = document.createElement('div'); fill.className = 'vmeter-fill';
+    const peak = document.createElement('div'); peak.className = 'vmeter-peak';
+    ch.append(fill, peak);
+    return { ch, fill, peak };
+  };
+  const L = mkCh(), R = mkCh();
+  meter.append(L.ch, R.ch);
+  masterMeterEls = { L, R };           // picked up by the rAF loop; replaced whenever the strip rebuilds
+
+  const body = document.createElement('div'); body.className = 'vbody';
+  body.append(fader, meter);
+  strip.append(name, head, body);
+  startMasterMeter();
   return strip;
 }
 
@@ -590,7 +608,15 @@ function buildStrip(p, e) {
   pan.oninput(onMix); rev.oninput(onMix); cho.oninput(onMix);
   mute.onclick(onMix); solo.onclick(onMix);
 
-  strip.append(name, head, pan.row, rev.row, cho.row, ms, fader);
+  // Per-part activity meter — a thin bar that blips to a note's velocity on each note-on and decays.
+  // The rAF loop owns the falloff; partMeterEls maps this part's fill element by its (track:channel) key.
+  const act = document.createElement('div'); act.className = 'vact';
+  const actFill = document.createElement('div'); actFill.className = 'vact-fill';
+  act.appendChild(actFill);
+  partMeterEls.set(pk, actFill);
+  startMasterMeter();   // the shared rAF loop drives both master + part meters; safe to call repeatedly
+
+  strip.append(name, act, head, pan.row, rev.row, cho.row, ms, fader);
   return strip;
 }
 
@@ -1037,8 +1063,77 @@ function connectStatus() {
       ? `${Math.min(100, 100 * s.positionSeconds / s.durationSeconds)}%` : '0';
     $('play').disabled = playing;
     $('stop').disabled = !playing;
+    // Latest master-output level for the meter (linear amplitude). The rAF loop owns the falloff.
+    const mt = s.meter || {};
+    meterTarget.rmsL = mt.rmsL || 0; meterTarget.rmsR = mt.rmsR || 0;
+    meterTarget.peakL = mt.peakL || 0; meterTarget.peakR = mt.peakR || 0;
+    // Per-part note-on impulses: snap each reported part up to its velocity; the rAF loop decays it down.
+    const parts = mt.parts;
+    if (parts) for (const k in parts) {
+      const v = parts[k];
+      if (v > (partDisp.get(k) || 0)) partDisp.set(k, v);
+    }
   };
   ws.onclose = () => setTimeout(connectStatus, 1000);
+}
+
+// ---------------- master output meter ----------------
+// The server pushes peak/RMS (linear amplitude) per status frame at ~20 Hz; this loop renders them at
+// display rate with VU-style ballistics: the RMS body rises fast and falls slowly, the peak line snaps
+// up and decays gently. masterMeterEls is (re)set whenever the master strip is built.
+let masterMeterEls = null;
+const meterTarget = { rmsL: 0, rmsR: 0, peakL: 0, peakR: 0 };
+const meterDisp = { rmsL: 0, rmsR: 0, peakL: 0, peakR: 0 };
+let meterRunning = false;
+const METER_FLOOR_DB = -60;     // bottom of the scale; below this reads as empty
+
+// Per-part activity meters. Unlike the master meter (a continuous level with attack/release), these are
+// impulse-driven: each note-on snaps the part up to its velocity, then it decays. partMeterEls maps a
+// part key → its fill element (rebuilt each render); partDisp holds the live decaying value per part.
+const partMeterEls = new Map();
+const partDisp = new Map();
+const PART_RELEASE = 0.03;      // per-frame falloff (~0.5 s from a full-velocity hit at 60 fps)
+
+// Linear amplitude → 0..1 bar height on a dB scale (−60 dB → 0, 0 dB → full, above unity clamps to 1).
+function ampToNorm(a) {
+  if (a <= 0) return 0;
+  const db = 20 * Math.log10(a);
+  if (db <= METER_FLOOR_DB) return 0;
+  if (db >= 0) return 1;
+  return 1 - db / METER_FLOOR_DB;
+}
+
+function startMasterMeter() {
+  if (meterRunning) return;
+  meterRunning = true;
+  const tick = () => {
+    const els = masterMeterEls;
+    if (els) {
+      for (const side of ['L', 'R']) {
+        const key = side === 'L' ? 'rmsL' : 'rmsR';
+        const pkey = side === 'L' ? 'peakL' : 'peakR';
+        const rmsTarget = ampToNorm(meterTarget[key]);
+        // RMS body: fast attack, slow release for the classic meter feel.
+        const coeff = rmsTarget > meterDisp[key] ? 0.5 : 0.08;
+        meterDisp[key] += (rmsTarget - meterDisp[key]) * coeff;
+        // Peak hold: snap up to any new peak, otherwise drift down a little each frame.
+        const pkTarget = ampToNorm(meterTarget[pkey]);
+        meterDisp[pkey] = pkTarget > meterDisp[pkey] ? pkTarget : Math.max(0, meterDisp[pkey] - 0.006);
+        const ch = els[side];
+        ch.fill.style.height = `${(meterDisp[key] * 100).toFixed(1)}%`;
+        ch.peak.style.bottom = `${(meterDisp[pkey] * 100).toFixed(1)}%`;
+        ch.peak.style.opacity = meterDisp[pkey] > 0.01 ? '1' : '0';
+      }
+    }
+    // Per-part activity bars: decay each toward zero and paint width = current value.
+    for (const [pk, fill] of partMeterEls) {
+      const v = Math.max(0, (partDisp.get(pk) || 0) - PART_RELEASE);
+      partDisp.set(pk, v);
+      fill.style.width = `${(v * 100).toFixed(1)}%`;
+    }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 }
 
 loadDevices().catch(e => $('error').textContent = 'Failed to load devices: ' + e);

@@ -113,7 +113,9 @@ app.Map("/ws", async context =>
         byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(player.Status(), wsJson));
         try { await ws.SendAsync(bytes, WebSocketMessageType.Text, true, context.RequestAborted); }
         catch { break; }
-        try { await Task.Delay(250, context.RequestAborted); } catch { break; }
+        // 20 Hz: fast enough to drive a smooth master-output meter (the client adds falloff ballistics).
+        // The status payload is tiny and this is localhost, so the extra frames are negligible.
+        try { await Task.Delay(50, context.RequestAborted); } catch { break; }
     }
 });
 
