@@ -4,13 +4,14 @@ using System.Runtime.InteropServices;
 using Ownaudio.Core;
 using OwnaudioNET;
 using OwnaudioNET.Mixing;
+using OwnaudioNET.Sources;
 
 namespace MidiSharp.Synth.OwnAudio;
 
 /// <summary>
 /// Cross-platform audio output for the MidiSharp synthesizer, backed by OwnAudioSharp.
-/// Wraps an OwnAudio AudioMixer plus an internal callback-driven source so the synth
-/// can deliver float frames through PortAudio/MiniAudio on Windows, Linux, and macOS.
+/// Wraps an OwnAudio AudioMixer plus an internal callback-driven StreamingSource so the synth
+/// can deliver float frames through the native Rust audio backend on Windows, Linux, and macOS.
 /// </summary>
 public sealed class OwnAudioOutput : IAudioOutput
 {
@@ -20,6 +21,7 @@ public sealed class OwnAudioOutput : IAudioOutput
     private readonly string? _outputDeviceId;
 
     private AudioMixer? _mixer;
+    private StreamingSource? _streamingSource;
     private SynthCallbackSource? _source;
     private AudioCallback? _callback;
     private bool _isPlaying;
@@ -30,13 +32,13 @@ public sealed class OwnAudioOutput : IAudioOutput
     private static readonly object s_initLock = new();
     private static int s_initRefCount;
 
-    // Linux default is HostType.None → PortAudio opens its platform-default host API (ALSA),
+    // Linux default is HostType.None → opens its platform-default host API (ALSA),
     // i.e. the ALSA "default" PCM, which routes transparently on bare ALSA, PulseAudio, AND
     // PipeWire, and shows up as a normal sink-input the host can re-route. Forcing JACK was
     // wrong on desktops: PortAudio-JACK enumerates JACK *clients* (e.g. "GNOME Settings") as
     // "devices" and can't target a sink — output just follows the default. Pro-audio users who
-    // genuinely want a native JACK client can opt in with MIDISHARP_AUDIO_JACK=1. (MiniAudio
-    // ignores HostType entirely; non-Linux platforms get None → WASAPI / CoreAudio.)
+    // genuinely want a native JACK client can opt in with MIDISHARP_AUDIO_JACK=1. (Non-Linux
+    // platforms get None → WASAPI / CoreAudio.)
     private static readonly EngineHostType DefaultHostType =
         OperatingSystem.IsLinux() && Environment.GetEnvironmentVariable("MIDISHARP_AUDIO_JACK") == "1"
             ? EngineHostType.JACK
@@ -110,11 +112,13 @@ public sealed class OwnAudioOutput : IAudioOutput
             }
             try
             {
+                var nativeRates = QueryRustDeviceSampleRates();
                 var devices = new List<OutputDevice>();
                 foreach (AudioDeviceInfo d in OwnaudioNet.GetOutputDevices())
                 {
                     if (!d.IsOutput) continue;
-                    devices.Add(new OutputDevice(d.DeviceId, d.Name, d.EngineName, d.IsDefault, d.DefaultSampleRate));
+                    double defaultSampleRate = nativeRates.TryGetValue(d.Name, out int r) ? r : 0;
+                    devices.Add(new OutputDevice(d.DeviceId, d.Name, d.EngineName, d.IsDefault, defaultSampleRate));
                 }
                 return devices;
             }
@@ -128,13 +132,35 @@ public sealed class OwnAudioOutput : IAudioOutput
         }
     }
 
+    // OwnAudio 4.x's managed AudioDeviceInfo omits DefaultSampleRate, while the underlying
+    // Ownaudio.Safe.AudioDevice (in OwnAudioRust) still populates DefaultSampleRate from the
+    // native audio backend. Read those rates by device name so NegotiateSampleRate can run the
+    // synth pipeline at the device's native rate without resampling.
+    private static Dictionary<string, int> QueryRustDeviceSampleRates()
+    {
+        var rates = new Dictionary<string, int>(StringComparer.Ordinal);
+        try
+        {
+            using var rustEngine = Ownaudio.Safe.AudioEngine.Create();
+            foreach (Ownaudio.Safe.AudioDevice rd in rustEngine.EnumerateOutputDevices())
+            {
+                if (rd.DefaultSampleRate > 0)
+                    rates[rd.Name] = rd.DefaultSampleRate;
+            }
+        }
+        catch
+        {
+            // Best-effort lookup; falls back to 0 (probed or preferred rate).
+        }
+        return rates;
+    }
+
     /// <summary>
     /// Determine the sample rate to open <paramref name="outputDeviceId"/> at — the rate the whole
     /// pipeline should then run at. Deterministic where possible (we ask the device, not guess):
     /// <list type="bullet">
-    /// <item><b>PortAudio</b> (device id is a bare index, e.g. "23") is exact-format with no implicit
-    /// resampling, so we use the device's advertised native rate (<c>AudioDeviceInfo.DefaultSampleRate</c>)
-    /// — the pipeline runs there with zero resampling.</item>
+    /// <item><b>RustAudio / PortAudio</b> uses the device's advertised native rate
+    /// (<c>OutputDevice.DefaultSampleRate</c>) so the pipeline runs there with zero resampling.</item>
     /// <item><b>MiniAudio</b> (device id "ma_output_N") opens shared-mode with a built-in converter, so
     /// any device accepts <paramref name="preferred"/> (MiniAudio resamples internally to the device's
     /// native rate) — we just return <paramref name="preferred"/>.</item>
@@ -147,14 +173,12 @@ public sealed class OwnAudioOutput : IAudioOutput
     {
         if (string.IsNullOrEmpty(outputDeviceId)) return preferred;
 
-        // MiniAudio device ids look like "ma_output_N"; PortAudio's are bare device indices. Only the
-        // PortAudio path needs a specific rate — MiniAudio converts internally.
-        if (!int.TryParse(outputDeviceId, out _))
+        // Legacy MiniAudio device ids look like "ma_output_N" and convert internally.
+        if (outputDeviceId.StartsWith("ma_output_", StringComparison.Ordinal))
             return preferred;
 
-        // OwnAudio 3.1.7+ surfaces the device's native rate on AudioDeviceInfo.DefaultSampleRate
-        // (populated from PortAudio's PaDeviceInfo.defaultSampleRate during enumeration). Read it
-        // straight off the enumerated device — no direct PortAudio P/Invoke needed.
+        // Read the device's native rate surfaced on OutputDevice.DefaultSampleRate (populated from
+        // Ownaudio.Safe.AudioDevice.DefaultSampleRate during enumeration).
         foreach (OutputDevice d in GetOutputDevices())
         {
             if (d.Id != outputDeviceId) continue;
@@ -167,7 +191,7 @@ public sealed class OwnAudioOutput : IAudioOutput
         return ProbeSampleRate(outputDeviceId, preferred);
     }
 
-    // Last-ditch fallback when the PortAudio query can't run: transiently open the engine at candidate
+    // Last-ditch fallback when the native rate query can't run: transiently open the engine at candidate
     // rates and keep the first that the device accepts. Preferred first (keeps 48 kHz devices on the
     // no-resample fast path), then the other ubiquitous consumer/pro rates.
     private static int ProbeSampleRate(string outputDeviceId, int preferred)
@@ -239,9 +263,10 @@ public sealed class OwnAudioOutput : IAudioOutput
         IAudioEngine engine = OwnaudioNet.Engine!.UnderlyingEngine;
         _mixer = new AudioMixer(engine, bufferSizeInFrames: _bufferSizeFrames);
         _source = new SynthCallbackSource(_sampleRate, _channels) { Callback = _callback };
-        _mixer.AddSource(_source);
+        _streamingSource = _source.CreateStreamingSource(_bufferSizeFrames);
+        _mixer.AddSource(_streamingSource);
         _mixer.Start();
-        _source.Play();
+        _streamingSource.Play();
         _isPlaying = true;
     }
 
@@ -251,19 +276,18 @@ public sealed class OwnAudioOutput : IAudioOutput
         if (!_isPlaying) return;
         _isPlaying = false;
 
-        // Disable + drain the callback FIRST. As of OwnAudio 3.1.7, AudioMixer.Stop() joins the mix
-        // thread (2s timeout), so this is no longer the only guard — but we keep it as targeted
-        // defense-in-depth: once DrainCallbacks() returns, no in-flight callback can still be reading the
-        // synth's memory-mapped SoundFont, so the caller can tear down the synth/session immediately
-        // without a native use-after-free (AccessViolationException), independent of the mixer's join
-        // timeout (and the mix thread may still briefly linger).
+        // Disable + drain the callback FIRST. Once DrainCallbacks() returns, no in-flight callback can
+        // still be reading the synth's memory-mapped SoundFont, so the caller can tear down the
+        // synth/session immediately without a native use-after-free (AccessViolationException),
+        // independent of the streaming pump thread's teardown timing.
         try { _source?.DrainCallbacks(); } catch { }
 
-        try { _source?.Stop(); } catch { }
+        try { _streamingSource?.Stop(); } catch { }
         try { _mixer?.Stop(); } catch { }
         try { _mixer?.Dispose(); } catch { }
-        try { _source?.Dispose(); } catch { }
+        try { _streamingSource?.Dispose(); } catch { }
         _mixer = null;
+        _streamingSource = null;
         _source = null;
 
         ReleaseEngine();
@@ -321,13 +345,10 @@ public sealed class OwnAudioOutput : IAudioOutput
                 };
                 OwnaudioNet.Initialize(config);
 
-                // OwnAudio 3.1.3 does NOT honor AudioConfig.OutputDeviceId at Initialize() on either
-                // the PortAudio or MiniAudio backend (the device-id resolution lives only in the
-                // device-switch path, not the initial open). The device only takes effect via
-                // SetOutputDeviceByName/ByIndex, which must run AFTER Initialize and BEFORE the engine
-                // Start (it refuses while the stream is running). Resolve the requested id and select
-                // it here; a device that can't be opened fails fast with a clear message (below)
-                // rather than leaving a dead stream for Start() to choke on with a cryptic code.
+                // Select the requested device explicitly via SetOutputDeviceByIndex, which runs AFTER
+                // Initialize and BEFORE the engine Start. A device that can't be opened fails fast with
+                // a clear message (below) rather than silently falling back to the default device or
+                // leaving a dead stream for Start() to choke on with a cryptic code.
                 if (!string.IsNullOrEmpty(outputDeviceId))
                     ApplyOutputDevice(outputDeviceId);
 
